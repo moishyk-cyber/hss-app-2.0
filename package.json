@@ -2,6 +2,9 @@
   "name": "hss-app",
   "version": "0.1.0",
   "private": true,
+  "prisma": {
+    "seed": "tsx prisma/seed.ts && tsx prisma/fix-links.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
