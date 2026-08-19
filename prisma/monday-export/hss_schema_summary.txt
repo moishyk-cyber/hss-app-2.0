@@ -1,0 +1,319 @@
+﻿## Orders - Line Items (18425103394) - 4 items
+GROUPS: Group Title
+  - Name [name] type=name
+  - Description [text_mm5x8937] type=text
+  - Status [status] type=status labels={0:Payment, 1:Delivered, 2:Traking}
+  - Tracking Info [link_mm63eqa3] type=link
+  - Lead Time [date4] type=date
+  - Est/ Order Due Date [lookup_mm5xrgas] type=mirror settings={"relation_column":{"board_relation_mm5xp8h2":true},"displayed_column":{},"displayed_linked_columns":{"18424782388":["date_mm52qmdx"]}}
+  - Docs [lookup_mm5xfm55] type=mirror settings={"relation_column":{"board_relation_mm5xp8h2":true},"displayed_column":{},"displayed_linked_columns":{"18424782388":["file_mm52pa98"]}}
+  - Assignee [person] type=people
+  - Next Follow-up Date [date_mm5x4hnh] type=date
+  - Purchase - Orders [board_relation_mm5xp8h2] type=board_relation settings={"allowCreateReflectionColumn":true,"allowMultipleItems":false,"boardIds":[18424782388]}
+
+## Subitems of Sales - Opportunities Form (18424782399) - 26 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Description [text_mm57zavn] type=text
+  - Image [file_mm5dv1gm] type=file
+  - More Details [text_mm5dxdhy] type=text
+
+## Subitems of Orders (18424782398) - 0 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Subitems of Master Form (18424782397) - 3 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Subitems of Sales - Line Items (18424782393) - 0 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Subitems of Tasks (18424782391) - 6 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Sales - Opportunities Form (18424782390) - 17 items
+GROUPS: Incoming Forms | Processed Forms
+  - Name [name] type=name
+  - Sales Person [multiple_person_mm52wahm] type=people
+  - Form Submitted Date [date_mm52t3bn] type=date
+  - What Items Are Needed? [subtasks_mm52r72b] type=subtasks settings={"displayType":"BOARD_INLINE","itemTypeName":"column.subtasks.title","allowMultipleItems":true,"boardIds":[18424782399]}
+  - Client Type [color_mm56ba99] type=status labels={0:New Client, 1:Existing Client}
+  - Business [board_relation_mm526qp9] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18364381952]}
+  - Business Name [text_mm56x01p] type=text
+  - Business Address [location_mm56cq9k] type=location
+  - Phone [phone_mm565cx2] type=phone
+  - Phone Number Extension [numeric_mm56jgf0] type=numbers
+  - Cell Phone [phone_mm56avt6] type=phone
+  - Email [email_mm56ar0b] type=email
+  - Delivery Address [location_mm56gx5s] type=location
+  - Name of Location [text_mm567bmz] type=text
+  - Zip Code [numeric_mm571e8q] type=numbers
+  - Order Type [single_selecttdklr8o] type=status labels={0:Projects, 1:Order}
+  - Facility Type [text_mm5db15t] type=text
+  - Menu [text_mm5ddx78] type=text
+  - Dimensions of Room / Wall Measurements [text_mm56q7qh] type=text
+  - Delivery Type [color_mm56frkx] type=status labels={0:Inside, 1:Curbside}
+  - How large are the openings [text_mm56rsqm] type=text
+  - Installation Needed [color_mm56v8np] type=status labels={1:Yes, 2:No}
+  - Docs [file_mm5944nk] type=file
+  - Needs Pricing [color_mm5dkwt6] type=status labels={1:Yes, 2:No}
+  - Order Needed By [date_mm5d80fx] type=date
+  - Contacts [board_relation_mm523x57] type=board_relation settings={"boardIds":[],"allowCreateReflectionColumn":true,"boardId":18424782382}
+  - Sales - Opportunities [board_relation_mm52453j] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18364381920]}
+  - Form Status [color_mm5xgdmx] type=status labels={1:Processed, 5:Incoming}
+
+## Orders (18424782388) - 6 items
+GROUPS: Orders
+  - Name [name] type=name
+  - PO [text_mm63d1eq] type=text
+  - Status [color_mm525nmp] type=status labels={0:Proposal Sent, 1:Delivered, 2:Stuck, 3:In Progress, 4:Revisions Needed, 5:New Order, 6:Information Missing, 17:Ready for Estimating}
+  - Owner [multiple_person_mm52wahm] type=people
+  - Contacts [board_relation_mm5xmc3] type=board_relation settings={"allowCreateReflectionColumn":false,"boardIds":[18364381955]}
+  - Business [board_relation_mm5xs2e0] type=board_relation settings={"allowCreateReflectionColumn":false,"boardIds":[18364381952]}
+  - Job ID [text_mm52xrrc] type=text
+  - Date Order Created [date_mm52t3bn] type=date
+  - Order Type [color_mm5x50xn] type=status labels={3:Project, 4:Order}
+  - Files [file_mm52pa98] type=file
+  - Next Follow-up [date_mm524b78] type=date
+  - Subitems [subtasks_mm52r72b] type=subtasks settings={"displayType":"BOARD_INLINE","itemTypeName":"column.subtasks.title","allowMultipleItems":true,"boardIds":[18424782398]}
+  - Tasks [board_relation_mm52cgpp] type=board_relation settings={"boardIds":[18424782379],"allowCreateReflectionColumn":true,"boardId":18424782379}
+  - Sales - Opportunities (native) [board_relation_mm5vez4r] type=board_relation settings={"boardIds":[18364381920]}
+  - link to Orders - Line Items [board_relation_mm5x88gc] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18425103394]}
+  - link to Sales - Opportunities Form [board_relation_mm5x86y9] type=board_relation settings={"boardIds":[18424782390]}
+  - Last updated [pulse_updated_mm529zsp] type=last_updated
+
+## Master Form (18424782385) - 9 items
+GROUPS: New Lead | Ready for Estimating | Estimating | Revisions Needed | Information Missing | Proposal Sent | Won Deals | Lost Deals
+  - Name [name] type=name
+  - In which board would you like to add an item? [color_mm52dcfy] type=status labels={0:Contact, 1:Business, 2:Deals, 3:Orders, 4:Tasks}
+  - Deal Name [text_mm52b2tf] type=text
+  - Deal Form Submitted Date [date_mm52t3bn] type=date
+  - Deal Estimate Due Date [date_mm52qmdx] type=date
+  - Deal Last updated [pulse_updated_mm529zsp] type=last_updated
+  - Deal General Contractor [multiple_person_mm526z9m] type=people
+  - Deal Status [color_mm525nmp] type=status labels={0:Proposal Sent, 1:Won, 2:Lost, 3:In Progress, 4:Revisions Needed, 5:New Lead, 6:Information Missing, 17:Ready for Estimating}
+  - Deal Value [numeric_mm52cjzm] type=numbers
+  - Deal Estimator [text_mm5219vy] type=text
+  - Subitems [subtasks_mm52r72b] type=subtasks settings={"displayType":"BOARD_INLINE","itemTypeName":"column.subtasks.title","allowMultipleItems":true,"boardIds":[18424782397]}
+  - Sales Person [multiple_person_mm52wahm] type=people
+  - Notes [text_mm5254cx] type=text
+  - Job ID [text_mm52xrrc] type=text
+  - Job Type [dropdown_mm52wgys] type=dropdown labels={1:Restaurant Equipment, 2:Summer Camp Revamp, 3:Non-Profit Kitchen}
+  - Deal Location [location_mm527vjp] type=location
+  - Deal Files [file_mm52pa98] type=file
+  - Deal Next Follow-up [date_mm524b78] type=date
+  - Deal Contacts [board_relation_mm523x57] type=board_relation settings={"boardIds":[],"allowCreateReflectionColumn":true,"boardId":18424782382}
+  - Deal Lost Reason [text_mm52hrt6] type=text
+  - Deal Tasks [board_relation_mm52cgpp] type=board_relation settings={"boardIds":[18424782379],"allowCreateReflectionColumn":true,"boardId":18424782379}
+  - Deal Quotes & Invoices [file_mm52jnjq] type=file
+  - Deal Orders [board_relation_mm52453j] type=board_relation settings={"boardIds":[18424782380],"allowCreateReflectionColumn":true,"boardId":18424782380}
+  - Deal Business [board_relation_mm526qp9] type=board_relation settings={"boardIds":[],"allowCreateReflectionColumn":true,"boardId":18424782378}
+  - Deal General Contractor Email [email_mm52j3ga] type=email
+  - Order Item [text_mm521z7y] type=text
+  - Order Description [text_mm52bfdq] type=text
+  - Order Purchase Price [numeric_mm52z8e] type=numbers
+  - Order Sales Price [numeric_mm52aqvw] type=numbers
+  - Order SKU [text_mm52bzxy] type=text
+  - Order Type [dropdown_mm52r2wv] type=dropdown labels={1:Inventory, 2:Service}
+  - Brand [text_mm52da8y] type=text
+  - Supplier [dropdown_mm521m1p] type=dropdown labels={1:Ad}
+  - Notes for Orders [text_mm52dxgm] type=text
+  - Business [board_relation_mm525jh0] type=board_relation settings={"boardIds":[],"boardId":18424782378}
+  - Date Ordered [date_mm52d1pm] type=date
+  - Date Arrived at HSS [date_mm52j4gx] type=date
+  - Date Arrived at Client [date_mm52nzd5] type=date
+  - Delivery Status [color_mm52w5d3] type=status labels={0:In Transit to HSS, 1:In Transit to Client, 2:Ordered, 3:Arrived - Complete, 5:Pending}
+  - Files for Orders [file_mm52xpz4] type=file
+  - Next Follow-up Date for Orders [date_mm526eya] type=date
+  - Orders Deals [board_relation_mm52e83j] type=board_relation settings={"boardIds":[],"boardId":18424782384}
+  - Project Manager for Orders [multiple_person_mm52zqtx] type=people
+  - Job Type [dropdown_mm52ywkc] type=dropdown labels={1:asdfdd}
+  - Orders Tasks [board_relation_mm52s789] type=board_relation settings={"boardIds":[18424782379],"boardId":18424782379}
+  - Task Name [text_mm52e3ps] type=text
+  - Task Status [color_mm525nq7] type=status labels={0:In Progress, 1:Done, 2:Stuck, 5:Not Started}
+  - Task Assignee [multiple_person_mm521883] type=people
+  - Task Due Date [date_mm52cgy0] type=date
+  - Task Priority [color_mm52819d] type=status labels={7:Low, 10:Critical âš ï¸ï¸, 109:Medium, 110:High}
+  - Task Time Estimate [numeric_mm52ezv8] type=numbers
+  - Task Orders [board_relation_mm529b90] type=board_relation settings={"boardIds":[18424782380],"boardId":18424782380}
+  - Deals [board_relation_mm52zkv4] type=board_relation settings={"boardIds":[],"boardId":18424782384}
+  - Task Notes [text_mm5238gj] type=text
+  - Business Name [text_mm52xp9y] type=text
+  - Business Main Contact Name [board_relation_mm52pjg5] type=board_relation settings={"boardIds":[],"boardId":18424782382}
+  - Business Email [email_mm528xw2] type=email
+  - Billing Contact [text_mm52tsg2] type=text
+  - Contact Type [dropdown_mm525vg9] type=dropdown labels={1:Contractor}
+  - Office Address [location_mm5241wq] type=location
+  - Office ZIP [text_mm52ctvb] type=text
+  - Billing Address [location_mm52bawf] type=location
+  - Business Orders [board_relation_mm522w30] type=board_relation settings={"boardIds":[18424782380],"boardId":18424782380}
+  - Business Deals [board_relation_mm5210t6] type=board_relation settings={"boardIds":[],"boardId":18424782384}
+  - Contact Name [text_mm525z0a] type=text
+  - Contact First Name [text_mm52pswk] type=text
+  - Contact Last Name [text_mm52t7sf] type=text
+  - Email [email_mm52naa6] type=email
+  - Phone [phone_mm52e822] type=phone
+  - Contact Type [color_mm52qvvz] type=status labels={0:Business, 1:Lead, 2:Client, 3:Vendor, 4:Network}
+  - Contact Status [color_mm52jzc7] type=status labels={0:Onboarding, 1:Active, 2:Inactive}
+  - Contact Address [location_mm52p1fm] type=location
+  - Contact Title [dropdown_mm52mwh7] type=dropdown labels={1:Mr.}
+  - Contact Business [board_relation_mm52g8tq] type=board_relation settings={"boardIds":[],"boardId":18424782378}
+  - Contact Deals [board_relation_mm528k31] type=board_relation settings={"boardIds":[],"boardId":18424782384}
+
+## Sales - Line Items (18424782380) - 22 items
+GROUPS: Products
+  - Name [name] type=name
+  - Subitems [subtasks_mm521gt3] type=subtasks settings={"allowMultipleItems":true,"itemTypeName":"column.subtasks.title","displayType":"BOARD_INLINE","boardIds":[18424782393]}
+  - Description [product_and_service_description] type=long_text
+  - Status [color_mm59x9fp] type=status labels={0:Send to the Supplier, 1:Pricing Received, 2:Removed From Order, 3:Pricing in auto quote, 5:Needs Pricing}
+  - Lead Time [date_mm59zg5q] type=date
+  - Brand [text_mm513f7n] type=text
+  - Supplier [dropdown_mm51nby3] type=dropdown labels={1:Websteraunt Store, 2:Costco, 3:CKitchen}
+  - Gross Profit [formula_mm51s6c8] type=formula
+  - Notes [text_mm51n771] type=text
+  - link to Business [board_relation_mm51m4jd] type=board_relation settings={"allowMultipleItems":false,"allowCreateReflectionColumn":true,"boardIds":[],"boardId":null}
+  - Date Ordered [date_mm515dn3] type=date
+  - Date of Arrival to HSS [date_mm51f1dv] type=date
+  - Date of Arrival to Client [date_mm51jjvf] type=date
+  - Delivery Status [color_mm51az56] type=status labels={0:In Transit to HSS, 1:In Transit to Client, 2:Ordered, 3:Arrived - Complete, 5:Pending}
+  - Business Address [lookup_mm52651n] type=mirror settings={"relation_column":{"board_relation_mm51m4jd":true},"displayed_column":{},"displayed_linked_columns":{}}
+  - Files [file_mm52amn5] type=file
+  - Next Follow-up Date [date_mm523e3y] type=date
+  - Followed Up [boolean_mm52mc05] type=checkbox
+  - Sales - Opportunities [board_relation_mm52sfkp] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782385],"boardId":null}
+  - Assignee [multiple_person_mm52s5sq] type=people
+  - Job Type [dropdown_mm52rbp] type=dropdown labels={:}
+  - Tasks [board_relation_mm529z3q] type=board_relation settings={"boardIds":[18424782379],"allowCreateReflectionColumn":true,"boardId":18424782379}
+  - Sales - Opportunities [board_relation_mm59nm91] type=board_relation settings={"allowMultipleItems":false,"allowCreateReflectionColumn":true,"boardIds":[18364381920]}
+  - Est/ Order Due Date [lookup_mm59yfv2] type=mirror settings={"relation_column":{"board_relation_mm59nm91":true},"displayed_column":{},"displayed_linked_columns":{"18364381920":["deal_expected_close_date"]}}
+  - Docs [lookup_mm59z0sb] type=mirror settings={"relation_column":{"board_relation_mm59nm91":true},"displayed_column":{},"displayed_linked_columns":{"18364381920":["file_mm5w5pz0"]}}
+
+## Tasks (18424782379) - 6 items
+GROUPS: To Do | In Progress | Done
+  - Name [name] type=name
+  - Assignee [multiple_person_mm51mmr7] type=people
+  - Due Date [date_mm514hxw] type=date
+  - Status [color_mm51rd60] type=status labels={0:In Progress, 1:Done, 2:Stuck, 17:Not Started}
+  - Priority [color_mm51eh49] type=status labels={7:Low, 10:Critical âš ï¸ï¸, 109:Medium, 110:High}
+  - Estimated Hours [numeric_mm5134j4] type=numbers
+  - link to Orders [board_relation_mm52nfrt] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782380],"boardId":null}
+  - link to Deals [board_relation_mm52s3j7] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782385,18424782388,18424782390],"boardId":null}
+  - Notes [text_mm51jhk3] type=text
+  - Subitems [subtasks_mm51m9q8] type=subtasks settings={"displayType":"BOARD_INLINE","itemTypeName":"column.subtasks.title","allowMultipleItems":true,"boardIds":[18424782391]}
+  - Type [color_mm567mnc] type=status labels={0:Internal, 1:Customer Service, 2:External}
+  - Sales - Opportunities (native) [board_relation_mm5vd5ww] type=board_relation settings={"boardIds":[18364381920]}
+
+## Subitems of Sales - Opportunities (18364382863) - 0 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Subitems of Contacts (18364382572) - 0 items
+GROUPS: Subitems
+  - Name [name] type=name
+  - Owner [person] type=people
+  - Status [status] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Date [date0] type=date
+
+## Contacts (18364381955) - 4 items
+GROUPS: Active Contacts
+  - Name [name] type=name
+  - Subitems [subtasks_mkvpdgxr] type=subtasks settings={"allowMultipleItems":true,"itemTypeName":"column.subtasks.title","displayType":"BOARD_INLINE","boardIds":[18364382572]}
+  - Accounts [contact_account] type=board_relation settings={"boardIds":[18364381952],"boardId":null,"displayType":"CUSTOM","dataSourceLayoutConfigs":{"18364381952":{"description":{"refId":"status"},"name":{"refId":"name"}}},"staticImage":"accounts"}
+  - Deals [contact_deal] type=board_relation settings={"boardIds":[18364381920],"boardId":null,"displayType":"CUSTOM","dataSourceLayoutConfigs":{"18364381920":{"name":{"refId":"name"},"description":{"refId":"deal_account"}}},"staticImage":"opportunities"}
+  - Deals value [mirror2] type=mirror settings={"relation_column":{"contact_deal":true},"displayed_column":{},"displayed_linked_columns":{"18364381920":["deal_value"]}}
+  - Cell Phone [phone_mm5vgzzw] type=phone
+  - Email [contact_email] type=email
+  - Phone [contact_phone] type=phone
+  - Extension [numeric_mm5vv0f8] type=numbers
+  - Title [title5] type=dropdown labels={1:CEO, 2:COO, 3:CIO}
+  - Type [status] type=status labels={0:Lead, 1:Customer, 2:Vendor, 5:, 6:Qualified Lead, 13:Partner}
+  - Company [text8] type=text
+  - Last updated [pulse_updated_mm5v30tb] type=last_updated
+  - Date Created [date_mm5wt26v] type=date
+
+## Business (18364381952) - 48 items
+GROUPS: Companies
+  - Name [name] type=name
+  - Contacts [account_contact] type=board_relation settings={"allowMultipleBoards":true,"boardIds":[18364381955],"boardId":18364381955,"displayType":"CUSTOM","dataSourceLayoutConfigs":{"18364381955":{"name":{"refId":"name"},"description":{"refId":"contact_account"}}},"staticImage":"contacts"}
+  - Deals [account_deal] type=mirror settings={"relation_column":{"account_contact":true},"displayed_column":{},"displayed_linked_columns":{"18364381955":["contact_deal"]}}
+  - Company profile [company_profile] type=link
+  - Business Email [email_mm5vmyda] type=email
+  - Phone [phone_mm5wxfh2] type=phone
+  - Cell Phone [phone_mm5wykh1] type=phone
+  - Phone Extension [numeric_mm5wyeg3] type=numbers
+  - Delivery Address [location_mm5vx4dg] type=location
+  - Zip Code [text_mm5v4m1] type=text
+  - Billing Address [location_mm5v90kq] type=location
+  - Location Name [text_mm5vzmz7] type=text
+  - Last updated [pulse_updated_mm5w28s0] type=last_updated
+  - Date Created [date_mm5w9be8] type=date
+  - link to Sales - Opportunities Form [board_relation_mm5wyeyr] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782390]}
+  - Orders [board_relation_mm5vhxpk] type=board_relation settings={"boardIds":[18424782388]}
+  - Sales - Opportunities Form [board_relation_mm5w5sdv] type=board_relation settings={"boardIds":[18424782390]}
+  - link to Sales - Opportunities [board_relation_mm5wet50] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18364381920]}
+
+## Sales - Opportunities (18364381920) - 15 items
+GROUPS: New Opportunities | Information Missing | Proposal Sent | Revisions Needed | Won Deals | Lost Deals
+  - Name [name] type=name
+  - Tasks [subitems] type=subtasks settings={"allowMultipleItems":true,"itemTypeName":"column.subtasks.title","displayType":"BOARD_INLINE","boardIds":[18364382863]}
+  - Stage [deal_stage] type=status labels={0:Negotiation, 1:Won, 2:Lost, 3:Proposal, 4:New, 5:, 15:Discovery}
+  - Owner [deal_owner] type=people
+  - Business [board_relation_mm5w17am] type=board_relation settings={"labels":[],"allowMultipleBoards":true,"entityName":"account","entityModelId":"12849169","staticImage":"accounts","displayType":"CUSTOM","itemLayout":{"name":{"refIds":["name"]},"description":{"refIds":["status"]}},"allowMultipleItems":false,"boardIds":[18364381952],"allowCreateReflectionColumn":true}
+  - Contacts [deal_contact] type=board_relation settings={"boardIds":[18364381955],"boardId":18364381955,"displayType":"CUSTOM","dataSourceLayoutConfigs":{"18364381955":{"name":{"refId":"name"},"description":{"refId":"contact_account"}}},"staticImage":"contacts"}
+  - Close Probability [deal_close_probability] type=numbers
+  - Deal Value [deal_value] type=numbers
+  - Last interaction [date__1] type=date
+  - Quotes & Estimates [file_mm5w5pz0] type=file
+  - Order/Est Due Date [date_mm5vx8ns] type=date
+  - Lost Reason [text_mm5vf8wp] type=text
+  - Delivery Address [location_mm5v33ya] type=location
+  - Zip Code [numeric_mm5v1327] type=numbers
+  - Name of Location [text_mm5v4c3e] type=text
+  - Facility Type [text_mm5w2z8c] type=text
+  - Menu [text_mm5wms4m] type=text
+  - Dimensions of Room [text_mm5vt48k] type=text
+  - Wall Measurements [text_mm5vhde6] type=text
+  - Delivery Type [color_mm5v227q] type=status labels={0:Inside, 1:Curbside}
+  - How large are the openings [text_mm5v23a1] type=text
+  - Installation Needed [color_mm5vgm2t] type=status labels={0:Yes, 2:No}
+  - Equipment Selection Stage [color_mm5vwj5s] type=status labels={0:Working on it, 1:Done, 2:Stuck}
+  - Tasks [board_relation_mm5vfwy6] type=board_relation settings={"boardIds":[18424782379]}
+  - Orders [board_relation_mm5v2v0p] type=board_relation settings={"boardIds":[18424782388]}
+  - link to Sales - Opportunities Form [board_relation_mm5wmzpj] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782390]}
+  - Phone [phone_mm5wjw4d] type=phone
+  - Email [email_mm5whfhv] type=email
+  - Business Address [location_mm5wv783] type=location
+  - Phone Extension [numeric_mm5wqbt6] type=numbers
+  - Order Type [color_mm5w3j3f] type=status labels={0:Project, 1:Order}
+  - Needs Pricing [color_mm5wqb2n] type=status labels={1:Yes, 2:No}
+  - link to Sales - Line Items [board_relation_mm5wd874] type=board_relation settings={"allowCreateReflectionColumn":true,"boardIds":[18424782380]}
+
+## Quotes & Invoices (18364381857) - 0 items
+GROUPS: Quotes & Invoices
+  - Name [name] type=name
+  - Type [type] type=status labels={0:Invoice, 1:Quote}
+  - Amount [amount] type=numbers
+  - Recipient [bill_to] type=board_relation settings={"allowCreateReflectionColumn":false,"boardIds":[],"boardId":null}
+  - File [file] type=file
+  - Status [status] type=status labels={0:Working on it, 1:Paid, 2:Cancelled, 3:Sent to client, 4:Approved}
+  - Issue date [issue_date] type=date
+  - Owner [creation_log__1] type=creation_log
+

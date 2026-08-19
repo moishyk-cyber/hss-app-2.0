@@ -1,0 +1,265 @@
+// HSS Kitchens — Prisma schema (MVP)
+// Source of truth: docs/DATA_MODEL.md. SQLite for MVP (enums as String), Postgres at deploy.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  role          String        @default("sales") // admin | sales | purchasing | billing | design | viewer
+  active        Boolean       @default(true)
+  opportunities Opportunity[] @relation("Salesperson")
+  orders        Order[]       @relation("OrderOwner")
+  lineItems     LineItem[]    @relation("ItemAssignee")
+  tasks         Task[]        @relation("TaskAssignee")
+  createdAt     DateTime      @default(now())
+}
+
+model Company {
+  id             String        @id @default(cuid())
+  name           String
+  type           String        @default("customer") // lead | customer | lost_lead | vendor | supplier | installer | delivery_partner
+  vertical       String? // restaurant | supermarket | healthcare | venue_catering | school | shul | hotel | other
+  priorityClient Boolean       @default(false)
+  phone          String?
+  phoneExt       String?
+  cellPhone      String?
+  email          String?
+  deliveryAddress String?
+  billingAddress String?
+  locationName   String?
+  zip            String?
+  website        String?
+  notes          String?
+  mondayId       String?       @unique
+  contacts       Contact[]
+  opportunities  Opportunity[]
+  orders         Order[]
+  suppliedItems  LineItem[]    @relation("ItemSupplier")
+  purchaseOrders PurchaseOrder[] @relation("PoSupplier")
+  supplierProfile SupplierProfile?
+  createdAt      DateTime      @default(now())
+}
+
+model SupplierProfile {
+  id                  String  @id @default(cuid())
+  company             Company @relation(fields: [companyId], references: [id])
+  companyId           String  @unique
+  accountNumber       String?
+  defaultLeadTimeDays Int?
+  repNotes            String?
+  preferred           Boolean @default(false)
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  company   Company? @relation(fields: [companyId], references: [id])
+  companyId String?
+  firstName String
+  lastName  String?
+  title     String? // manager | purchasing | billing | other
+  email     String?
+  phone     String?
+  phoneExt  String?
+  cellPhone String?
+  status    String   @default("active") // active | onboarding | inactive
+  notes     String?
+  mondayId  String?  @unique
+  opportunities Opportunity[]
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Opportunity {
+  id               String    @id @default(cuid())
+  title            String
+  company          Company?  @relation(fields: [companyId], references: [id])
+  companyId        String?
+  primaryContact   Contact?  @relation(fields: [primaryContactId], references: [id])
+  primaryContactId String?
+  salesperson      User?     @relation("Salesperson", fields: [salespersonId], references: [id])
+  salespersonId    String?
+  stage            String    @default("new") // new | info_missing | estimating | proposal_sent | revisions_needed | negotiation | won | lost
+  orderType        String    @default("order") // project | order
+  needsPricing     Boolean   @default(true)
+  value            Float?
+  neededByDate     DateTime?
+  estDueDate       DateTime?
+  nextFollowUp     DateTime?
+  lostReason       String?
+  // Project intake fields
+  facilityType     String?
+  menu             String?
+  roomDimensions   String?
+  wallMeasurements String?
+  plumbingElectricalNotes String?
+  budget           Float?
+  clientVisionNotes String?
+  deliveryType     String? // curbside | inside
+  openingSize      String?
+  installationNeeded Boolean @default(false)
+  designStatus     String    @default("none") // none | rendering_in_progress | rendering_approved
+  locationName     String?
+  deliveryAddress  String?
+  submittedVia     String    @default("manual") // form | manual
+  notes            String?
+  mondayId         String?   @unique
+  lineItems        LineItem[]
+  orders           Order[]
+  createdAt        DateTime  @default(now())
+}
+
+model LineItem {
+  id             String       @id @default(cuid())
+  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id])
+  opportunityId  String?
+  order          Order?       @relation(fields: [orderId], references: [id])
+  orderId        String?
+  purchaseOrder  PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String?
+  name           String
+  description    String?
+  moreDetails    String?
+  imageUrl       String?
+  qty            Int          @default(1)
+  itemKind       String       @default("sourced") // sourced | custom_fabrication | service
+  brand          String?
+  sku            String?
+  supplier       Company?     @relation("ItemSupplier", fields: [supplierId], references: [id])
+  supplierId     String?
+  unitCost       Float?
+  unitPrice      Float?
+  leadTimeDays   Int?
+  rfqStatus      String       @default("needs_pricing") // needs_pricing | rfq_sent | quote_received | priced_in_autoquotes | approved | removed
+  deliveryStatus String       @default("pending") // pending | ordered | in_transit_to_hss | in_transit_to_client | arrived_complete
+  dateOrdered    DateTime?
+  dateArrivedHss DateTime?
+  dateArrivedClient DateTime?
+  trackingUrl    String?
+  assignee       User?        @relation("ItemAssignee", fields: [assigneeId], references: [id])
+  assigneeId     String?
+  nextFollowUp   DateTime?
+  followedUp     Boolean      @default(false)
+  notes          String?
+  mondayId       String?      @unique
+  createdAt      DateTime     @default(now())
+}
+
+model Order {
+  id             String       @id @default(cuid())
+  title          String
+  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id])
+  opportunityId  String?
+  company        Company?     @relation(fields: [companyId], references: [id])
+  companyId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  contactId      String?
+  owner          User?        @relation("OrderOwner", fields: [ownerId], references: [id])
+  ownerId        String?
+  orderType      String       @default("order") // project | order
+  status         String       @default("new") // new | awaiting_payment | payment_received | pos_in_progress | in_transit | delivery_scheduled | delivered | complete | stuck
+  urgency        String       @default("standard") // standard | same_day | emergency
+  clientPoNumber String?
+  jobId          String?
+  quickbooksInvoiceNo String?
+  orderValue     Float?
+  deliveryAddress String?
+  neededByDate   DateTime?
+  nextFollowUp   DateTime?
+  notes          String?
+  mondayId       String?      @unique
+  lineItems      LineItem[]
+  purchaseOrders PurchaseOrder[]
+  payments       Payment[]
+  createdAt      DateTime     @default(now())
+}
+
+model PurchaseOrder {
+  id               String     @id @default(cuid())
+  order            Order      @relation(fields: [orderId], references: [id])
+  orderId          String
+  supplier         Company?   @relation("PoSupplier", fields: [supplierId], references: [id])
+  supplierId       String?
+  poNumber         String?
+  status           String     @default("draft") // draft | sent | acknowledged | shipped | received
+  shipTo           String     @default("hss") // hss | client_direct
+  sentDate         DateTime?
+  ackDate          DateTime?
+  trackingUrl      String?
+  trackingCarrier  String?
+  expectedDelivery DateTime?
+  notes            String?
+  lineItems        LineItem[]
+  createdAt        DateTime   @default(now())
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  order         Order    @relation(fields: [orderId], references: [id])
+  orderId       String
+  type          String // deposit | final | full
+  amount        Float
+  status        String   @default("pending") // pending | invoiced | paid
+  quickbooksRef String?
+  date          DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  title          String
+  notes          String?
+  assignee       User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId     String?
+  dueDate        DateTime?
+  status         String    @default("not_started") // not_started | in_progress | done | stuck
+  priority       String    @default("medium") // low | medium | high | critical
+  type           String    @default("internal") // internal | customer_service | external
+  estimatedHours Float?
+  linkedType     String? // opportunity | order | company | contact
+  linkedId       String?
+  parentTask     Task?     @relation("Subtasks", fields: [parentTaskId], references: [id])
+  parentTaskId   String?
+  subtasks       Task[]    @relation("Subtasks")
+  mondayId       String?   @unique
+  createdAt      DateTime  @default(now())
+}
+
+model IntakeSubmission {
+  id          String   @id @default(cuid())
+  payload     String // JSON of raw form submission
+  submittedAt DateTime @default(now())
+  processed   Boolean  @default(false)
+  resultType  String? // opportunity | order
+  resultId    String?
+  mondayId    String?  @unique
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  linkedType String // opportunity | order | company | contact | purchase_order | line_item
+  linkedId   String
+  kind       String   @default("other") // quote | invoice | drawing | po | tracking | other
+  fileUrl    String
+  fileName   String?
+  uploadedAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userName   String?
+  linkedType String
+  linkedId   String
+  action     String
+  detail     String?
+  at         DateTime @default(now())
+}
