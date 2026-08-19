@@ -148,7 +148,7 @@ export function Checkbox({
         name={name}
         value="1"
         defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-border accent-blue"
+        className="h-4 w-4 rounded border-border accent-accent"
       />
       {label}
     </label>

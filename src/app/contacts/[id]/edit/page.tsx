@@ -8,10 +8,12 @@ export const dynamic = "force-dynamic";
 
 export default async function EditContactPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { error }] = await Promise.all([params, searchParams]);
   const [contact, companies] = await Promise.all([
     prisma.contact.findUnique({ where: { id } }),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -28,7 +30,8 @@ export default async function EditContactPage({
         contact={contact}
         companies={companies}
         submitLabel="Save changes"
-        cancelHref="/contacts"
+        cancelHref="/phonebook"
+        error={error}
       />
     </div>
   );

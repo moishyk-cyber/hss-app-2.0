@@ -93,7 +93,7 @@ export default async function CompaniesPage({
                   <td>
                     <Link
                       href={`/companies/${c.id}`}
-                      className="font-medium text-ink hover:text-blue"
+                      className="font-medium text-ink hover:text-accent"
                     >
                       {c.name}
                     </Link>

@@ -34,18 +34,30 @@ function readContactFields(formData: FormData) {
 
 export async function createContact(formData: FormData) {
   const data = readContactFields(formData);
+
+  // Every contact belongs to a business — bounce back to the form if none was picked.
+  if (!data.companyId) {
+    redirect("/contacts/new?error=company_required");
+  }
+
   const contact = await prisma.contact.create({ data });
   const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
   await logActivity(contact.id, "contact_created", `Contact "${fullName}" created`);
   revalidatePath("/contacts");
+  revalidatePath("/phonebook");
   const back = str(formData, "returnTo");
-  redirect(back ?? "/contacts");
+  redirect(back ?? "/phonebook");
 }
 
 export async function updateContact(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing contact id");
   const data = readContactFields(formData);
+
+  if (!data.companyId) {
+    redirect(`/contacts/${id}/edit?error=company_required`);
+  }
+
   const contact = await prisma.contact.update({ where: { id }, data });
   await logActivity(
     contact.id,
@@ -53,5 +65,6 @@ export async function updateContact(formData: FormData) {
     `Contact "${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}" updated`
   );
   revalidatePath("/contacts");
-  redirect("/contacts");
+  revalidatePath("/phonebook");
+  redirect("/phonebook");
 }

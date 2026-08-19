@@ -77,7 +77,7 @@ export default async function OpportunityDetailPage({
                 opportunity.company ? (
                   <Link
                     href={`/companies/${opportunity.company.id}`}
-                    className="text-blue hover:underline"
+                    className="text-accent hover:underline"
                   >
                     {opportunity.company.name}
                   </Link>
@@ -192,7 +192,7 @@ export default async function OpportunityDetailPage({
                   <li key={o.id} className="flex items-center justify-between py-2.5 text-[13px]">
                     <Link
                       href={`/orders/${o.id}`}
-                      className="font-medium text-ink hover:text-blue"
+                      className="font-medium text-ink hover:text-accent"
                     >
                       {o.title}
                     </Link>

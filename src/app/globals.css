@@ -7,6 +7,9 @@
 
 :root {
   --ink: #1c2120;
+  --accent: #fd0001; /* HSS brand red (hsskitchens.com) — interactive elements */
+  --accent-hover: #d90001;
+  --accent-soft: rgba(253, 0, 1, 0.07);
   --blue: #3b9eff;
   --blue-soft: rgba(59, 158, 255, 0.13);
   --bg: #f7f7f5;
@@ -28,6 +31,8 @@
 
 @theme inline {
   --color-ink: var(--ink);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-blue: var(--blue);
   --color-blue-soft: var(--blue-soft);
   --color-bg: var(--bg);
@@ -113,13 +118,13 @@ h3,
   color: var(--ink);
 }
 .btn-primary {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 .btn-primary:hover {
-  background: #2b90f5;
-  border-color: #2b90f5;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
   color: #fff;
 }
 .btn-danger {
@@ -153,8 +158,8 @@ h3,
   color: var(--ink);
 }
 .chip-active {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--ink);
+  border-color: var(--ink);
   color: #fff;
 }
 
@@ -214,8 +219,8 @@ h3,
   transition: border-color 120ms, box-shadow 120ms;
 }
 .input-klyne:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--blue-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .input-klyne::placeholder {
   color: var(--gray);

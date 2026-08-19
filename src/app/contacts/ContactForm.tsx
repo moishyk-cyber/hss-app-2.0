@@ -22,6 +22,7 @@ export function ContactForm({
   submitLabel,
   cancelHref,
   returnTo,
+  error,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   contact?: ContactFormValues;
@@ -29,6 +30,7 @@ export function ContactForm({
   submitLabel: string;
   cancelHref: string;
   returnTo?: string;
+  error?: string;
 }) {
   const companyOptions = companies.map((c) => ({ value: c.id, label: c.name }));
 
@@ -37,15 +39,23 @@ export function ContactForm({
       {contact?.id ? <input type="hidden" name="id" value={contact.id} /> : null}
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
 
+      {error === "company_required" ? (
+        <div className="banner-warn mb-5">
+          Every contact belongs to a business — pick one before saving. If the business isn&rsquo;t
+          on the list yet, add it first.
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="First name" name="firstName" defaultValue={contact?.firstName} required />
         <Field label="Last name" name="lastName" defaultValue={contact?.lastName} />
         <Select
-          label="Company"
+          label="Business"
           name="companyId"
           options={companyOptions}
           defaultValue={contact?.companyId}
-          includeBlank="— no company —"
+          includeBlank="— select a business —"
+          required
         />
         <Select
           label="Title"

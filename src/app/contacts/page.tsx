@@ -79,7 +79,7 @@ export default async function ContactsPage({
                   <td>
                     <Link
                       href={`/contacts/${c.id}/edit`}
-                      className="font-medium text-ink hover:text-blue"
+                      className="font-medium text-ink hover:text-accent"
                     >
                       {[c.firstName, c.lastName].filter(Boolean).join(" ")}
                     </Link>
@@ -88,7 +88,7 @@ export default async function ContactsPage({
                     {c.company ? (
                       <Link
                         href={`/companies/${c.company.id}`}
-                        className="text-blue hover:underline"
+                        className="text-accent hover:underline"
                       >
                         {c.company.name}
                       </Link>

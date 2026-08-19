@@ -9,8 +9,7 @@ const NAV = [
   { href: "/pipeline", label: "Sales Pipeline" },
   { href: "/rfq", label: "RFQ Queue" },
   { href: "/orders", label: "Orders" },
-  { href: "/companies", label: "Companies" },
-  { href: "/contacts", label: "Contacts" },
+  { href: "/phonebook", label: "Phone Book" },
   { href: "/tasks", label: "Tasks" },
 ];
 
@@ -19,7 +18,13 @@ export default function Nav() {
   return (
     <nav className="flex-1 px-2 py-3 space-y-0.5">
       {NAV.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(item.href + "/");
+        const aliases: Record<string, string[]> = {
+          "/phonebook": ["/companies", "/contacts"],
+        };
+        const active =
+          pathname === item.href ||
+          pathname.startsWith(item.href + "/") ||
+          (aliases[item.href] ?? []).some((a) => pathname.startsWith(a));
         return (
           <Link
             key={item.href}
@@ -27,7 +32,7 @@ export default function Nav() {
             className={
               "block rounded-lg px-3 py-2 text-[13px] font-medium transition-colors " +
               (active
-                ? "bg-blue text-white"
+                ? "bg-accent text-white"
                 : "text-gray-dark hover:bg-hover hover:text-ink")
             }
           >

@@ -37,7 +37,7 @@ function Section({
   return (
     <section className="card">
       <header className="flex items-start gap-3 border-b border-border px-6 py-5">
-        <span className="font-heading mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-soft text-[15px] font-bold text-blue">
+        <span className="font-heading mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[15px] font-bold text-accent">
           {step}
         </span>
         <div>
@@ -69,7 +69,7 @@ function Radio({
     <label
       className={`flex flex-1 cursor-pointer items-start gap-2.5 rounded-[10px] border px-4 py-3 text-[13px] transition-colors ${
         checked
-          ? "border-blue bg-blue-soft"
+          ? "border-accent bg-accent-soft"
           : "border-border bg-surface hover:bg-hover"
       }`}
     >
@@ -79,7 +79,7 @@ function Radio({
         value={value}
         checked={checked}
         onChange={() => onChange(value)}
-        className="mt-0.5 h-4 w-4 accent-blue"
+        className="mt-0.5 h-4 w-4 accent-accent"
       />
       <span>
         <span className="font-medium text-ink">{label}</span>

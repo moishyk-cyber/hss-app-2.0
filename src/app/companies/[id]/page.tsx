@@ -92,7 +92,7 @@ export default async function CompanyDetailPage({
                     <div>
                       <Link
                         href={`/contacts/${c.id}/edit`}
-                        className="font-medium text-ink hover:text-blue"
+                        className="font-medium text-ink hover:text-accent"
                       >
                         {c.firstName} {c.lastName ?? ""}
                       </Link>
@@ -118,7 +118,7 @@ export default async function CompanyDetailPage({
                   >
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-blue"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-accent"
                     >
                       {o.title}
                     </Link>
@@ -144,7 +144,7 @@ export default async function CompanyDetailPage({
                   >
                     <Link
                       href={`/orders/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-blue"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-accent"
                     >
                       {o.title}
                     </Link>

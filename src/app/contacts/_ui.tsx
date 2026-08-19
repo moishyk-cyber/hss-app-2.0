@@ -55,6 +55,7 @@ export function Select({
   options,
   defaultValue,
   includeBlank,
+  required,
   className,
 }: {
   label: string;
@@ -62,12 +63,18 @@ export function Select({
   options: ReadonlyArray<{ value: string; label: string }>;
   defaultValue?: string | null;
   includeBlank?: string;
+  required?: boolean;
   className?: string;
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
       <span className="field-label">{label}</span>
-      <select name={name} defaultValue={defaultValue ?? ""} className="input-klyne w-full">
+      <select
+        name={name}
+        required={required}
+        defaultValue={defaultValue ?? ""}
+        className="input-klyne w-full"
+      >
         {includeBlank !== undefined ? <option value="">{includeBlank}</option> : null}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
