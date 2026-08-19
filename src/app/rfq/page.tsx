@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { labelFor } from "@/lib/constants";
-import { RFQ_QUEUE_STATUSES } from "./actions";
+import { RFQ_QUEUE_STATUSES } from "./queue-statuses";
 import RfqRow from "./RfqRow";
 
 export const dynamic = "force-dynamic";

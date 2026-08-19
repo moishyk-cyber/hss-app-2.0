@@ -49,7 +49,3 @@ export async function markLineItemRemoved(lineItemId: string) {
   await log(lineItemId, "rfq_item_removed", "Line item marked removed from RFQ");
   revalidatePath("/rfq");
 }
-
-export const RFQ_QUEUE_STATUSES = RFQ_STATUSES.filter((s) =>
-  ["needs_pricing", "rfq_sent", "quote_received", "priced_in_autoquotes"].includes(s.value)
-);
