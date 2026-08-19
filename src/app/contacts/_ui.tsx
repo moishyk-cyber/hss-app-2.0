@@ -10,10 +10,10 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {subtitle ? <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p> : null}
+        <h1 className="page-title">{title}</h1>
+        {subtitle ? <p className="page-sub">{subtitle}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -37,13 +37,13 @@ export function Field({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="field-label">{label}</span>
       <input
         type={type}
         name={name}
         required={required}
         defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+        className="input-klyne w-full"
       />
     </label>
   );
@@ -66,12 +66,8 @@ export function Select({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
-      <select
-        name={name}
-        defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
-      >
+      <span className="field-label">{label}</span>
+      <select name={name} defaultValue={defaultValue ?? ""} className="input-klyne w-full">
         {includeBlank !== undefined ? <option value="">{includeBlank}</option> : null}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -98,12 +94,12 @@ export function TextArea({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="field-label">{label}</span>
       <textarea
         name={name}
         rows={rows}
         defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+        className="input-klyne w-full"
       />
     </label>
   );
@@ -121,3 +117,10 @@ export const CONTACT_STATUSES = [
   { value: "onboarding", label: "Onboarding" },
   { value: "inactive", label: "Inactive" },
 ] as const;
+
+// Contact status has no colour map in constants — map onto the shared badge palette.
+export const CONTACT_STATUS_BADGES: Record<string, string> = {
+  active: "badge-green",
+  onboarding: "badge-blue",
+  inactive: "badge-gray",
+};

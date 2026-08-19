@@ -20,9 +20,8 @@ type IntakeCompany = {
 
 type ItemRow = { key: number; name: string; details: string; qty: string };
 
-const inputClass =
-  "w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500";
-const labelClass = "mb-1 block text-xs font-medium text-gray-600";
+const inputClass = "input-klyne w-full";
+const labelClass = "field-label";
 
 function Section({
   step,
@@ -36,17 +35,17 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <header className="border-b border-gray-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-900">
-          <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white">
-            {step}
-          </span>
-          {title}
-        </h2>
-        {hint ? <p className="mt-1 pl-7 text-xs text-gray-500">{hint}</p> : null}
+    <section className="card">
+      <header className="flex items-start gap-3 border-b border-border px-6 py-5">
+        <span className="font-heading mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-soft text-[15px] font-bold text-blue">
+          {step}
+        </span>
+        <div>
+          <h2 className="font-heading text-[16px] font-semibold text-ink">{title}</h2>
+          {hint ? <p className="mt-1 text-[13px] text-gray-dark">{hint}</p> : null}
+        </div>
       </header>
-      <div className="p-4">{children}</div>
+      <div className="px-6 py-6">{children}</div>
     </section>
   );
 }
@@ -68,8 +67,10 @@ function Radio({
 }) {
   return (
     <label
-      className={`flex flex-1 cursor-pointer items-start gap-2 rounded border px-3 py-2 text-sm ${
-        checked ? "border-gray-900 bg-gray-50" : "border-gray-300 bg-white hover:bg-gray-50"
+      className={`flex flex-1 cursor-pointer items-start gap-2.5 rounded-[10px] border px-4 py-3 text-[13px] transition-colors ${
+        checked
+          ? "border-blue bg-blue-soft"
+          : "border-border bg-surface hover:bg-hover"
       }`}
     >
       <input
@@ -78,11 +79,13 @@ function Radio({
         value={value}
         checked={checked}
         onChange={() => onChange(value)}
-        className="mt-0.5 h-4 w-4"
+        className="mt-0.5 h-4 w-4 accent-blue"
       />
       <span>
-        <span className="font-medium text-gray-900">{label}</span>
-        {description ? <span className="block text-xs text-gray-500">{description}</span> : null}
+        <span className="font-medium text-ink">{label}</span>
+        {description ? (
+          <span className="mt-0.5 block text-xs text-gray-dark">{description}</span>
+        ) : null}
       </span>
     </label>
   );
@@ -132,14 +135,14 @@ export function IntakeForm({
   }
 
   return (
-    <form action={submitIntake} className="max-w-4xl space-y-4">
+    <form action={submitIntake} className="max-w-4xl space-y-5">
       {/* hidden mirrors of the branching state so the server action sees plain fields */}
       <input type="hidden" name="clientMode" value={clientMode} />
       <input type="hidden" name="contactMode" value={contactMode} />
       <input type="hidden" name="orderType" value={orderType} />
 
-      <Section step={1} title="Client">
-        <div className="flex flex-col gap-2 sm:flex-row">
+      <Section step={1} title="Client" hint="Who is this order for?">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Radio
             name="clientModeRadio"
             value="existing"
@@ -159,8 +162,8 @@ export function IntakeForm({
         </div>
 
         {clientMode === "existing" ? (
-          <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-6 space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className={labelClass}>Search companies</span>
                 <input
@@ -194,15 +197,16 @@ export function IntakeForm({
             </div>
 
             {selectedCompany ? (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray">
                 {selectedCompany.locationName ? `${selectedCompany.locationName} · ` : ""}
                 {selectedCompany.deliveryAddress ?? "No delivery address on file"}
               </p>
             ) : null}
 
             {selectedCompany ? (
-              <div className="rounded border border-gray-200 bg-gray-50 p-3">
-                <div className="mb-2 flex flex-col gap-2 sm:flex-row">
+              <div className="rounded-[10px] border border-border bg-panel p-4">
+                <p className="section-label mb-3">Contact</p>
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row">
                   <Radio
                     name="contactModeRadio"
                     value="existing"
@@ -234,10 +238,10 @@ export function IntakeForm({
                       </select>
                     </label>
                   ) : (
-                    <p className="text-sm text-gray-500">
+                    <div className="banner-info">
                       No contacts on file for {selectedCompany.name} — switch to &ldquo;Add a new
                       contact&rdquo;.
-                    </p>
+                    </div>
                   )
                 ) : (
                   <NewContactFields />
@@ -246,8 +250,8 @@ export function IntakeForm({
             ) : null}
           </div>
         ) : (
-          <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-6 space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className={labelClass}>Business name</span>
                 <input name="newCompanyName" required className={inputClass} />
@@ -281,8 +285,8 @@ export function IntakeForm({
                 <input name="newCompanyLocationName" className={inputClass} />
               </label>
             </div>
-            <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <p className="mb-2 text-xs font-medium text-gray-600">Primary contact</p>
+            <div className="rounded-[10px] border border-border bg-panel p-4">
+              <p className="section-label mb-3">Primary contact</p>
               <NewContactFields />
             </div>
           </div>
@@ -294,7 +298,7 @@ export function IntakeForm({
         title="Order type"
         hint="Projects need bids and measurements. Orders are straight equipment requests."
       >
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Radio
             name="orderTypeRadio"
             value="project"
@@ -314,7 +318,7 @@ export function IntakeForm({
         </div>
 
         {orderType === "project" ? (
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="block">
               <span className={labelClass}>Facility type</span>
               <input name="facilityType" className={inputClass} />
@@ -355,16 +359,16 @@ export function IntakeForm({
             )}
 
             {deliveryType === "inside" ? (
-              <p className="sm:col-span-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="banner-warn sm:col-span-2">
                 Inside delivery: confirm the openings fit before ordering. Equipment that will not
                 fit through the door comes back with a supplier restocking fee — tell the client up
                 front.
-              </p>
+              </div>
             ) : null}
 
             <div className="sm:col-span-2">
               <span className={labelClass}>Installation needed?</span>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 <Radio
                   name="installationNeeded"
                   value="yes"
@@ -383,9 +387,9 @@ export function IntakeForm({
             </div>
           </div>
         ) : (
-          <div className="mt-4">
+          <div className="mt-6">
             <span className={labelClass}>Needs pricing?</span>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row">
               <Radio
                 name="needsPricing"
                 value="yes"
@@ -407,8 +411,8 @@ export function IntakeForm({
         )}
       </Section>
 
-      <Section step={3} title="Timing & ownership">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <Section step={3} title="Timing & ownership" hint="When it's needed and who owns it.">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="block">
             <span className={labelClass}>When do you need the order?</span>
             <input type="date" name="neededByDate" className={inputClass} />
@@ -431,10 +435,10 @@ export function IntakeForm({
         </div>
       </Section>
 
-      <Section step={4} title="Items needed">
-        <div className="space-y-2">
+      <Section step={4} title="Items needed" hint="Everything the client is asking for.">
+        <div className="space-y-3">
           {items.map((row, index) => (
-            <div key={row.key} className="flex items-end gap-2">
+            <div key={row.key} className="flex items-end gap-3">
               <label className="block flex-1">
                 {index === 0 ? <span className={labelClass}>Item</span> : null}
                 <input
@@ -470,35 +474,28 @@ export function IntakeForm({
                 type="button"
                 onClick={() => removeItem(row.key)}
                 disabled={items.length === 1}
-                className="rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+                className="btn btn-danger disabled:opacity-40"
               >
                 Remove
               </button>
             </div>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={addItem}
-          className="mt-3 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
+        <button type="button" onClick={addItem} className="btn mt-4">
           + Add item
         </button>
 
-        <label className="mt-4 block">
+        <label className="mt-6 block">
           <span className={labelClass}>Notes for the team</span>
           <textarea name="notes" rows={3} className={inputClass} />
         </label>
       </Section>
 
-      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
-        <button
-          type="submit"
-          className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
-        >
+      <div className="card flex flex-wrap items-center gap-4 px-6 py-5">
+        <button type="submit" className="btn btn-primary">
           Submit intake
         </button>
-        <p className="text-xs text-gray-500">
+        <p className="text-[13px] text-gray-dark">
           {goesToPipeline
             ? "Creates an opportunity in the sales pipeline with items marked Needs Pricing."
             : "Creates an order directly with items marked Approved."}
@@ -510,7 +507,7 @@ export function IntakeForm({
 
 function NewContactFields() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <label className="block">
         <span className={labelClass}>Contact first name</span>
         <input name="newContactFirstName" className={inputClass} />

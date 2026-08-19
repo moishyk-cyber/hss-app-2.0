@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { labelFor } from "@/lib/constants";
+import { labelFor, RFQ_STATUS_COLORS } from "@/lib/constants";
 import { RFQ_QUEUE_STATUSES } from "./queue-statuses";
 import RfqRow from "./RfqRow";
 
@@ -39,49 +39,39 @@ export default async function RfqPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">RFQ Queue</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Estimating queue — items awaiting pricing before they can move to a proposal.
-        </p>
+        <h1 className="page-title">RFQ Queue</h1>
+        <p className="page-sub">Estimating queue — items awaiting pricing before they can move to a proposal.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {RFQ_QUEUE_STATUSES.map((s) => (
-          <div
-            key={s.value}
-            className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700"
-          >
-            {s.label}: <span className="font-bold text-gray-900">{counts[s.value] ?? 0}</span>
+          <div key={s.value} className="chip cursor-default">
+            {s.label}: <span className="font-semibold text-ink">{counts[s.value] ?? 0}</span>
           </div>
         ))}
       </div>
 
       {grouped.map((group) => (
         <section key={group.status}>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            {group.label}{" "}
-            <span className="ml-1 rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
-              {group.items.length}
-            </span>
+          <h2 className="section-label mb-2 flex items-center gap-2">
+            {group.label}
+            <span className={`badge ${RFQ_STATUS_COLORS[group.status] ?? "badge-gray"}`}>{group.items.length}</span>
           </h2>
           {group.items.length === 0 ? (
-            <div className="rounded border border-dashed border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400">
-              No items in this stage.
-            </div>
+            <div className="empty-state">No items in this stage.</div>
           ) : (
-            <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-              <table className="w-full min-w-[900px] text-left text-sm">
+            <div className="card overflow-hidden overflow-x-auto">
+              <table className="table-klyne min-w-[900px]">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                    <th className="py-2 pl-3 pr-3 font-medium">Item</th>
-                    {/* first column padded to align with row cells */}
-                    <th className="py-2 pr-3 font-medium">Qty</th>
-                    <th className="py-2 pr-3 font-medium">Parent</th>
-                    <th className="py-2 pr-3 font-medium">Supplier</th>
-                    <th className="py-2 pr-3 font-medium">Cost / Price</th>
-                    <th className="py-2 pr-3 font-medium">Lead (days)</th>
-                    <th className="py-2 pr-3 font-medium">Assignee</th>
-                    <th className="py-2 pr-3 font-medium">Actions</th>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Parent</th>
+                    <th>Supplier</th>
+                    <th>Cost / Price</th>
+                    <th>Lead (days)</th>
+                    <th>Assignee</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

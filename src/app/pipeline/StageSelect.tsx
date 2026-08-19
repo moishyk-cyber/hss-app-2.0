@@ -24,7 +24,7 @@ export function StageSelect({
           await changeOpportunityStage(opportunityId, next);
         });
       }}
-      className="w-full rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 outline-none focus:border-gray-400 disabled:opacity-50"
+      className="input-klyne w-full bg-panel px-2 py-1 text-xs disabled:opacity-50"
     >
       {OPPORTUNITY_STAGES.map((s) => (
         <option key={s.value} value={s.value}>

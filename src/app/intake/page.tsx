@@ -28,9 +28,9 @@ export default async function IntakePage() {
 
   return (
     <div>
-      <div className="mb-5">
-        <h1 className="text-xl font-semibold tracking-tight">New Order Intake</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
+      <div className="mb-6 max-w-4xl">
+        <h1 className="page-title">New Order Intake</h1>
+        <p className="page-sub">
           Sales Process 2.0 — one form for every incoming request. Projects and anything that
           still needs pricing land in the pipeline; priced re-orders become orders straight away.
         </p>

@@ -1,23 +1,20 @@
 // Local presentational helpers for the /companies module.
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
-const TYPE_COLORS: Record<string, string> = {
-  lead: "bg-blue-100 text-blue-800",
-  customer: "bg-green-100 text-green-800",
-  lost_lead: "bg-gray-200 text-gray-600",
-  vendor: "bg-purple-100 text-purple-800",
-  supplier: "bg-amber-100 text-amber-800",
-  installer: "bg-cyan-100 text-cyan-800",
-  delivery_partner: "bg-indigo-100 text-indigo-800",
+// Company type has no colour map in constants — map onto the shared badge palette.
+const TYPE_BADGES: Record<string, string> = {
+  lead: "badge-blue",
+  customer: "badge-green",
+  lost_lead: "badge-gray",
+  vendor: "badge-yellow",
+  supplier: "badge-orange",
+  installer: "badge-blue",
+  delivery_partner: "badge-yellow",
 };
 
 export function TypeBadge({ type }: { type: string }) {
   return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-        TYPE_COLORS[type] ?? "bg-gray-100 text-gray-700"
-      }`}
-    >
+    <span className={`badge ${TYPE_BADGES[type] ?? "badge-gray"}`}>
       {labelFor(COMPANY_TYPES, type)}
     </span>
   );
@@ -37,10 +34,10 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {subtitle ? <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p> : null}
+        <h1 className="page-title">{title}</h1>
+        {subtitle ? <p className="page-sub">{subtitle}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
@@ -66,14 +63,14 @@ export function Field({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="field-label">{label}</span>
       <input
         type={type}
         name={name}
         required={required}
         placeholder={placeholder}
         defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+        className="input-klyne w-full"
       />
     </label>
   );
@@ -94,12 +91,12 @@ export function TextArea({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+      <span className="field-label">{label}</span>
       <textarea
         name={name}
         rows={rows}
         defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+        className="input-klyne w-full"
       />
     </label>
   );
@@ -122,12 +119,8 @@ export function Select({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
-      <select
-        name={name}
-        defaultValue={defaultValue ?? ""}
-        className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
-      >
+      <span className="field-label">{label}</span>
+      <select name={name} defaultValue={defaultValue ?? ""} className="input-klyne w-full">
         {includeBlank !== undefined ? <option value="">{includeBlank}</option> : null}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -149,13 +142,13 @@ export function Checkbox({
   defaultChecked?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2 pt-5 text-sm text-gray-700">
+    <label className="flex items-center gap-2 pt-6 text-[13px] text-ink">
       <input
         type="checkbox"
         name={name}
         value="1"
         defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-gray-300"
+        className="h-4 w-4 rounded border-border accent-blue"
       />
       {label}
     </label>
@@ -174,9 +167,9 @@ export function fmtMoney(amount: number | null | undefined): string {
 
 export function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex gap-3 py-1.5 text-sm">
-      <div className="w-40 shrink-0 text-gray-500">{label}</div>
-      <div className="min-w-0 break-words text-gray-900">{value || "—"}</div>
+    <div className="flex gap-3 border-b border-border py-2 text-[13px] last:border-b-0">
+      <div className="w-40 shrink-0 text-gray-dark">{label}</div>
+      <div className="min-w-0 break-words text-ink">{value || "—"}</div>
     </div>
   );
 }
@@ -191,9 +184,9 @@ export function Card({
   action?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2.5">
-        <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+    <section className="card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h2 className="section-label">{title}</h2>
         {action}
       </div>
       <div className="p-4">{children}</div>

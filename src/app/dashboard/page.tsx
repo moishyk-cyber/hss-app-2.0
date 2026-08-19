@@ -90,8 +90,8 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">What needs attention across sales, RFQ, and fulfillment.</p>
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-sub">What needs attention across sales, RFQ, and fulfillment.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -102,30 +102,31 @@ export default async function DashboardPage() {
       </div>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-600">Urgent — Same Day / Emergency</h2>
+        <h2 className="section-label mb-2 text-red" style={{ color: "var(--red)" }}>
+          Urgent — Same Day / Emergency
+        </h2>
         {urgentOrders.length === 0 ? (
-          <div className="rounded border border-dashed border-gray-200 bg-white px-4 py-4 text-center text-sm text-gray-400">
-            No urgent orders outstanding.
-          </div>
+          <div className="empty-state">No urgent orders outstanding.</div>
         ) : (
           <div className="space-y-2">
             {urgentOrders.map((o) => (
               <Link
                 key={o.id}
                 href={`/orders/${o.id}`}
-                className={`flex items-center justify-between rounded border-l-4 bg-white px-4 py-2.5 text-sm shadow-sm hover:bg-gray-50 ${
-                  o.urgency === "emergency" ? "border-l-red-500" : "border-l-amber-500"
+                className={`card flex items-center justify-between border-l-4 px-4 py-3 text-sm hover:bg-hover ${
+                  o.urgency === "emergency" ? "border-l-red" : "border-l-orange"
                 }`}
+                style={{ borderLeftColor: o.urgency === "emergency" ? "var(--red)" : "var(--orange)" }}
               >
                 <div>
-                  <span className="font-medium text-gray-900">{o.title}</span>{" "}
-                  <span className="text-gray-500">— {o.company?.name ?? "—"}</span>
+                  <span className="font-medium text-ink">{o.title}</span>{" "}
+                  <span className="text-gray-dark">— {o.company?.name ?? "—"}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${URGENCY_COLORS[o.urgency] ?? ""}`}>
+                  <span className={`badge ${URGENCY_COLORS[o.urgency] ?? "badge-gray"}`}>
                     {o.urgency.replace("_", " ")}
                   </span>
-                  <span className="text-xs text-gray-500">Needed: {fmtDate(o.neededByDate)}</span>
+                  <span className="text-xs text-gray-dark">Needed: {fmtDate(o.neededByDate)}</span>
                 </div>
               </Link>
             ))}
@@ -135,19 +136,17 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Follow-ups Due (next 7 days)</h2>
+          <h2 className="section-label mb-2">Follow-ups Due (next 7 days)</h2>
           {followUps.length === 0 ? (
-            <div className="rounded border border-dashed border-gray-200 bg-white px-4 py-4 text-center text-sm text-gray-400">
-              Nothing due this week.
-            </div>
+            <div className="empty-state">Nothing due this week.</div>
           ) : (
-            <ul className="space-y-1.5 rounded border border-gray-200 bg-white p-3">
+            <ul className="card space-y-1.5 p-3">
               {followUps.map((f, i) => (
                 <li key={i} className="flex items-center justify-between text-sm">
-                  <Link href={f.href} className="text-blue-600 hover:underline">
+                  <Link href={f.href} className="text-blue hover:underline">
                     {f.label}
                   </Link>
-                  <span className="text-xs text-gray-500">{fmtDate(f.date)}</span>
+                  <span className="text-xs text-gray-dark">{fmtDate(f.date)}</span>
                 </li>
               ))}
             </ul>
@@ -155,43 +154,41 @@ export default async function DashboardPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Needs Attention</h2>
-          <ul className="space-y-1.5 rounded border border-gray-200 bg-white p-3 text-sm">
+          <h2 className="section-label mb-2">Needs Attention</h2>
+          <ul className="card space-y-1.5 p-3 text-sm">
             {awaitingPaymentOrders.map((o) => (
               <li key={`o-${o.id}`}>
-                <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">
+                <Link href={`/orders/${o.id}`} className="text-blue hover:underline">
                   Order awaiting payment: {o.title}
                 </Link>
               </li>
             ))}
             {staleNeedsPricingItems.map((i) => (
               <li key={`i-${i.id}`}>
-                <Link href="/rfq" className="text-blue-600 hover:underline">
+                <Link href="/rfq" className="text-blue hover:underline">
                   Needs pricing (3+ days): {i.name}
                 </Link>
               </li>
             ))}
             {awaitingPaymentOrders.length === 0 && staleNeedsPricingItems.length === 0 && (
-              <li className="text-gray-400">Nothing needs attention right now.</li>
+              <li className="text-gray">Nothing needs attention right now.</li>
             )}
           </ul>
         </section>
       </div>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Recent Activity</h2>
+        <h2 className="section-label mb-2">Recent Activity</h2>
         {recentActivity.length === 0 ? (
-          <div className="rounded border border-dashed border-gray-200 bg-white px-4 py-4 text-center text-sm text-gray-400">
-            No activity yet.
-          </div>
+          <div className="empty-state">No activity yet.</div>
         ) : (
-          <ul className="space-y-1 rounded border border-gray-200 bg-white p-3 text-sm">
+          <ul className="card space-y-1 p-3 text-sm">
             {recentActivity.map((a) => (
               <li key={a.id} className="flex items-center justify-between">
-                <span className="text-gray-700">
-                  <span className="text-gray-400">[{a.action}]</span> {a.detail}
+                <span className="text-gray-dark">
+                  <span className="text-gray">[{a.action}]</span> {a.detail}
                 </span>
-                <span className="text-xs text-gray-400">{new Date(a.at).toLocaleString()}</span>
+                <span className="text-xs text-gray">{new Date(a.at).toLocaleString()}</span>
               </li>
             ))}
           </ul>
@@ -203,10 +200,12 @@ export default async function DashboardPage() {
 
 function StatCard({ label, value, sub, alert }: { label: string; value: string; sub?: string; alert?: boolean }) {
   return (
-    <div className={`rounded border bg-white p-4 ${alert ? "border-red-200" : "border-gray-200"}`}>
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${alert ? "text-red-600" : "text-gray-900"}`}>{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-gray-400">{sub}</div>}
+    <div className={`stat-card ${alert ? "border-red" : ""}`} style={alert ? { borderColor: "var(--red)" } : undefined}>
+      <div className="section-label">{label}</div>
+      <div className={`stat-value mt-1 ${alert ? "text-red" : ""}`} style={alert ? { color: "var(--red)" } : undefined}>
+        {value}
+      </div>
+      {sub && <div className="mt-0.5 text-xs text-gray">{sub}</div>}
     </div>
   );
 }

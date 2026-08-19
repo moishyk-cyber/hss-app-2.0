@@ -1,26 +1,273 @@
 @import "tailwindcss";
 
+/* ============================================================
+   HSS Kitchens — Klyne & Co design system (matches Klyne Tasks)
+   Palette + type from klyne-tasks Frontend.html
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #1c2120;
+  --blue: #3b9eff;
+  --blue-soft: rgba(59, 158, 255, 0.13);
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --panel: #f1f1ee;
+  --gray: #9ca3a8;
+  --gray-dark: #6b7280;
+  --border: #e2e4e8;
+  --hover: #ededea;
+  --red: #e5484d;
+  --red-soft: rgba(229, 72, 77, 0.12);
+  --orange: #f5a623;
+  --orange-soft: rgba(245, 166, 35, 0.14);
+  --yellow: #c9a300;
+  --yellow-soft: rgba(201, 163, 0, 0.13);
+  --green: #2ecc71;
+  --green-soft: rgba(46, 204, 113, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ink: var(--ink);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-gray: var(--gray);
+  --color-gray-dark: var(--gray-dark);
+  --color-border: var(--border);
+  --color-hover: var(--hover);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-orange: var(--orange);
+  --color-orange-soft: var(--orange-soft);
+  --color-yellow: var(--yellow);
+  --color-yellow-soft: var(--yellow-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --font-sans: var(--font-poppins);
+  --font-heading: var(--font-sora);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-poppins), sans-serif;
+  font-size: 14px;
+}
+
+h1,
+h2,
+h3,
+.font-heading {
+  font-family: var(--font-sora), sans-serif;
+}
+
+/* ---------- shared component classes (use these, don't improvise) ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(28, 33, 32, 0.04);
+}
+
+.page-title {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.page-sub {
+  font-size: 13px;
+  color: var(--gray-dark);
+  margin-top: 2px;
+}
+
+.section-label {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gray-dark);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--gray-dark);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.btn:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.btn-primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: #2b90f5;
+  border-color: #2b90f5;
+  color: #fff;
+}
+.btn-danger {
+  color: var(--red);
+}
+.btn-danger:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--gray-dark);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.chip:hover {
+  color: var(--ink);
+}
+.chip-active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge-blue { background: var(--blue-soft); color: #1d7fe0; }
+.badge-green { background: var(--green-soft); color: #1f9d55; }
+.badge-orange { background: var(--orange-soft); color: #c47d0e; }
+.badge-yellow { background: var(--yellow-soft); color: #9a7d00; }
+.badge-red { background: var(--red-soft); color: var(--red); }
+.badge-gray { background: var(--hover); color: var(--gray-dark); }
+
+.table-klyne {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table-klyne th {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gray);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.table-klyne td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table-klyne tbody tr:last-child td {
+  border-bottom: none;
+}
+.table-klyne tbody tr:hover {
+  background: var(--hover);
+}
+
+.input-klyne {
+  font-family: var(--font-poppins), sans-serif;
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.input-klyne:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-soft);
+}
+.input-klyne::placeholder {
+  color: var(--gray);
+}
+
+label > .field-label,
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-dark);
+  margin-bottom: 4px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(28, 33, 32, 0.04);
+}
+.stat-value {
+  font-family: var(--font-sora), sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.banner-warn {
+  background: var(--orange-soft);
+  border: 1px solid rgba(245, 166, 35, 0.4);
+  color: #8a5d10;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.banner-info {
+  background: var(--blue-soft);
+  border: 1px solid rgba(59, 158, 255, 0.35);
+  color: #1d6fc4;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.empty-state {
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--gray);
+  background: var(--surface);
 }

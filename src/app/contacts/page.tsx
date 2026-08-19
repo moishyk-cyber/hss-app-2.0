@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { labelFor } from "@/lib/constants";
-import { CONTACT_TITLES, PageHeader } from "./_ui";
+import { CONTACT_STATUSES, CONTACT_STATUS_BADGES, CONTACT_TITLES, PageHeader } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -30,101 +30,95 @@ export default async function ContactsPage({
   return (
     <div>
       <PageHeader title="Contacts" subtitle={`${contacts.length} record(s)`}>
-        <Link
-          href="/contacts/new"
-          className="rounded bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-        >
+        <Link href="/contacts/new" className="btn btn-primary">
           New contact
         </Link>
       </PageHeader>
 
-      <form method="get" className="mb-4 flex items-end gap-2">
+      <form method="get" className="mb-5 flex items-end gap-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-medium text-gray-600">Search</span>
+          <span className="field-label">Search</span>
           <input
             type="search"
             name="q"
             defaultValue={search}
             placeholder="Name or email…"
-            className="w-72 rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+            className="input-klyne w-72"
           />
         </label>
-        <button
-          type="submit"
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
+        <button type="submit" className="btn">
           Search
         </button>
         {search ? (
-          <Link
-            href="/contacts"
-            className="px-2 py-1.5 text-sm text-gray-500 underline hover:text-gray-800"
-          >
+          <Link href="/contacts" className="btn">
             Clear
           </Link>
         ) : null}
       </form>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium">Company</th>
-              <th className="px-4 py-2 font-medium">Title</th>
-              <th className="px-4 py-2 font-medium">Phone</th>
-              <th className="px-4 py-2 font-medium">Cell</th>
-              <th className="px-4 py-2 font-medium">Email</th>
-              <th className="px-4 py-2 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {contacts.map((c) => (
-              <tr key={c.id} className="hover:bg-gray-50">
-                <td className="px-4 py-2 font-medium text-gray-900">
-                  <Link href={`/contacts/${c.id}/edit`} className="hover:underline">
-                    {[c.firstName, c.lastName].filter(Boolean).join(" ")}
-                  </Link>
-                </td>
-                <td className="px-4 py-2">
-                  {c.company ? (
-                    <Link
-                      href={`/companies/${c.company.id}`}
-                      className="text-gray-700 hover:underline"
-                    >
-                      {c.company.name}
-                    </Link>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-gray-600">{labelFor(CONTACT_TITLES, c.title)}</td>
-                <td className="px-4 py-2 text-gray-600">
-                  {c.phone ?? "—"}
-                  {c.phoneExt ? <span className="text-gray-400"> x{c.phoneExt}</span> : null}
-                </td>
-                <td className="px-4 py-2 text-gray-600">{c.cellPhone ?? "—"}</td>
-                <td className="px-4 py-2 text-gray-600">{c.email ?? "—"}</td>
-                <td className="px-4 py-2 text-right">
-                  <Link
-                    href={`/contacts/${c.id}/edit`}
-                    className="text-xs text-gray-500 underline hover:text-gray-900"
-                  >
-                    Edit
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {contacts.length === 0 ? (
+      {contacts.length === 0 ? (
+        <div className="empty-state">No contacts found.</div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="table-klyne">
+            <thead>
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
-                  No contacts found.
-                </td>
+                <th>Name</th>
+                <th>Company</th>
+                <th>Title</th>
+                <th>Phone</th>
+                <th>Cell</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th></th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {contacts.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    <Link
+                      href={`/contacts/${c.id}/edit`}
+                      className="font-medium text-ink hover:text-blue"
+                    >
+                      {[c.firstName, c.lastName].filter(Boolean).join(" ")}
+                    </Link>
+                  </td>
+                  <td>
+                    {c.company ? (
+                      <Link
+                        href={`/companies/${c.company.id}`}
+                        className="text-blue hover:underline"
+                      >
+                        {c.company.name}
+                      </Link>
+                    ) : (
+                      <span className="text-gray">—</span>
+                    )}
+                  </td>
+                  <td className="text-gray-dark">{labelFor(CONTACT_TITLES, c.title)}</td>
+                  <td className="text-gray-dark">
+                    {c.phone ?? "—"}
+                    {c.phoneExt ? <span className="text-gray"> x{c.phoneExt}</span> : null}
+                  </td>
+                  <td className="text-gray-dark">{c.cellPhone ?? "—"}</td>
+                  <td className="text-gray-dark">{c.email ?? "—"}</td>
+                  <td>
+                    <span className={`badge ${CONTACT_STATUS_BADGES[c.status] ?? "badge-gray"}`}>
+                      {labelFor(CONTACT_STATUSES, c.status)}
+                    </span>
+                  </td>
+                  <td className="text-right">
+                    <Link href={`/contacts/${c.id}/edit`} className="btn btn-sm">
+                      Edit
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -113,20 +113,49 @@ export function labelFor(
   return list.find((x) => x.value === value)?.label ?? value;
 }
 
-// Tailwind badge classes per status family (keep visual language consistent)
+// Badge classes per status family — defined in globals.css (.badge-*).
+// Always render as: className={`badge ${STAGE_COLORS[stage]}`}
 export const STAGE_COLORS: Record<string, string> = {
-  new: "bg-blue-100 text-blue-800",
-  info_missing: "bg-amber-100 text-amber-800",
-  estimating: "bg-purple-100 text-purple-800",
-  proposal_sent: "bg-cyan-100 text-cyan-800",
-  revisions_needed: "bg-orange-100 text-orange-800",
-  negotiation: "bg-indigo-100 text-indigo-800",
-  won: "bg-green-100 text-green-800",
-  lost: "bg-gray-200 text-gray-600",
+  new: "badge-blue",
+  info_missing: "badge-orange",
+  estimating: "badge-yellow",
+  proposal_sent: "badge-blue",
+  revisions_needed: "badge-orange",
+  negotiation: "badge-yellow",
+  won: "badge-green",
+  lost: "badge-gray",
 };
 
 export const URGENCY_COLORS: Record<string, string> = {
-  standard: "bg-gray-100 text-gray-700",
-  same_day: "bg-amber-100 text-amber-800",
-  emergency: "bg-red-100 text-red-800",
+  standard: "badge-gray",
+  same_day: "badge-orange",
+  emergency: "badge-red",
+};
+
+export const ORDER_STATUS_COLORS: Record<string, string> = {
+  new: "badge-blue",
+  awaiting_payment: "badge-orange",
+  payment_received: "badge-green",
+  pos_in_progress: "badge-yellow",
+  in_transit: "badge-blue",
+  delivery_scheduled: "badge-yellow",
+  delivered: "badge-green",
+  complete: "badge-green",
+  stuck: "badge-red",
+};
+
+export const RFQ_STATUS_COLORS: Record<string, string> = {
+  needs_pricing: "badge-orange",
+  rfq_sent: "badge-blue",
+  quote_received: "badge-yellow",
+  priced_in_autoquotes: "badge-blue",
+  approved: "badge-green",
+  removed: "badge-gray",
+};
+
+export const TASK_PRIORITY_COLORS: Record<string, string> = {
+  low: "badge-gray",
+  medium: "badge-yellow",
+  high: "badge-orange",
+  critical: "badge-red",
 };

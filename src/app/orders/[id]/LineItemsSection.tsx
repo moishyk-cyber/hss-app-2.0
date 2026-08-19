@@ -22,45 +22,37 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
   const [pending, startTransition] = useTransition();
 
   if (items.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-gray-400">
-        No line items on this order.
-      </div>
-    );
+    return <div className="empty-state">No line items on this order.</div>;
   }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-left text-sm">
+      <table className="table-klyne min-w-[820px]">
         <thead>
-          <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
-            <th className="py-1.5 pr-3 font-medium">Item</th>
-            <th className="py-1.5 pr-3 font-medium">Qty</th>
-            <th className="py-1.5 pr-3 font-medium">Supplier</th>
-            <th className="py-1.5 pr-3 font-medium">Cost</th>
-            <th className="py-1.5 pr-3 font-medium">Delivery Status</th>
-            <th className="py-1.5 pr-3 font-medium">Ordered / Arrived</th>
-            <th className="py-1.5 pr-3 font-medium">Tracking</th>
+          <tr>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Supplier</th>
+            <th>Cost</th>
+            <th>Delivery Status</th>
+            <th>Ordered / Arrived</th>
+            <th>Tracking</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.id} className="border-b border-gray-100 last:border-0">
-              <td className="py-1.5 pr-3 font-medium text-gray-900">{item.name}</td>
-              <td className="py-1.5 pr-3 text-gray-700">{item.qty}</td>
-              <td className="py-1.5 pr-3 text-gray-700">{item.supplier?.name ?? "—"}</td>
-              <td className="py-1.5 pr-3 text-gray-700">{item.unitCost != null ? `$${item.unitCost}` : "—"}</td>
-              <td className="py-1.5 pr-3">
+            <tr key={item.id}>
+              <td className="font-medium text-ink">{item.name}</td>
+              <td className="text-gray-dark">{item.qty}</td>
+              <td className="text-gray-dark">{item.supplier?.name ?? "—"}</td>
+              <td className="text-gray-dark">{item.unitCost != null ? `$${item.unitCost}` : "—"}</td>
+              <td>
                 <div className="flex items-center gap-1.5">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      DELIVERY_STATUS_COLORS[item.deliveryStatus] ?? "bg-gray-100 text-gray-700"
-                    }`}
-                  >
+                  <span className={`badge ${DELIVERY_STATUS_COLORS[item.deliveryStatus] ?? "badge-gray"}`}>
                     {labelFor(DELIVERY_STATUSES, item.deliveryStatus)}
                   </span>
                   <select
-                    className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+                    className="input-klyne px-1.5 py-0.5 text-xs"
                     defaultValue={item.deliveryStatus}
                     disabled={pending}
                     onChange={(e) => startTransition(() => setLineItemDeliveryStatus(item.id, e.target.value))}
@@ -73,18 +65,18 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
                   </select>
                 </div>
               </td>
-              <td className="py-1.5 pr-3 text-xs text-gray-500">
+              <td className="text-xs text-gray">
                 <div>Ordered: {fmtDate(item.dateOrdered)}</div>
                 <div>HSS: {fmtDate(item.dateArrivedHss)}</div>
                 <div>Client: {fmtDate(item.dateArrivedClient)}</div>
               </td>
-              <td className="py-1.5 pr-3">
+              <td>
                 {item.trackingUrl ? (
-                  <a href={item.trackingUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                  <a href={item.trackingUrl} target="_blank" rel="noreferrer" className="text-blue hover:underline">
                     Track
                   </a>
                 ) : (
-                  <span className="text-gray-400">—</span>
+                  <span className="text-gray">—</span>
                 )}
               </td>
             </tr>

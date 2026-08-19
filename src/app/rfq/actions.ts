@@ -2,7 +2,6 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { RFQ_STATUSES } from "@/lib/constants";
 
 async function log(linkedId: string, action: string, detail: string) {
   await prisma.activityLog.create({

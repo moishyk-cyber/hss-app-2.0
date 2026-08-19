@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { ORDER_STATUSES, URGENCY_COLORS, labelFor } from "@/lib/constants";
-import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS, ORDER_STATUS_COLORS } from "./utils";
+import { ORDER_STATUSES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 export const dynamic = "force-dynamic";
 
@@ -29,98 +29,71 @@ export default async function OrdersPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="mt-1 text-sm text-gray-500">Fulfillment pipeline — payment, POs, delivery.</p>
-        </div>
+      <div>
+        <h1 className="page-title">Orders</h1>
+        <p className="page-sub">Fulfillment pipeline — payment, POs, delivery.</p>
       </div>
 
-      <div className="flex flex-wrap gap-2 text-xs">
-        <Link
-          href="/orders"
-          className={`rounded-full border px-3 py-1 font-medium ${
-            !status ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-700"
-          }`}
-        >
+      <div className="flex flex-wrap gap-2">
+        <Link href="/orders" className={!status ? "chip chip-active" : "chip"}>
           All
         </Link>
         {ORDER_STATUSES.map((s) => (
-          <Link
-            key={s.value}
-            href={`/orders?status=${s.value}`}
-            className={`rounded-full border px-3 py-1 font-medium ${
-              status === s.value
-                ? "border-gray-900 bg-gray-900 text-white"
-                : "border-gray-200 bg-white text-gray-700"
-            }`}
-          >
+          <Link key={s.value} href={`/orders?status=${s.value}`} className={status === s.value ? "chip chip-active" : "chip"}>
             {s.label}
           </Link>
         ))}
       </div>
 
       {orders.length === 0 ? (
-        <div className="rounded border border-dashed border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-400">
-          No orders found.
-        </div>
+        <div className="empty-state">No orders found.</div>
       ) : (
-        <div className="overflow-x-auto rounded border border-gray-200 bg-white">
-          <table className="w-full min-w-[900px] text-left text-sm">
+        <div className="card overflow-hidden overflow-x-auto">
+          <table className="table-klyne min-w-[900px]">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <th className="py-2 pl-3 pr-3 font-medium">Title</th>
-                <th className="py-2 pr-3 font-medium">Company</th>
-                <th className="py-2 pr-3 font-medium">Status</th>
-                <th className="py-2 pr-3 font-medium">Urgency</th>
-                <th className="py-2 pr-3 font-medium">Type</th>
-                <th className="py-2 pr-3 font-medium">Value</th>
-                <th className="py-2 pr-3 font-medium">Needed By</th>
-                <th className="py-2 pr-3 font-medium">Payment</th>
+              <tr>
+                <th>Title</th>
+                <th>Company</th>
+                <th>Status</th>
+                <th>Urgency</th>
+                <th>Type</th>
+                <th>Value</th>
+                <th>Needed By</th>
+                <th>Payment</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((order) => {
                 const accent =
                   order.urgency === "emergency"
-                    ? "border-l-4 border-l-red-500"
+                    ? "border-l-4 border-red"
                     : order.urgency === "same_day"
-                    ? "border-l-4 border-l-amber-500"
+                    ? "border-l-4 border-orange"
                     : "";
                 const ps = paymentState(order.payments);
                 return (
-                  <tr key={order.id} className={`border-b border-gray-100 last:border-0 ${accent}`}>
-                    <td className="py-2 pl-3 pr-3">
-                      <Link href={`/orders/${order.id}`} className="font-medium text-blue-600 hover:underline">
+                  <tr key={order.id} className={accent}>
+                    <td>
+                      <Link href={`/orders/${order.id}`} className="font-medium text-blue hover:underline">
                         {order.title}
                       </Link>
                     </td>
-                    <td className="py-2 pr-3 text-gray-700">{order.company?.name ?? "—"}</td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          ORDER_STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-700"
-                        }`}
-                      >
+                    <td className="text-gray-dark">{order.company?.name ?? "—"}</td>
+                    <td>
+                      <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
                         {labelFor(ORDER_STATUSES, order.status)}
                       </span>
                     </td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          URGENCY_COLORS[order.urgency] ?? "bg-gray-100 text-gray-700"
-                        }`}
-                      >
+                    <td>
+                      <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
                         {order.urgency.replace("_", " ")}
                       </span>
                     </td>
-                    <td className="py-2 pr-3 text-gray-700 capitalize">{order.orderType}</td>
-                    <td className="py-2 pr-3 text-gray-700">{fmtMoney(order.orderValue)}</td>
-                    <td className="py-2 pr-3 text-gray-700">{fmtDate(order.neededByDate)}</td>
-                    <td className="py-2 pr-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PAYMENT_STATE_COLORS[ps]}`}>
-                        {ps}
-                      </span>
+                    <td className="text-gray-dark capitalize">{order.orderType}</td>
+                    <td className="text-gray-dark">{fmtMoney(order.orderValue)}</td>
+                    <td className="text-gray-dark">{fmtDate(order.neededByDate)}</td>
+                    <td>
+                      <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
                     </td>
                   </tr>
                 );

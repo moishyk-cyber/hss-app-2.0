@@ -15,11 +15,11 @@ export function UrgencyStatusControls({
 }) {
   const [pending, startTransition] = useTransition();
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="flex items-center gap-1.5 text-xs text-gray-600">
-        Urgency
+    <div className="flex flex-wrap items-end gap-3">
+      <label>
+        <span className="field-label">Urgency</span>
         <select
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
+          className="input-klyne"
           defaultValue={urgency}
           disabled={pending}
           onChange={(e) => startTransition(() => setOrderUrgency(orderId, e.target.value))}
@@ -31,10 +31,10 @@ export function UrgencyStatusControls({
           ))}
         </select>
       </label>
-      <label className="flex items-center gap-1.5 text-xs text-gray-600">
-        Status
+      <label>
+        <span className="field-label">Status</span>
         <select
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
+          className="input-klyne"
           defaultValue={status}
           disabled={pending}
           onChange={(e) => startTransition(() => setOrderStatus(orderId, e.target.value))}
@@ -57,7 +57,7 @@ export function QbInvoiceEdit({ orderId, value }: { orderId: string; value: stri
   return (
     <div className="flex items-center gap-1.5">
       <input
-        className="w-36 rounded border border-gray-300 px-2 py-1 text-sm"
+        className="input-klyne w-36"
         placeholder="QB invoice #"
         value={val}
         onChange={(e) => setVal(e.target.value)}
@@ -65,7 +65,7 @@ export function QbInvoiceEdit({ orderId, value }: { orderId: string; value: stri
       {dirty && (
         <button
           disabled={pending}
-          className="rounded bg-gray-900 px-2 py-1 text-xs text-white hover:bg-gray-700"
+          className="btn btn-primary btn-sm"
           onClick={() => startTransition(() => updateOrderQbInvoice(orderId, val))}
         >
           Save

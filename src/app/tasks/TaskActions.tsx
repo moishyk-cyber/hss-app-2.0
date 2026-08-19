@@ -11,14 +11,14 @@ export default function TaskActions({ taskId, status }: { taskId: string; status
         <>
           <button
             disabled={pending}
-            className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"
+            className="btn btn-sm"
             onClick={() => startTransition(() => advanceTaskStatus(taskId))}
           >
             Advance
           </button>
           <button
             disabled={pending}
-            className="rounded border border-green-300 px-2 py-1 text-xs text-green-700 hover:bg-green-50"
+            className="btn btn-primary btn-sm"
             onClick={() => startTransition(() => completeTask(taskId))}
           >
             Complete

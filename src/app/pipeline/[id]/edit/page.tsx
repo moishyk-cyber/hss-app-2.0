@@ -45,10 +45,7 @@ export default async function EditOpportunityPage({
     <div>
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
-      <form
-        action={updateOpportunity}
-        className="max-w-4xl space-y-5 rounded-lg border border-gray-200 bg-white p-5"
-      >
+      <form action={updateOpportunity} className="card max-w-4xl space-y-6 p-6">
         <input type="hidden" name="id" value={opportunity.id} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -125,8 +122,8 @@ export default async function EditOpportunityPage({
           />
         </div>
 
-        <fieldset className="border-t border-gray-200 pt-4">
-          <legend className="mb-2 text-sm font-semibold text-gray-800">Project details</legend>
+        <fieldset className="border-t border-border pt-5">
+          <legend className="section-label mb-3">Project details</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field
               label="Facility type"
@@ -197,17 +194,11 @@ export default async function EditOpportunityPage({
           <TextArea label="Notes" name="notes" defaultValue={opportunity.notes} />
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="submit"
-            className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
-          >
+        <div className="flex items-center gap-2 border-t border-border pt-5">
+          <button type="submit" className="btn btn-primary">
             Save changes
           </button>
-          <Link
-            href={`/pipeline/${opportunity.id}`}
-            className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-          >
+          <Link href={`/pipeline/${opportunity.id}`} className="btn">
             Cancel
           </Link>
         </div>

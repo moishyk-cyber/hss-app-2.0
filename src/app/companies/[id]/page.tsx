@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   ORDER_STATUSES,
+  ORDER_STATUS_COLORS,
   OPPORTUNITY_STAGES,
   STAGE_COLORS,
   labelFor,
@@ -29,21 +30,12 @@ export default async function CompanyDetailPage({
 
   return (
     <div>
-      <PageHeader
-        title={company.name}
-        subtitle={company.locationName ?? undefined}
-      >
-        <Link
-          href={`/companies/${company.id}/edit`}
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
-          Edit
-        </Link>
-        <Link
-          href="/companies"
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
+      <PageHeader title={company.name} subtitle={company.locationName ?? undefined}>
+        <Link href="/companies" className="btn">
           Back to list
+        </Link>
+        <Link href={`/companies/${company.id}/edit`} className="btn btn-primary">
+          Edit
         </Link>
       </PageHeader>
 
@@ -54,7 +46,13 @@ export default async function CompanyDetailPage({
             <DetailRow label="Vertical" value={<VerticalLabel vertical={company.vertical} />} />
             <DetailRow
               label="Priority client"
-              value={company.priorityClient ? "Yes" : "No"}
+              value={
+                company.priorityClient ? (
+                  <span className="badge badge-red">Priority</span>
+                ) : (
+                  "No"
+                )
+              }
             />
             <DetailRow
               label="Phone"
@@ -80,28 +78,25 @@ export default async function CompanyDetailPage({
           <Card
             title={`Contacts (${company.contacts.length})`}
             action={
-              <Link
-                href={`/contacts/new?companyId=${company.id}`}
-                className="text-xs font-medium text-gray-600 underline hover:text-gray-900"
-              >
+              <Link href={`/contacts/new?companyId=${company.id}`} className="btn btn-sm">
                 Add contact
               </Link>
             }
           >
             {company.contacts.length === 0 ? (
-              <p className="text-sm text-gray-500">No contacts yet.</p>
+              <div className="empty-state">No contacts yet.</div>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-border">
                 {company.contacts.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between py-2 text-sm">
+                  <li key={c.id} className="flex items-center justify-between py-2.5 text-[13px]">
                     <div>
                       <Link
                         href={`/contacts/${c.id}/edit`}
-                        className="font-medium text-gray-900 hover:underline"
+                        className="font-medium text-ink hover:text-blue"
                       >
                         {c.firstName} {c.lastName ?? ""}
                       </Link>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray">
                         {[c.title, c.email, c.phone].filter(Boolean).join(" · ") || "—"}
                       </div>
                     </div>
@@ -113,23 +108,22 @@ export default async function CompanyDetailPage({
 
           <Card title={`Opportunities (${company.opportunities.length})`}>
             {company.opportunities.length === 0 ? (
-              <p className="text-sm text-gray-500">No opportunities yet.</p>
+              <div className="empty-state">No opportunities yet.</div>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-border">
                 {company.opportunities.map((o) => (
-                  <li key={o.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <li
+                    key={o.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-gray-900 hover:underline"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-blue"
                     >
                       {o.title}
                     </Link>
-                    <span className="text-gray-600">{fmtMoney(o.value)}</span>
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STAGE_COLORS[o.stage] ?? "bg-gray-100 text-gray-700"
-                      }`}
-                    >
+                    <span className="text-gray-dark">{fmtMoney(o.value)}</span>
+                    <span className={`badge ${STAGE_COLORS[o.stage] ?? "badge-gray"}`}>
                       {labelFor(OPPORTUNITY_STAGES, o.stage)}
                     </span>
                   </li>
@@ -140,19 +134,22 @@ export default async function CompanyDetailPage({
 
           <Card title={`Orders (${company.orders.length})`}>
             {company.orders.length === 0 ? (
-              <p className="text-sm text-gray-500">No orders yet.</p>
+              <div className="empty-state">No orders yet.</div>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-border">
                 {company.orders.map((o) => (
-                  <li key={o.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <li
+                    key={o.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
                     <Link
                       href={`/orders/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-gray-900 hover:underline"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:text-blue"
                     >
                       {o.title}
                     </Link>
-                    <span className="text-gray-600">{fmtMoney(o.orderValue)}</span>
-                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                    <span className="text-gray-dark">{fmtMoney(o.orderValue)}</span>
+                    <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>
                       {labelFor(ORDER_STATUSES, o.status)}
                     </span>
                   </li>

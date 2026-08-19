@@ -38,24 +38,24 @@ export default function RfqRow({
     cost !== (item.unitCost?.toString() ?? "") || price !== (item.unitPrice?.toString() ?? "");
 
   return (
-    <tr className="border-b border-gray-100 last:border-0 align-top">
-      <td className="py-2 pl-3 pr-3">
-        <div className="font-medium text-gray-900">{item.name}</div>
-        {item.brand && <div className="text-xs text-gray-500">{item.brand}</div>}
+    <tr className="align-top">
+      <td>
+        <div className="font-medium text-ink">{item.name}</div>
+        {item.brand && <div className="text-xs text-gray">{item.brand}</div>}
       </td>
-      <td className="py-2 pr-3 text-gray-700">{item.qty}</td>
-      <td className="py-2 pr-3">
+      <td className="text-gray-dark">{item.qty}</td>
+      <td>
         {parentHref ? (
-          <a href={parentHref} className="text-blue-600 hover:underline">
+          <a href={parentHref} className="text-blue hover:underline">
             {parentLabel}
           </a>
         ) : (
-          <span className="text-gray-400">—</span>
+          <span className="text-gray">—</span>
         )}
       </td>
-      <td className="py-2 pr-3">
+      <td>
         <select
-          className="rounded border border-gray-300 px-1.5 py-1 text-xs"
+          className="input-klyne px-1.5 py-1 text-xs"
           defaultValue={item.supplierId ?? ""}
           disabled={pending}
           onChange={(e) =>
@@ -72,21 +72,21 @@ export default function RfqRow({
           ))}
         </select>
       </td>
-      <td className="py-2 pr-3">
+      <td>
         <div className="flex items-center gap-1">
           <input
             type="number"
             step="0.01"
-            className="w-20 rounded border border-gray-300 px-1.5 py-1 text-xs"
+            className="input-klyne w-20 px-1.5 py-1 text-xs"
             placeholder="cost"
             value={cost}
             onChange={(e) => setCost(e.target.value)}
           />
-          <span className="text-gray-300">/</span>
+          <span className="text-gray">/</span>
           <input
             type="number"
             step="0.01"
-            className="w-20 rounded border border-gray-300 px-1.5 py-1 text-xs"
+            className="input-klyne w-20 px-1.5 py-1 text-xs"
             placeholder="price"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
@@ -94,7 +94,7 @@ export default function RfqRow({
           {dirty && (
             <button
               disabled={pending}
-              className="rounded bg-gray-900 px-2 py-1 text-xs text-white hover:bg-gray-700"
+              className="btn btn-primary btn-sm"
               onClick={() =>
                 startTransition(() => {
                   updateLineItemPricing(
@@ -110,20 +110,20 @@ export default function RfqRow({
           )}
         </div>
       </td>
-      <td className="py-2 pr-3 text-gray-700">{item.leadTimeDays ?? "—"}</td>
-      <td className="py-2 pr-3 text-gray-700">{item.assignee?.name ?? "—"}</td>
-      <td className="py-2 pr-3">
+      <td className="text-gray-dark">{item.leadTimeDays ?? "—"}</td>
+      <td className="text-gray-dark">{item.assignee?.name ?? "—"}</td>
+      <td>
         <div className="flex gap-2">
           <button
             disabled={pending}
-            className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100"
+            className="btn btn-sm"
             onClick={() => startTransition(() => advanceRfqStatus(item.id))}
           >
             Advance
           </button>
           <button
             disabled={pending}
-            className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+            className="btn btn-sm btn-danger"
             onClick={() => startTransition(() => markLineItemRemoved(item.id))}
           >
             Remove

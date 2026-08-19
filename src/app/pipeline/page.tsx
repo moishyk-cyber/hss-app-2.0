@@ -66,55 +66,52 @@ export default async function PipelinePage() {
           openTotal
         )} in play`}
       >
-        <Link
-          href="/intake"
-          className="rounded bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-        >
+        <Link href="/intake" className="btn btn-primary">
           New intake
         </Link>
       </PageHeader>
 
-      <div className="flex gap-3 overflow-x-auto pb-3">
+      <div className="flex gap-3 overflow-x-auto pb-4">
         {openStages.map((stage) => {
           const cards = byStage.get(stage.value) ?? [];
           const total = cards.reduce((sum, o) => sum + (o.value ?? 0), 0);
           return (
-            <div key={stage.value} className="w-72 shrink-0">
-              <div className="mb-2 flex items-baseline justify-between px-1">
-                <h2 className="text-sm font-semibold text-gray-800">{stage.label}</h2>
-                <span className="text-xs text-gray-500">
-                  {cards.length} · {fmtMoney(total)}
-                </span>
+            <div key={stage.value} className="card flex w-72 shrink-0 flex-col">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
+                <h2 className="section-label">{stage.label}</h2>
+                <span className="badge badge-gray">{cards.length}</span>
               </div>
-              <div className="space-y-2 rounded-lg bg-gray-100/70 p-2">
+              <div className="px-3 pb-1 pt-2 text-xs text-gray">{fmtMoney(total)}</div>
+
+              <div className="flex-1 space-y-2 p-3 pt-2">
                 {cards.map((o) => (
                   <article
                     key={o.id}
-                    className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+                    className="rounded-[10px] border border-border bg-surface p-3 transition-shadow hover:shadow-[0_2px_8px_rgba(28,33,32,0.08)]"
                   >
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="block text-sm font-medium text-gray-900 hover:underline"
+                      className="block text-[13px] font-medium text-ink hover:text-blue"
                     >
                       {o.title}
                     </Link>
-                    <div className="mt-1 truncate text-xs text-gray-500">
+                    <div className="mt-1 truncate text-xs text-gray">
                       {o.company ? o.company.name : "No company"}
                     </div>
                     <div className="mt-2 flex items-center justify-between text-xs">
-                      <span className="font-medium text-gray-800">{fmtMoney(o.value)}</span>
-                      <span className="text-gray-500">{daysInStage(o)}d in stage</span>
+                      <span className="font-medium text-ink">{fmtMoney(o.value)}</span>
+                      <span className="text-gray">{daysInStage(o)}d in stage</span>
                     </div>
-                    <div className="mt-1 truncate text-xs text-gray-500">
+                    <div className="mt-1 truncate text-xs text-gray">
                       {o.salesperson?.name ?? "Unassigned"}
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-2.5">
                       <StageSelect opportunityId={o.id} stage={o.stage} />
                     </div>
                   </article>
                 ))}
                 {cards.length === 0 ? (
-                  <p className="px-1 py-6 text-center text-xs text-gray-400">Nothing here</p>
+                  <p className="px-1 py-8 text-center text-xs text-gray">Nothing here</p>
                 ) : null}
               </div>
             </div>
@@ -122,34 +119,41 @@ export default async function PipelinePage() {
         })}
       </div>
 
-      <details className="mt-4 rounded-lg border border-gray-200 bg-white">
-        <summary className="cursor-pointer px-4 py-2.5 text-sm font-semibold text-gray-800">
-          Closed deals — {won.length} won · {lost.length} lost
+      <details className="card mt-2">
+        <summary className="cursor-pointer px-4 py-3">
+          <span className="section-label">Closed deals</span>
+          <span className="ml-3 badge badge-green">{won.length} won</span>
+          <span className="ml-2 badge badge-gray">{lost.length} lost</span>
         </summary>
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-border">
           {won.length + lost.length === 0 ? (
-            <p className="text-sm text-gray-500">No closed deals yet.</p>
+            <div className="p-4">
+              <div className="empty-state">No closed deals yet.</div>
+            </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-gray-500">
+            <table className="table-klyne">
+              <thead>
                 <tr>
-                  <th className="py-1 font-medium">Deal</th>
-                  <th className="py-1 font-medium">Company</th>
-                  <th className="py-1 font-medium">Value</th>
-                  <th className="py-1 font-medium">Stage</th>
+                  <th>Deal</th>
+                  <th>Company</th>
+                  <th>Value</th>
+                  <th>Stage</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {[...won, ...lost].map((o) => (
                   <tr key={o.id}>
-                    <td className="py-1.5">
-                      <Link href={`/pipeline/${o.id}`} className="text-gray-900 hover:underline">
+                    <td>
+                      <Link
+                        href={`/pipeline/${o.id}`}
+                        className="font-medium text-ink hover:text-blue"
+                      >
                         {o.title}
                       </Link>
                     </td>
-                    <td className="py-1.5 text-gray-600">{o.company?.name ?? "—"}</td>
-                    <td className="py-1.5 text-gray-600">{fmtMoney(o.value)}</td>
-                    <td className="py-1.5">
+                    <td className="text-gray-dark">{o.company?.name ?? "—"}</td>
+                    <td className="text-gray-dark">{fmtMoney(o.value)}</td>
+                    <td>
                       <StageBadge stage={o.stage} />
                     </td>
                   </tr>

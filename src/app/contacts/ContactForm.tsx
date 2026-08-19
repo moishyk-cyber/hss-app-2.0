@@ -33,7 +33,7 @@ export function ContactForm({
   const companyOptions = companies.map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <form action={action} className="max-w-3xl rounded-lg border border-gray-200 bg-white p-5">
+    <form action={action} className="card max-w-3xl p-6">
       {contact?.id ? <input type="hidden" name="id" value={contact.id} /> : null}
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
 
@@ -68,17 +68,11 @@ export function ContactForm({
 
       <TextArea label="Notes" name="notes" defaultValue={contact?.notes} className="mt-4" />
 
-      <div className="mt-5 flex items-center gap-2">
-        <button
-          type="submit"
-          className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700"
-        >
+      <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
+        <button type="submit" className="btn btn-primary">
           {submitLabel}
         </button>
-        <Link
-          href={cancelHref}
-          className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
+        <Link href={cancelHref} className="btn">
           Cancel
         </Link>
       </div>

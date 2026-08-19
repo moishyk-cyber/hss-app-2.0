@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { labelFor } from "@/lib/constants";
+import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { markOpportunityLost, markOpportunityWon } from "../actions";
 import {
   Card,
@@ -49,22 +49,16 @@ export default async function OpportunityDetailPage({
         title={opportunity.title}
         subtitle={opportunity.company?.name ?? "No company linked"}
       >
-        <Link
-          href={`/pipeline/${opportunity.id}/edit`}
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
-          Edit
-        </Link>
-        <Link
-          href="/pipeline"
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-        >
+        <Link href="/pipeline" className="btn">
           Back to pipeline
+        </Link>
+        <Link href={`/pipeline/${opportunity.id}/edit`} className="btn btn-primary">
+          Edit
         </Link>
       </PageHeader>
 
       {error === "lost_reason_required" ? (
-        <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div className="banner-warn mb-4">
           A lost reason is required before a deal can be marked Lost.
         </div>
       ) : null}
@@ -83,7 +77,7 @@ export default async function OpportunityDetailPage({
                 opportunity.company ? (
                   <Link
                     href={`/companies/${opportunity.company.id}`}
-                    className="text-gray-900 hover:underline"
+                    className="text-blue hover:underline"
                   >
                     {opportunity.company.name}
                   </Link>
@@ -141,42 +135,46 @@ export default async function OpportunityDetailPage({
         </div>
 
         <div className="space-y-4 lg:col-span-2">
-          <Card title={`Line items (${opportunity.lineItems.length})`}>
+          <section className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 className="section-label">Line items</h2>
+              <span className="badge badge-gray">{opportunity.lineItems.length}</span>
+            </div>
             {opportunity.lineItems.length === 0 ? (
-              <p className="text-sm text-gray-500">No line items on this deal.</p>
+              <div className="p-4">
+                <div className="empty-state">No line items on this deal.</div>
+              </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs uppercase tracking-wide text-gray-500">
+                <table className="table-klyne">
+                  <thead>
                     <tr>
-                      <th className="py-1 font-medium">Item</th>
-                      <th className="py-1 font-medium">Qty</th>
-                      <th className="py-1 font-medium">Supplier</th>
-                      <th className="py-1 font-medium">Cost</th>
-                      <th className="py-1 font-medium">Price</th>
-                      <th className="py-1 font-medium">RFQ status</th>
-                      <th className="py-1 font-medium">Delivery</th>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Supplier</th>
+                      <th>Cost</th>
+                      <th>Price</th>
+                      <th>RFQ status</th>
+                      <th>Delivery</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody>
                     {opportunity.lineItems.map((li) => (
                       <tr key={li.id}>
-                        <td className="py-1.5 pr-3">
-                          <div className="font-medium text-gray-900">{li.name}</div>
+                        <td>
+                          <div className="font-medium text-ink">{li.name}</div>
                           {li.description ? (
-                            <div className="text-xs text-gray-500">{li.description}</div>
+                            <div className="text-xs text-gray">{li.description}</div>
                           ) : null}
                         </td>
-                        <td className="py-1.5 pr-3 text-gray-600">{li.qty}</td>
-                        <td className="py-1.5 pr-3 text-gray-600">
-                          {li.supplier?.name ?? "—"}
-                        </td>
-                        <td className="py-1.5 pr-3 text-gray-600">{fmtMoney(li.unitCost)}</td>
-                        <td className="py-1.5 pr-3 text-gray-600">{fmtMoney(li.unitPrice)}</td>
-                        <td className="py-1.5 pr-3">
+                        <td className="text-gray-dark">{li.qty}</td>
+                        <td className="text-gray-dark">{li.supplier?.name ?? "—"}</td>
+                        <td className="text-gray-dark">{fmtMoney(li.unitCost)}</td>
+                        <td className="text-gray-dark">{fmtMoney(li.unitPrice)}</td>
+                        <td>
                           <RfqBadge status={li.rfqStatus} />
                         </td>
-                        <td className="py-1.5 text-xs text-gray-600">
+                        <td className="text-xs text-gray-dark">
                           <DeliveryLabel status={li.deliveryStatus} />
                         </td>
                       </tr>
@@ -185,20 +183,22 @@ export default async function OpportunityDetailPage({
                 </table>
               </div>
             )}
-          </Card>
+          </section>
 
           {opportunity.orders.length > 0 ? (
             <Card title="Orders">
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-border">
                 {opportunity.orders.map((o) => (
-                  <li key={o.id} className="py-2 text-sm">
+                  <li key={o.id} className="flex items-center justify-between py-2.5 text-[13px]">
                     <Link
                       href={`/orders/${o.id}`}
-                      className="font-medium text-gray-900 hover:underline"
+                      className="font-medium text-ink hover:text-blue"
                     >
                       {o.title}
                     </Link>
-                    <span className="ml-2 text-xs text-gray-500">{o.status}</span>
+                    <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>
+                      {labelFor(ORDER_STATUSES, o.status)}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -207,28 +207,27 @@ export default async function OpportunityDetailPage({
 
           <Card title="Close this deal">
             {closed ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-[13px] text-gray-dark">
                 This deal is already closed as{" "}
-                <span className="font-medium">{opportunity.stage}</span>.
+                <span className="font-medium text-ink">{opportunity.stage}</span>.
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <form action={markOpportunityWon}>
                   <input type="hidden" name="id" value={opportunity.id} />
-                  <p className="mb-2 text-sm text-gray-600">
+                  <p className="mb-3 text-[13px] text-gray-dark">
                     Creates an order, carries every non-removed line item across, and stages a{" "}
                     {isProject ? "30% deposit" : "full payment"} of{" "}
-                    <span className="font-medium">
+                    <span className="font-medium text-ink">
                       {fmtMoney(
-                        Math.round(isProject ? (opportunity.value ?? 0) * 0.3 : opportunity.value ?? 0)
+                        Math.round(
+                          isProject ? (opportunity.value ?? 0) * 0.3 : opportunity.value ?? 0
+                        )
                       )}
                     </span>
                     .
                   </p>
-                  <button
-                    type="submit"
-                    className="rounded bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-600"
-                  >
+                  <button type="submit" className="btn btn-primary">
                     Mark Won
                   </button>
                 </form>
@@ -236,22 +235,17 @@ export default async function OpportunityDetailPage({
                 <form action={markOpportunityLost}>
                   <input type="hidden" name="id" value={opportunity.id} />
                   <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-gray-600">
-                      Lost reason (required)
-                    </span>
+                    <span className="field-label">Lost reason (required)</span>
                     <input
                       type="text"
                       name="lostReason"
                       required
                       defaultValue={opportunity.lostReason ?? ""}
                       placeholder="Why did we lose it?"
-                      className="w-full rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-gray-500"
+                      className="input-klyne w-full"
                     />
                   </label>
-                  <button
-                    type="submit"
-                    className="mt-2 rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                  >
+                  <button type="submit" className="btn btn-danger mt-3">
                     Mark Lost
                   </button>
                 </form>
