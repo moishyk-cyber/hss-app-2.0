@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { addPayment, markPaymentInvoiced, markPaymentPaid } from "../actions";
 import { fmtDate, PAYMENT_STATUS_COLORS } from "../utils";
+import { PendingButton, ActionButton } from "@/lib/ui";
 
 type Payment = {
   id: string;
@@ -14,9 +15,15 @@ type Payment = {
 };
 
 export default function PaymentsSection({ orderId, payments }: { orderId: string; payments: Payment[] }) {
-  const [pending, startTransition] = useTransition();
-  const [type, setType] = useState("deposit");
   const [amount, setAmount] = useState("");
+
+  async function handleAddPayment(formData: FormData) {
+    const type = String(formData.get("type") ?? "deposit");
+    const amt = String(formData.get("amount") ?? "");
+    if (!amt) return;
+    await addPayment(orderId, type, parseFloat(amt));
+    setAmount("");
+  }
 
   return (
     <div className="space-y-3">
@@ -36,7 +43,7 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
           </thead>
           <tbody>
             {payments.map((p) => (
-              <tr key={p.id}>
+              <tr key={p.id} className="transition-colors">
                 <td className="capitalize text-gray-dark">{p.type}</td>
                 <td className="text-gray-dark">${p.amount.toLocaleString()}</td>
                 <td>
@@ -47,22 +54,20 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
                 <td>
                   <div className="flex gap-2">
                     {p.status === "pending" && (
-                      <button
-                        disabled={pending}
-                        className="btn btn-sm"
-                        onClick={() => startTransition(() => markPaymentInvoiced(p.id))}
+                      <ActionButton
+                        action={() => markPaymentInvoiced(p.id)}
+                        className="btn btn-sm active:scale-[0.99]"
                       >
                         Mark invoiced
-                      </button>
+                      </ActionButton>
                     )}
                     {p.status !== "paid" && (
-                      <button
-                        disabled={pending}
-                        className="btn btn-primary btn-sm"
-                        onClick={() => startTransition(() => markPaymentPaid(p.id))}
+                      <ActionButton
+                        action={() => markPaymentPaid(p.id)}
+                        className="btn btn-primary btn-sm active:scale-[0.99]"
                       >
                         Mark paid
-                      </button>
+                      </ActionButton>
                     )}
                   </div>
                 </td>
@@ -72,10 +77,10 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
         </table>
       )}
 
-      <div className="flex items-end gap-2 rounded-lg border border-border bg-panel p-3">
+      <form action={handleAddPayment} className="flex items-end gap-2 rounded-lg border border-border bg-panel p-3">
         <label>
           <span className="field-label">Type</span>
-          <select className="input-klyne" value={type} onChange={(e) => setType(e.target.value)}>
+          <select name="type" defaultValue="deposit" className="input-klyne">
             <option value="deposit">Deposit</option>
             <option value="final">Final</option>
             <option value="full">Full</option>
@@ -86,24 +91,18 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
           <input
             type="number"
             step="0.01"
+            min="0.01"
+            required
+            name="amount"
             className="input-klyne w-28"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
         </label>
-        <button
-          disabled={pending || !amount}
-          className="btn btn-primary btn-sm disabled:opacity-50"
-          onClick={() =>
-            startTransition(() => {
-              addPayment(orderId, type, parseFloat(amount));
-              setAmount("");
-            })
-          }
-        >
+        <PendingButton className="btn btn-primary btn-sm active:scale-[0.99] disabled:opacity-50" pendingText="Adding…">
           Add payment
-        </button>
-      </div>
+        </PendingButton>
+      </form>
     </div>
   );
 }

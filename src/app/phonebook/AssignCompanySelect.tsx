@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { OptimisticSelect } from "@/lib/ui";
 import { assignContactCompany } from "./actions";
 
 export function AssignCompanySelect({
@@ -10,28 +10,23 @@ export function AssignCompanySelect({
   contactId: string;
   companies: { id: string; name: string }[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const options = [
+    { value: "", label: "Assign to a business…" },
+    ...companies.map((c) => ({ value: c.id, label: c.name })),
+  ];
 
   return (
-    <select
-      aria-label="Assign to business"
-      defaultValue=""
-      disabled={pending}
-      onChange={(e) => {
-        const companyId = e.target.value;
-        if (!companyId) return;
-        startTransition(async () => {
+    // OptimisticSelect renders an inline-flex span — give it a predictable width.
+    <div className="[&>span]:flex [&>span]:w-full [&>span]:max-w-xs">
+      <OptimisticSelect
+        value=""
+        options={options}
+        className="input-klyne min-w-0 flex-1 py-1 text-xs"
+        action={async (companyId) => {
+          if (!companyId) return;
           await assignContactCompany(contactId, companyId);
-        });
-      }}
-      className="input-klyne w-full max-w-xs py-1 text-xs disabled:opacity-50"
-    >
-      <option value="">{pending ? "Assigning…" : "Assign to a business…"}</option>
-      {companies.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-    </select>
+        }}
+      />
+    </div>
   );
 }

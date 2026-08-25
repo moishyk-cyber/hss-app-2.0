@@ -53,7 +53,7 @@ export function PhoneLink({
   if (!phone) return <span className="text-gray">—</span>;
   const dial = phone.replace(/[^\d+]/g, "");
   return (
-    <a href={`tel:${dial}${ext ? `,${ext}` : ""}`} className={`hover:text-accent ${className ?? ""}`}>
+    <a href={`tel:${dial}${ext ? `,${ext}` : ""}`} className={`transition-colors hover:text-accent ${className ?? ""}`}>
       {phone}
       {ext ? <span className="text-gray"> x{ext}</span> : null}
     </a>
@@ -63,7 +63,7 @@ export function PhoneLink({
 export function EmailLink({ email, className }: { email: string | null; className?: string }) {
   if (!email) return <span className="text-gray">—</span>;
   return (
-    <a href={`mailto:${email}`} className={`truncate hover:text-accent ${className ?? ""}`}>
+    <a href={`mailto:${email}`} className={`truncate transition-colors hover:text-accent ${className ?? ""}`}>
       {email}
     </a>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { PendingButton } from "@/lib/ui";
 import { markOpportunityLost, markOpportunityWon } from "../actions";
 import {
   Card,
@@ -192,7 +193,7 @@ export default async function OpportunityDetailPage({
                   <li key={o.id} className="flex items-center justify-between py-2.5 text-[13px]">
                     <Link
                       href={`/orders/${o.id}`}
-                      className="font-medium text-ink hover:text-accent"
+                      className="font-medium text-ink transition-colors hover:text-accent"
                     >
                       {o.title}
                     </Link>
@@ -227,9 +228,12 @@ export default async function OpportunityDetailPage({
                     </span>
                     .
                   </p>
-                  <button type="submit" className="btn btn-primary">
+                  <PendingButton
+                    className="btn btn-primary active:scale-[0.99]"
+                    pendingText="Creating order…"
+                  >
                     Mark Won
-                  </button>
+                  </PendingButton>
                 </form>
 
                 <form action={markOpportunityLost}>
@@ -245,9 +249,12 @@ export default async function OpportunityDetailPage({
                       className="input-klyne w-full"
                     />
                   </label>
-                  <button type="submit" className="btn btn-danger mt-3">
+                  <PendingButton
+                    className="btn btn-danger mt-3 active:scale-[0.99]"
+                    pendingText="Closing…"
+                  >
                     Mark Lost
-                  </button>
+                  </PendingButton>
                 </form>
               </div>
             )}

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { ORDER_URGENCIES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { fmtDate } from "../utils";
 import { UrgencyStatusControls, QbInvoiceEdit } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
@@ -50,7 +49,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/orders" className="text-xs text-blue hover:underline">
+        <Link href="/orders" className="text-xs text-blue transition-colors hover:underline">
           ← Back to Orders
         </Link>
       </div>
@@ -61,7 +60,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <h1 className="page-title">{order.title}</h1>
             <div className="mt-1 text-sm text-gray-dark">
               {order.company ? (
-                <Link href={`/companies/${order.company.id}`} className="text-blue hover:underline">
+                <Link href={`/companies/${order.company.id}`} className="text-blue transition-colors hover:underline">
                   {order.company.name}
                 </Link>
               ) : (
@@ -71,12 +70,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               {order.owner && <span> · Owner: {order.owner.name}</span>}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
-              <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
-                {order.status.replace(/_/g, " ")}
-              </span>
-              <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
-                {labelFor(ORDER_URGENCIES, order.urgency)}
-              </span>
               <span className="badge badge-gray capitalize">{order.orderType}</span>
             </div>
           </div>

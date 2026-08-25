@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { COMPANY_TYPES, COMPANY_VERTICALS } from "@/lib/constants";
+import { PendingButton } from "@/lib/ui";
 import { Checkbox, Field, Select, TextArea } from "./_ui";
 
 type CompanyFormValues = {
@@ -79,10 +80,10 @@ export function CompanyForm({
       <TextArea label="Notes" name="notes" defaultValue={company?.notes} className="mt-4" />
 
       <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
-        <button type="submit" className="btn btn-primary">
+        <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">
           {submitLabel}
-        </button>
-        <Link href={cancelHref} className="btn">
+        </PendingButton>
+        <Link href={cancelHref} className="btn active:scale-[0.99]">
           Cancel
         </Link>
       </div>

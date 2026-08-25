@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PendingButton } from "@/lib/ui";
 import { submitIntake } from "./actions";
 
 type IntakeContact = {
@@ -70,7 +71,7 @@ function Radio({
       className={`flex flex-1 cursor-pointer items-start gap-2.5 rounded-[10px] border px-4 py-3 text-[13px] transition-colors ${
         checked
           ? "border-accent bg-accent-soft"
-          : "border-border bg-surface hover:bg-hover"
+          : "border-border bg-surface transition-colors hover:bg-hover"
       }`}
     >
       <input
@@ -474,14 +475,18 @@ export function IntakeForm({
                 type="button"
                 onClick={() => removeItem(row.key)}
                 disabled={items.length === 1}
-                className="btn btn-danger disabled:opacity-40"
+                className="btn btn-danger transition-colors active:scale-[0.99] disabled:opacity-40"
               >
                 Remove
               </button>
             </div>
           ))}
         </div>
-        <button type="button" onClick={addItem} className="btn mt-4">
+        <button
+          type="button"
+          onClick={addItem}
+          className="btn mt-4 transition-colors active:scale-[0.99]"
+        >
           + Add item
         </button>
 
@@ -492,9 +497,9 @@ export function IntakeForm({
       </Section>
 
       <div className="card flex flex-wrap items-center gap-4 px-6 py-5">
-        <button type="submit" className="btn btn-primary">
+        <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Creating…">
           Submit intake
-        </button>
+        </PendingButton>
         <p className="text-[13px] text-gray-dark">
           {goesToPipeline
             ? "Creates an opportunity in the sales pipeline with items marked Needs Pricing."

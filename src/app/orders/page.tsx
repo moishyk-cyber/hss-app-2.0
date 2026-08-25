@@ -72,9 +72,12 @@ export default async function OrdersPage({
                     : "";
                 const ps = paymentState(order.payments);
                 return (
-                  <tr key={order.id} className={accent}>
+                  <tr key={order.id} className={`transition-colors ${accent}`}>
                     <td>
-                      <Link href={`/orders/${order.id}`} className="font-medium text-blue hover:underline">
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="font-medium text-blue transition-colors hover:underline"
+                      >
                         {order.title}
                       </Link>
                     </td>

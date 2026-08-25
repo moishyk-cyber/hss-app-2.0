@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
 import { DELIVERY_STATUSES, labelFor } from "@/lib/constants";
 import { setLineItemDeliveryStatus } from "../actions";
 import { DELIVERY_STATUS_COLORS, fmtDate } from "../utils";
+import { OptimisticSelect } from "@/lib/ui";
 
 type Item = {
   id: string;
@@ -19,8 +19,6 @@ type Item = {
 };
 
 export default function LineItemsSection({ items }: { items: Item[] }) {
-  const [pending, startTransition] = useTransition();
-
   if (items.length === 0) {
     return <div className="empty-state">No line items on this order.</div>;
   }
@@ -41,29 +39,23 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.id}>
+            <tr key={item.id} className="transition-colors">
               <td className="font-medium text-ink">{item.name}</td>
               <td className="text-gray-dark">{item.qty}</td>
               <td className="text-gray-dark">{item.supplier?.name ?? "—"}</td>
               <td className="text-gray-dark">{item.unitCost != null ? `$${item.unitCost}` : "—"}</td>
               <td>
-                <div className="flex items-center gap-1.5">
-                  <span className={`badge ${DELIVERY_STATUS_COLORS[item.deliveryStatus] ?? "badge-gray"}`}>
-                    {labelFor(DELIVERY_STATUSES, item.deliveryStatus)}
-                  </span>
-                  <select
-                    className="input-klyne px-1.5 py-0.5 text-xs"
-                    defaultValue={item.deliveryStatus}
-                    disabled={pending}
-                    onChange={(e) => startTransition(() => setLineItemDeliveryStatus(item.id, e.target.value))}
-                  >
-                    {DELIVERY_STATUSES.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <OptimisticSelect
+                  value={item.deliveryStatus}
+                  options={DELIVERY_STATUSES}
+                  action={(next) => setLineItemDeliveryStatus(item.id, next)}
+                  className="input-klyne px-1.5 py-0.5 text-xs"
+                  render={(val, pending) => (
+                    <span className={`badge ${DELIVERY_STATUS_COLORS[val] ?? "badge-gray"} ${pending ? "opacity-60" : ""}`}>
+                      {labelFor(DELIVERY_STATUSES, val)}
+                    </span>
+                  )}
+                />
               </td>
               <td className="text-xs text-gray">
                 <div>Ordered: {fmtDate(item.dateOrdered)}</div>
@@ -72,7 +64,12 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
               </td>
               <td>
                 {item.trackingUrl ? (
-                  <a href={item.trackingUrl} target="_blank" rel="noreferrer" className="text-blue hover:underline">
+                  <a
+                    href={item.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue transition-colors hover:underline"
+                  >
                     Track
                   </a>
                 ) : (

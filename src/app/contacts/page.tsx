@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { labelFor } from "@/lib/constants";
+import { InstantSearch } from "@/lib/ui";
 import { CONTACT_STATUSES, CONTACT_STATUS_BADGES, CONTACT_TITLES, PageHeader } from "./_ui";
 
 export const dynamic = "force-dynamic";
@@ -35,26 +36,12 @@ export default async function ContactsPage({
         </Link>
       </PageHeader>
 
-      <form method="get" className="mb-5 flex items-end gap-2">
+      <div className="mb-5">
         <label className="block">
           <span className="field-label">Search</span>
-          <input
-            type="search"
-            name="q"
-            defaultValue={search}
-            placeholder="Name or email…"
-            className="input-klyne w-72"
-          />
+          <InstantSearch paramKey="q" placeholder="Name or email…" className="input-klyne w-72" />
         </label>
-        <button type="submit" className="btn">
-          Search
-        </button>
-        {search ? (
-          <Link href="/contacts" className="btn">
-            Clear
-          </Link>
-        ) : null}
-      </form>
+      </div>
 
       {contacts.length === 0 ? (
         <div className="empty-state">No contacts found.</div>
@@ -79,7 +66,7 @@ export default async function ContactsPage({
                   <td>
                     <Link
                       href={`/contacts/${c.id}/edit`}
-                      className="font-medium text-ink hover:text-accent"
+                      className="font-medium text-ink transition-colors hover:text-accent"
                     >
                       {[c.firstName, c.lastName].filter(Boolean).join(" ")}
                     </Link>

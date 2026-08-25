@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { PO_STATUSES, labelFor } from "@/lib/constants";
 import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
 import { PO_STATUS_COLORS, fmtDate } from "../utils";
+import { PendingButton, ActionButton } from "@/lib/ui";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
@@ -23,6 +24,7 @@ type Po = {
 type UnassignedGroup = { supplierId: string; supplierName: string; count: number };
 
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
+const GATE_MESSAGE = "Payment gate: deposit/full payment required before POs are sent";
 
 export default function PurchaseOrdersSection({
   orderId,
@@ -35,22 +37,27 @@ export default function PurchaseOrdersSection({
   unassignedGroups: UnassignedGroup[];
   hasPaidPayment: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  function handleAdvance(poId: string) {
-    startTransition(async () => {
-      const res = await advancePoStatus(poId);
-      if (res && !res.ok) {
-        setErrors((e) => ({ ...e, [poId]: res.message ?? "Could not advance" }));
-      } else {
-        setErrors((e) => {
-          const next = { ...e };
-          delete next[poId];
-          return next;
-        });
-      }
-    });
+  async function handleAdvance(poId: string, blocked: boolean) {
+    if (blocked) {
+      setErrors((e) => ({ ...e, [poId]: GATE_MESSAGE }));
+      return;
+    }
+    const res = await advancePoStatus(poId);
+    if (res && !res.ok) {
+      setErrors((e) => ({ ...e, [poId]: res.message ?? "Could not advance" }));
+    } else {
+      setErrors((e) => {
+        const next = { ...e };
+        delete next[poId];
+        return next;
+      });
+    }
+  }
+
+  async function handleCreatePo(supplierId: string) {
+    await createPurchaseOrder(orderId, supplierId);
   }
 
   return (
@@ -58,14 +65,11 @@ export default function PurchaseOrdersSection({
       {unassignedGroups.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {unassignedGroups.map((g) => (
-            <button
-              key={g.supplierId}
-              disabled={pending}
-              className="btn btn-primary btn-sm"
-              onClick={() => startTransition(() => createPurchaseOrder(orderId, g.supplierId))}
-            >
-              Create PO for {g.supplierName} ({g.count} items)
-            </button>
+            <form key={g.supplierId} action={() => handleCreatePo(g.supplierId)}>
+              <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Creating PO…">
+                Create PO for {g.supplierName} ({g.count} items)
+              </PendingButton>
+            </form>
           ))}
         </div>
       )}
@@ -79,7 +83,7 @@ export default function PurchaseOrdersSection({
             const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
             const blocked = po.status === "draft" && !hasPaidPayment;
             return (
-              <div key={po.id} className="rounded-lg border border-border bg-panel p-3">
+              <div key={po.id} className="rounded-lg border border-border bg-panel p-3 transition-colors">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="font-medium text-ink">{po.poNumber ?? "(no PO#)"}</div>
@@ -107,14 +111,12 @@ export default function PurchaseOrdersSection({
 
                 <div className="mt-3 flex items-center gap-2">
                   {next && (
-                    <button
-                      disabled={pending || blocked}
-                      title={blocked ? "Payment gate: deposit/full payment required before POs are sent" : undefined}
-                      className="btn btn-sm disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => handleAdvance(po.id)}
+                    <ActionButton
+                      action={() => handleAdvance(po.id, blocked)}
+                      className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
                     >
                       Advance to {labelFor(PO_STATUSES, next)}
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
                 {errors[po.id] && <div className="banner-warn mt-2">{errors[po.id]}</div>}
@@ -145,55 +147,52 @@ function TrackingEdit({
   trackingCarrier: string | null;
   expectedDelivery: Date | null;
 }) {
-  const [pending, startTransition] = useTransition();
-  const [url, setUrl] = useState(trackingUrl ?? "");
-  const [carrier, setCarrier] = useState(trackingCarrier ?? "");
-  const [expected, setExpected] = useState(
-    expectedDelivery ? new Date(expectedDelivery).toISOString().slice(0, 10) : ""
-  );
-  const dirty =
-    url !== (trackingUrl ?? "") ||
-    carrier !== (trackingCarrier ?? "") ||
-    expected !== (expectedDelivery ? new Date(expectedDelivery).toISOString().slice(0, 10) : "");
+  const expectedDefault = expectedDelivery ? new Date(expectedDelivery).toISOString().slice(0, 10) : "";
+
+  async function handleSave(formData: FormData) {
+    const url = String(formData.get("trackingUrl") ?? "");
+    const carrier = String(formData.get("trackingCarrier") ?? "");
+    const expected = String(formData.get("expectedDelivery") ?? "");
+    await updatePoTracking(poId, url, carrier, expected);
+  }
 
   return (
-    <div className="mt-3 space-y-1.5 border-t border-border pt-2">
+    <form action={handleSave} className="mt-3 space-y-1.5 border-t border-border pt-2">
       <div className="flex gap-1.5">
         <input
+          name="trackingUrl"
           className="input-klyne min-w-0 flex-1 px-2 py-1 text-xs"
           placeholder="Tracking URL"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          defaultValue={trackingUrl ?? ""}
         />
         <input
+          name="trackingCarrier"
           className="input-klyne w-24 px-2 py-1 text-xs"
           placeholder="Carrier"
-          value={carrier}
-          onChange={(e) => setCarrier(e.target.value)}
+          defaultValue={trackingCarrier ?? ""}
         />
       </div>
       <div className="flex items-center gap-1.5">
         <input
           type="date"
+          name="expectedDelivery"
           className="input-klyne px-2 py-1 text-xs"
-          value={expected}
-          onChange={(e) => setExpected(e.target.value)}
+          defaultValue={expectedDefault}
         />
-        {dirty && (
-          <button
-            disabled={pending}
-            className="btn btn-primary btn-sm"
-            onClick={() => startTransition(() => updatePoTracking(poId, url, carrier, expected))}
-          >
-            Save
-          </button>
-        )}
+        <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
+          Save
+        </PendingButton>
         {trackingUrl && (
-          <a href={trackingUrl} target="_blank" rel="noreferrer" className="text-xs text-blue hover:underline">
+          <a
+            href={trackingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-blue transition-colors hover:underline"
+          >
             Open tracking
           </a>
         )}
       </div>
-    </div>
+    </form>
   );
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { COMPANY_TYPES } from "@/lib/constants";
+import { InstantSearch } from "@/lib/ui";
 import { PageHeader, TypeBadge, VerticalLabel } from "./_ui";
 
 export const dynamic = "force-dynamic";
@@ -39,32 +40,29 @@ export default async function CompaniesPage({
         </Link>
       </PageHeader>
 
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
+      <div className="mb-4">
         <label className="block">
           <span className="field-label">Search by name</span>
-          <input
-            type="search"
-            name="q"
-            defaultValue={search}
-            placeholder="Company name…"
-            className="input-klyne w-64"
-          />
+          <InstantSearch paramKey="q" placeholder="Company name…" className="input-klyne w-64" />
         </label>
-        {typeFilter ? <input type="hidden" name="type" value={typeFilter} /> : null}
-        <button type="submit" className="btn">
-          Search
-        </button>
-      </form>
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <Link href={chipHref("")} className={`chip ${typeFilter ? "" : "chip-active"}`}>
+        <Link
+          href={chipHref("")}
+          className={`chip transition-colors active:scale-[0.98] ${
+            typeFilter ? "" : "chip-active"
+          }`}
+        >
           All types
         </Link>
         {COMPANY_TYPES.map((t) => (
           <Link
             key={t.value}
             href={chipHref(t.value)}
-            className={`chip ${typeFilter === t.value ? "chip-active" : ""}`}
+            className={`chip transition-colors active:scale-[0.98] ${
+              typeFilter === t.value ? "chip-active" : ""
+            }`}
           >
             {t.label}
           </Link>
@@ -93,7 +91,7 @@ export default async function CompaniesPage({
                   <td>
                     <Link
                       href={`/companies/${c.id}`}
-                      className="font-medium text-ink hover:text-accent"
+                      className="font-medium text-ink transition-colors hover:text-accent"
                     >
                       {c.name}
                     </Link>

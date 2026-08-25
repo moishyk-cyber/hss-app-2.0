@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { COMPANY_TYPES, labelFor } from "@/lib/constants";
+import { InstantSearch } from "@/lib/ui";
 import { CONTACT_TITLES } from "../contacts/_ui";
 import { AssignCompanySelect } from "./AssignCompanySelect";
 import { EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
@@ -99,37 +100,33 @@ export default async function PhoneBookPage({
         </Link>
       </PageHeader>
 
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
+      <div className="mb-4">
         <label className="block">
           <span className="field-label">Search</span>
-          <input
-            type="search"
-            name="q"
-            defaultValue={search}
+          <InstantSearch
+            paramKey="q"
             placeholder="Business, person, phone or email…"
             className="input-klyne w-80"
           />
         </label>
-        {typeFilter ? <input type="hidden" name="type" value={typeFilter} /> : null}
-        <button type="submit" className="btn">
-          Search
-        </button>
-        {search ? (
-          <Link href={typeFilter ? `/phonebook?type=${typeFilter}` : "/phonebook"} className="btn">
-            Clear
-          </Link>
-        ) : null}
-      </form>
+      </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Link href={chipHref("")} className={`chip ${typeFilter ? "" : "chip-active"}`}>
+        <Link
+          href={chipHref("")}
+          className={`chip transition-colors active:scale-[0.98] ${
+            typeFilter ? "" : "chip-active"
+          }`}
+        >
           All
         </Link>
         {COMPANY_TYPES.map((t) => (
           <Link
             key={t.value}
             href={chipHref(t.value)}
-            className={`chip ${typeFilter === t.value ? "chip-active" : ""}`}
+            className={`chip transition-colors active:scale-[0.98] ${
+              typeFilter === t.value ? "chip-active" : ""
+            }`}
           >
             {t.label}
           </Link>
@@ -159,7 +156,7 @@ export default async function PhoneBookPage({
                 ) : null}
                 <Link
                   href={`/companies/${company.id}`}
-                  className="font-heading text-[14px] font-semibold text-ink hover:text-accent"
+                  className="font-heading text-[14px] font-semibold text-ink transition-colors hover:text-accent"
                 >
                   {company.name}
                 </Link>
@@ -193,11 +190,11 @@ export default async function PhoneBookPage({
                   {company.contacts.map((contact) => (
                     <li
                       key={contact.id}
-                      className="grid grid-cols-1 gap-x-4 gap-y-1 px-4 py-2.5 text-[13px] hover:bg-hover sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]"
+                      className="grid grid-cols-1 gap-x-4 gap-y-1 px-4 py-2.5 text-[13px] transition-colors hover:bg-hover sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]"
                     >
                       <Link
                         href={`/contacts/${contact.id}/edit`}
-                        className="truncate font-medium text-ink hover:text-accent"
+                        className="truncate font-medium text-ink transition-colors hover:text-accent"
                       >
                         {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
                       </Link>
@@ -237,7 +234,7 @@ export default async function PhoneBookPage({
               >
                 <Link
                   href={`/contacts/${contact.id}/edit`}
-                  className="truncate font-medium text-ink hover:text-accent"
+                  className="truncate font-medium text-ink transition-colors hover:text-accent"
                 >
                   {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
                 </Link>

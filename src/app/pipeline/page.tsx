@@ -91,7 +91,7 @@ export default async function PipelinePage() {
                   >
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="block text-[13px] font-medium text-ink hover:text-accent"
+                      className="block text-[13px] font-medium text-ink transition-colors hover:text-accent"
                     >
                       {o.title}
                     </Link>
@@ -146,7 +146,7 @@ export default async function PipelinePage() {
                     <td>
                       <Link
                         href={`/pipeline/${o.id}`}
-                        className="font-medium text-ink hover:text-accent"
+                        className="font-medium text-ink transition-colors hover:text-accent"
                       >
                         {o.title}
                       </Link>

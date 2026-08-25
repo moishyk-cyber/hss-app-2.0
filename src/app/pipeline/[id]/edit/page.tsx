@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { PendingButton } from "@/lib/ui";
 import { updateOpportunity } from "../../actions";
 import {
   Checkbox,
@@ -195,10 +196,10 @@ export default async function EditOpportunityPage({
         </div>
 
         <div className="flex items-center gap-2 border-t border-border pt-5">
-          <button type="submit" className="btn btn-primary">
+          <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">
             Save changes
-          </button>
-          <Link href={`/pipeline/${opportunity.id}`} className="btn">
+          </PendingButton>
+          <Link href={`/pipeline/${opportunity.id}`} className="btn active:scale-[0.99]">
             Cancel
           </Link>
         </div>

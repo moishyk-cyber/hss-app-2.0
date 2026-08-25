@@ -1,7 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
-import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { OPPORTUNITY_STAGES, STAGE_COLORS, labelFor } from "@/lib/constants";
+import { OptimisticSelect } from "@/lib/ui";
 import { changeOpportunityStage } from "./actions";
 
 export function StageSelect({
@@ -11,26 +11,22 @@ export function StageSelect({
   opportunityId: string;
   stage: string;
 }) {
-  const [pending, startTransition] = useTransition();
-
   return (
-    <select
-      aria-label="Change stage"
-      value={stage}
-      disabled={pending}
-      onChange={(e) => {
-        const next = e.target.value;
-        startTransition(async () => {
+    // OptimisticSelect renders an inline-flex span — stretch it across the card.
+    <div className="[&>span]:flex [&>span]:w-full">
+      <OptimisticSelect
+        value={stage}
+        options={OPPORTUNITY_STAGES}
+        className="input-klyne min-w-0 flex-1 bg-panel px-2 py-1 text-xs"
+        action={async (next) => {
           await changeOpportunityStage(opportunityId, next);
-        });
-      }}
-      className="input-klyne w-full bg-panel px-2 py-1 text-xs disabled:opacity-50"
-    >
-      {OPPORTUNITY_STAGES.map((s) => (
-        <option key={s.value} value={s.value}>
-          {s.label}
-        </option>
-      ))}
-    </select>
+        }}
+        render={(optimisticStage) => (
+          <span className={`badge shrink-0 ${STAGE_COLORS[optimisticStage] ?? "badge-gray"}`}>
+            {labelFor(OPPORTUNITY_STAGES, optimisticStage)}
+          </span>
+        )}
+      />
+    </div>
   );
 }

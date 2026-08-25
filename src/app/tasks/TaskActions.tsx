@@ -1,28 +1,19 @@
 "use client";
 
-import { useTransition } from "react";
+import { ActionButton } from "@/lib/ui";
 import { advanceTaskStatus, completeTask } from "./actions";
 
 export default function TaskActions({ taskId, status }: { taskId: string; status: string }) {
-  const [pending, startTransition] = useTransition();
   return (
     <div className="flex gap-2">
       {status !== "done" && (
         <>
-          <button
-            disabled={pending}
-            className="btn btn-sm"
-            onClick={() => startTransition(() => advanceTaskStatus(taskId))}
-          >
+          <ActionButton action={() => advanceTaskStatus(taskId)} className="btn btn-sm active:scale-[0.99]">
             Advance
-          </button>
-          <button
-            disabled={pending}
-            className="btn btn-primary btn-sm"
-            onClick={() => startTransition(() => completeTask(taskId))}
-          >
+          </ActionButton>
+          <ActionButton action={() => completeTask(taskId)} className="btn btn-primary btn-sm active:scale-[0.99]">
             Complete
-          </button>
+          </ActionButton>
         </>
       )}
     </div>

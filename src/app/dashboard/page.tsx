@@ -113,7 +113,7 @@ export default async function DashboardPage() {
               <Link
                 key={o.id}
                 href={`/orders/${o.id}`}
-                className={`card flex items-center justify-between border-l-4 px-4 py-3 text-sm hover:bg-hover ${
+                className={`card flex items-center justify-between border-l-4 px-4 py-3 text-sm transition-colors hover:bg-hover ${
                   o.urgency === "emergency" ? "border-l-red" : "border-l-orange"
                 }`}
                 style={{ borderLeftColor: o.urgency === "emergency" ? "var(--red)" : "var(--orange)" }}
@@ -143,7 +143,7 @@ export default async function DashboardPage() {
             <ul className="card space-y-1.5 p-3">
               {followUps.map((f, i) => (
                 <li key={i} className="flex items-center justify-between text-sm">
-                  <Link href={f.href} className="text-blue hover:underline">
+                  <Link href={f.href} className="text-blue transition-colors hover:underline">
                     {f.label}
                   </Link>
                   <span className="text-xs text-gray-dark">{fmtDate(f.date)}</span>
@@ -158,14 +158,14 @@ export default async function DashboardPage() {
           <ul className="card space-y-1.5 p-3 text-sm">
             {awaitingPaymentOrders.map((o) => (
               <li key={`o-${o.id}`}>
-                <Link href={`/orders/${o.id}`} className="text-blue hover:underline">
+                <Link href={`/orders/${o.id}`} className="text-blue transition-colors hover:underline">
                   Order awaiting payment: {o.title}
                 </Link>
               </li>
             ))}
             {staleNeedsPricingItems.map((i) => (
               <li key={`i-${i.id}`}>
-                <Link href="/rfq" className="text-blue hover:underline">
+                <Link href="/rfq" className="text-blue transition-colors hover:underline">
                   Needs pricing (3+ days): {i.name}
                 </Link>
               </li>

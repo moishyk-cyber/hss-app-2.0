@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { prisma } from "@/lib/prisma";
 import { TASK_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_COLORS, labelFor } from "@/lib/constants";
+import { PendingButton } from "@/lib/ui";
 import { createTask } from "./actions";
 import TaskActions from "./TaskActions";
 
@@ -88,9 +89,9 @@ export default async function TasksPage() {
             <option value="external">External</option>
           </select>
         </label>
-        <button type="submit" className="btn btn-primary">
+        <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Adding…">
           Create task
-        </button>
+        </PendingButton>
       </form>
 
       {grouped.map((group) => (
@@ -121,7 +122,7 @@ export default async function TasksPage() {
                     const overdue = isOverdue(task.dueDate, task.status);
                     return (
                       <Fragment key={task.id}>
-                        <tr>
+                        <tr className="transition-colors">
                           <td className="font-medium text-ink">{task.title}</td>
                           <td className="text-gray-dark">{task.assignee?.name ?? "—"}</td>
                           <td className={overdue ? "font-semibold text-red" : "text-gray-dark"}>
@@ -135,7 +136,7 @@ export default async function TasksPage() {
                           <td className="text-gray-dark">{TYPE_LABELS[task.type] ?? task.type}</td>
                           <td>
                             {href ? (
-                              <a href={href} className="text-blue hover:underline">
+                              <a href={href} className="text-blue transition-colors hover:underline">
                                 {task.linkedType} →
                               </a>
                             ) : task.linkedType ? (
@@ -153,7 +154,7 @@ export default async function TasksPage() {
                         {task.subtasks.map((sub) => {
                           const subOverdue = isOverdue(sub.dueDate, sub.status);
                           return (
-                            <tr key={sub.id} className="bg-panel/60">
+                            <tr key={sub.id} className="bg-panel/60 transition-colors">
                               <td className="pl-8 text-gray-dark">↳ {sub.title}</td>
                               <td className="text-gray-dark">{sub.assignee?.name ?? "—"}</td>
                               <td className={subOverdue ? "font-semibold text-red" : "text-gray-dark"}>
