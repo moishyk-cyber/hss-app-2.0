@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES, labelFor } from "@/lib/constants";
+import { OPPORTUNITY_STAGES, RFQ_STATUSES, labelFor } from "@/lib/constants";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -39,6 +39,86 @@ async function logActivity(
   await prisma.activityLog.create({
     data: { userName: "System", linkedType, linkedId, action, detail },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Line-item editing from the opportunity detail page.
+// Each one revalidates /rfq too, since the same rows drive the purchasing queue.
+// ---------------------------------------------------------------------------
+
+/** Revalidate every surface a line-item edit is visible on. */
+function revalidateLineItem(opportunityId: string | null) {
+  if (opportunityId) revalidatePath(`/pipeline/${opportunityId}`);
+  revalidatePath("/pipeline");
+  revalidatePath("/rfq");
+}
+
+export async function updateLineItemQty(lineItemId: string, qty: number) {
+  const safeQty = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+  const item = await prisma.lineItem.update({
+    where: { id: lineItemId },
+    data: { qty: safeQty },
+  });
+  await logActivity(
+    "line_item",
+    lineItemId,
+    "qty_changed",
+    `"${item.name}" quantity set to ${safeQty}`
+  );
+  revalidateLineItem(item.opportunityId);
+}
+
+export async function updateLineItemSupplier(lineItemId: string, supplierId: string) {
+  const supplier = supplierId
+    ? await prisma.company.findUnique({
+        where: { id: supplierId },
+        select: { id: true, name: true },
+      })
+    : null;
+
+  const item = await prisma.lineItem.update({
+    where: { id: lineItemId },
+    data: { supplierId: supplier?.id ?? null },
+  });
+  await logActivity(
+    "line_item",
+    lineItemId,
+    "supplier_changed",
+    `"${item.name}" supplier set to ${supplier?.name ?? "none"}`
+  );
+  revalidateLineItem(item.opportunityId);
+}
+
+export async function updateLineItemPricing(
+  lineItemId: string,
+  unitCost: number | null,
+  unitPrice: number | null
+) {
+  const item = await prisma.lineItem.update({
+    where: { id: lineItemId },
+    data: { unitCost, unitPrice },
+  });
+  await logActivity(
+    "line_item",
+    lineItemId,
+    "pricing_changed",
+    `"${item.name}" cost ${unitCost ?? "—"} / price ${unitPrice ?? "—"}`
+  );
+  revalidateLineItem(item.opportunityId);
+}
+
+export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: string) {
+  const item = await prisma.lineItem.update({
+    where: { id: lineItemId },
+    data: { rfqStatus },
+  });
+  await logActivity(
+    "line_item",
+    lineItemId,
+    "rfq_status_changed",
+    `"${item.name}" RFQ status set to ${labelFor(RFQ_STATUSES, rfqStatus)}`
+  );
+  revalidateLineItem(item.opportunityId);
 }
 
 /** Kanban card stage picker. */

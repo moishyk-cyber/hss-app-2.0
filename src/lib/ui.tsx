@@ -92,6 +92,61 @@ export function OptimisticSelect({
   );
 }
 
+/**
+ * A status pill that IS the dropdown: looks like a .badge, click opens the native
+ * select menu, color + label flip optimistically the moment a value is chosen.
+ * Replaces the old "badge + separate select" pairs.
+ */
+export function BadgeSelect({
+  value,
+  options,
+  action,
+  colorMap,
+  fallback = "badge-gray",
+}: {
+  value: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  action: (next: string) => Promise<void>;
+  colorMap: Record<string, string>;
+  fallback?: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [optimistic, setOptimistic] = useOptimistic(value);
+  const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
+  return (
+    <span
+      className={`badge relative cursor-pointer select-none ${colorMap[optimistic] ?? fallback} ${
+        isPending ? "opacity-60" : ""
+      }`}
+    >
+      {isPending ? <Spinner className="mr-1" /> : null}
+      {label}
+      <span aria-hidden className="ml-1 text-[9px] opacity-70">
+        ▾
+      </span>
+      <select
+        aria-label="Change status"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        value={optimistic}
+        disabled={isPending}
+        onChange={(e) => {
+          const next = e.target.value;
+          startTransition(async () => {
+            setOptimistic(next);
+            await action(next);
+          });
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
 /** Action button (not inside a form) that runs a server action in a transition with pending feedback. */
 export function ActionButton({
   action,

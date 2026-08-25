@@ -1,194 +1,149 @@
-import { Fragment } from "react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { TASK_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_COLORS, labelFor } from "@/lib/constants";
-import { PendingButton } from "@/lib/ui";
-import { createTask } from "./actions";
-import TaskActions from "./TaskActions";
+import { TASK_STATUSES } from "@/lib/constants";
+import CreateTaskPanel from "./CreateTaskPanel";
+import TaskListClient from "./TaskListClient";
+import type { TaskRowData } from "./TaskRow";
 
 export const dynamic = "force-dynamic";
 
-const TYPE_LABELS: Record<string, string> = {
-  internal: "Internal",
-  customer_service: "Customer Service",
-  external: "External",
+async function resolveLinkedLabels(pairs: { type: string; id: string }[]): Promise<Map<string, string>> {
+  const byType: Record<string, string[]> = {};
+  for (const p of pairs) {
+    (byType[p.type] ??= []).push(p.id);
+  }
+  const map = new Map<string, string>();
+  const [opps, orders, items, companies, contacts] = await Promise.all([
+    byType.opportunity?.length
+      ? prisma.opportunity.findMany({ where: { id: { in: byType.opportunity } }, select: { id: true, title: true } })
+      : Promise.resolve([]),
+    byType.order?.length
+      ? prisma.order.findMany({ where: { id: { in: byType.order } }, select: { id: true, title: true } })
+      : Promise.resolve([]),
+    byType.line_item?.length
+      ? prisma.lineItem.findMany({ where: { id: { in: byType.line_item } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    byType.company?.length
+      ? prisma.company.findMany({ where: { id: { in: byType.company } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    byType.contact?.length
+      ? prisma.contact.findMany({
+          where: { id: { in: byType.contact } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  opps.forEach((o) => map.set(`opportunity:${o.id}`, o.title));
+  orders.forEach((o) => map.set(`order:${o.id}`, o.title));
+  items.forEach((i) => map.set(`line_item:${i.id}`, i.name));
+  companies.forEach((c) => map.set(`company:${c.id}`, c.name));
+  contacts.forEach((c) => map.set(`contact:${c.id}`, `${c.firstName} ${c.lastName ?? ""}`.trim()));
+  return map;
+}
+
+type TaskWithRelations = {
+  id: string;
+  title: string;
+  assigneeId: string | null;
+  assignee: { id: string; name: string } | null;
+  dueDate: Date | null;
+  status: string;
+  priority: string;
+  type: string;
+  linkedType: string | null;
+  linkedId: string | null;
+  comments: TaskRowData["comments"];
 };
 
-function linkedHref(linkedType: string | null, linkedId: string | null): string | null {
-  if (!linkedType || !linkedId) return null;
-  if (linkedType === "order") return `/orders/${linkedId}`;
-  if (linkedType === "opportunity") return `/pipeline/${linkedId}`;
-  return null;
-}
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const { status } = await searchParams;
 
-function isOverdue(dueDate: Date | null, status: string) {
-  if (!dueDate || status === "done") return false;
-  return new Date(dueDate) < new Date(new Date().toDateString());
-}
-
-export default async function TasksPage() {
   const [tasks, users] = await Promise.all([
     prisma.task.findMany({
       where: { parentTaskId: null },
       include: {
-        assignee: { select: { name: true } },
-        subtasks: { include: { assignee: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+        assignee: { select: { id: true, name: true } },
+        comments: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+        subtasks: {
+          include: {
+            assignee: { select: { id: true, name: true } },
+            comments: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const grouped = TASK_STATUSES.map((s) => ({
-    status: s.value,
-    label: s.label,
-    tasks: tasks.filter((t) => t.status === s.value),
+  const allTasksFlat = tasks.flatMap((t) => [t as TaskWithRelations, ...(t.subtasks as TaskWithRelations[])]);
+  const linkPairs = allTasksFlat
+    .filter((t) => t.linkedType && t.linkedId)
+    .map((t) => ({ type: t.linkedType as string, id: t.linkedId as string }));
+  const labelMap = await resolveLinkedLabels(linkPairs);
+
+  function toRowData(t: TaskWithRelations): TaskRowData {
+    return {
+      id: t.id,
+      title: t.title,
+      assigneeId: t.assigneeId,
+      assigneeName: t.assignee?.name ?? null,
+      dueDate: t.dueDate,
+      status: t.status,
+      priority: t.priority,
+      type: t.type,
+      linkedType: t.linkedType,
+      linkedId: t.linkedId,
+      linkedLabel: t.linkedType && t.linkedId ? labelMap.get(`${t.linkedType}:${t.linkedId}`) ?? null : null,
+      comments: t.comments,
+      subtasks: [],
+    };
+  }
+
+  const rows: TaskRowData[] = tasks.map((t) => ({
+    ...toRowData(t as TaskWithRelations),
+    subtasks: t.subtasks.map((s) => toRowData(s as TaskWithRelations)),
   }));
 
+  const counts: Record<string, number> = {};
+  for (const s of TASK_STATUSES) counts[s.value] = 0;
+  for (const t of allTasksFlat) counts[t.status] = (counts[t.status] ?? 0) + 1;
+
+  const validStatus = status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
+  const visibleStatuses = validStatus ? [validStatus] : TASK_STATUSES.map((s) => s.value);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-24">
       <div>
         <h1 className="page-title">Tasks</h1>
         <p className="page-sub">Internal, customer-service, and external follow-ups.</p>
       </div>
 
-      <form action={createTask} className="card flex flex-wrap items-end gap-3 p-4">
-        <label>
-          <span className="field-label">Title</span>
-          <input name="title" required className="input-klyne w-56" />
-        </label>
-        <label>
-          <span className="field-label">Assignee</span>
-          <select name="assigneeId" className="input-klyne">
-            <option value="">— unassigned —</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="field-label">Due date</span>
-          <input type="date" name="dueDate" className="input-klyne" />
-        </label>
-        <label>
-          <span className="field-label">Priority</span>
-          <select name="priority" defaultValue="medium" className="input-klyne">
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="field-label">Type</span>
-          <select name="type" defaultValue="internal" className="input-klyne">
-            <option value="internal">Internal</option>
-            <option value="customer_service">Customer Service</option>
-            <option value="external">External</option>
-          </select>
-        </label>
-        <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Adding…">
-          Create task
-        </PendingButton>
-      </form>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {TASK_STATUSES.map((s) => {
+          const active = validStatus === s.value;
+          return (
+            <Link
+              key={s.value}
+              href={active ? "/tasks" : `/tasks?status=${s.value}`}
+              className="stat-card block transition-colors hover:bg-hover"
+              style={active ? { borderLeftWidth: 4, borderLeftColor: "var(--accent)" } : undefined}
+            >
+              <div className="section-label">{s.label}</div>
+              <div className="stat-value mt-1">{counts[s.value] ?? 0}</div>
+            </Link>
+          );
+        })}
+      </div>
 
-      {tasks.length === 0 ? (
-        <div className="empty-state">
-          No tasks yet. Create one above — tasks also get added automatically as orders and customer requests move
-          through fulfillment.
-        </div>
-      ) : (
-        grouped.map((group) => (
-        <section key={group.status}>
-          <h2 className="section-label mb-2 flex items-center gap-2">
-            {group.label}
-            <span className="badge badge-gray">{group.tasks.length}</span>
-          </h2>
-          {group.tasks.length === 0 ? (
-            <div className="empty-state">Nothing here.</div>
-          ) : (
-            <div className="card overflow-hidden overflow-x-auto">
-              <table className="table-klyne min-w-[760px]">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Assignee</th>
-                    <th>Due</th>
-                    <th>Priority</th>
-                    <th>Type</th>
-                    <th>Linked</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.tasks.map((task) => {
-                    const href = linkedHref(task.linkedType, task.linkedId);
-                    const overdue = isOverdue(task.dueDate, task.status);
-                    return (
-                      <Fragment key={task.id}>
-                        <tr className="transition-colors">
-                          <td className="font-medium text-ink">{task.title}</td>
-                          <td className="text-gray-dark">{task.assignee?.name ?? "—"}</td>
-                          <td className={overdue ? "font-semibold text-red" : "text-gray-dark"}>
-                            {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—"}
-                          </td>
-                          <td>
-                            <span className={`badge ${TASK_PRIORITY_COLORS[task.priority] ?? "badge-gray"}`}>
-                              {labelFor(TASK_PRIORITIES, task.priority)}
-                            </span>
-                          </td>
-                          <td className="text-gray-dark">{TYPE_LABELS[task.type] ?? task.type}</td>
-                          <td>
-                            {href ? (
-                              <a href={href} className="text-blue transition-colors hover:underline">
-                                {task.linkedType} →
-                              </a>
-                            ) : task.linkedType ? (
-                              <span className="text-gray-dark">
-                                {task.linkedType}: {task.linkedId}
-                              </span>
-                            ) : (
-                              <span className="text-gray">—</span>
-                            )}
-                          </td>
-                          <td>
-                            <TaskActions taskId={task.id} status={task.status} />
-                          </td>
-                        </tr>
-                        {task.subtasks.map((sub) => {
-                          const subOverdue = isOverdue(sub.dueDate, sub.status);
-                          return (
-                            <tr key={sub.id} className="bg-panel/60 transition-colors">
-                              <td className="pl-8 text-gray-dark">↳ {sub.title}</td>
-                              <td className="text-gray-dark">{sub.assignee?.name ?? "—"}</td>
-                              <td className={subOverdue ? "font-semibold text-red" : "text-gray-dark"}>
-                                {sub.dueDate ? new Date(sub.dueDate).toLocaleDateString() : "—"}
-                              </td>
-                              <td>
-                                <span className={`badge ${TASK_PRIORITY_COLORS[sub.priority] ?? "badge-gray"}`}>
-                                  {labelFor(TASK_PRIORITIES, sub.priority)}
-                                </span>
-                              </td>
-                              <td className="text-gray-dark">{TYPE_LABELS[sub.type] ?? sub.type}</td>
-                              <td className="text-gray">—</td>
-                              <td>
-                                <TaskActions taskId={sub.id} status={sub.status} />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-        ))
-      )}
+      <TaskListClient tasks={rows} visibleStatuses={visibleStatuses} />
+
+      <CreateTaskPanel users={users} />
     </div>
   );
 }

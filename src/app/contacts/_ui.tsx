@@ -132,6 +132,38 @@ export const CONTACT_TITLES = [
   { value: "other", label: "Other" },
 ] as const;
 
+/**
+ * Title is free text — a four-option dropdown hid people's real jobs. The common
+ * ones are offered as suggestions; whatever is typed is stored exactly as typed.
+ */
+export function TitleField({
+  defaultValue,
+  name = "title",
+  label = "Title",
+}: {
+  defaultValue?: string | null;
+  name?: string;
+  label?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="field-label">{label}</span>
+      <input
+        name={name}
+        list="contact-title-suggestions"
+        defaultValue={defaultValue ?? ""}
+        placeholder="e.g. Head Chef, Owner, Purchasing"
+        className="input-klyne w-full"
+      />
+      <datalist id="contact-title-suggestions">
+        {CONTACT_TITLES.map((t) => (
+          <option key={t.value} value={t.label} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
+
 export const CONTACT_STATUSES = [
   { value: "active", label: "Active" },
   { value: "onboarding", label: "Onboarding" },

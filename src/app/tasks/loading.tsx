@@ -6,11 +6,18 @@ export default function TasksLoading() {
         <div className="h-4 w-80 animate-pulse rounded bg-hover" />
       </div>
 
-      <div className="card flex flex-wrap items-end gap-3 p-4">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-9 w-32 animate-pulse rounded bg-hover" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="stat-card space-y-2">
+            <div className="h-3 w-20 animate-pulse rounded bg-hover" />
+            <div className="h-7 w-10 animate-pulse rounded bg-hover" />
+          </div>
         ))}
-        <div className="h-9 w-28 animate-pulse rounded bg-hover" />
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <div className="h-7 w-20 animate-pulse rounded-full bg-hover" />
+        <div className="h-7 w-20 animate-pulse rounded-full bg-hover" />
       </div>
 
       {Array.from({ length: 4 }).map((_, section) => (

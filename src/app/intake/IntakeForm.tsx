@@ -1,8 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { PendingButton } from "@/lib/ui";
+import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
+
+/** Remembers who is doing intake — stands in for auth until there is a real session. */
+const SALESPERSON_KEY = "hss.salespersonId";
+const MAX_COMPANY_RESULTS = 8;
+
+function subscribeToStoredSalesperson(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function readStoredSalesperson(): string | null {
+  try {
+    return window.localStorage.getItem(SALESPERSON_KEY);
+  } catch {
+    return null; // private mode / storage disabled
+  }
+}
+
+/** The server has no localStorage, so it always renders "unassigned". */
+function noStoredSalesperson(): string | null {
+  return null;
+}
 
 type IntakeContact = {
   id: string;
@@ -128,11 +151,16 @@ export function IntakeForm({
   salespeople: { id: string; name: string }[];
   initialCompanyId?: string;
 }) {
+  const initialCompany = initialCompanyId
+    ? companies.find((c) => c.id === initialCompanyId)
+    : undefined;
+
   const [clientMode, setClientMode] = useState<"existing" | "new">("existing");
-  const [companyQuery, setCompanyQuery] = useState("");
-  const [companyId, setCompanyId] = useState(initialCompanyId ?? "");
+  const [companyQuery, setCompanyQuery] = useState(initialCompany?.name ?? "");
+  const [companyId, setCompanyId] = useState(initialCompany?.id ?? "");
   const [newCompanyName, setNewCompanyName] = useState("");
   const [contactMode, setContactMode] = useState<"existing" | "new">("existing");
+  const [salespersonOverride, setSalespersonOverride] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<"project" | "order">("project");
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
@@ -144,14 +172,37 @@ export function IntakeForm({
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
   const [autoFocusKey, setAutoFocusKey] = useState(1);
 
-  const filteredCompanies = useMemo(() => {
-    const q = companyQuery.trim().toLowerCase();
-    if (!q) return companies;
-    return companies.filter((c) => c.name.toLowerCase().includes(q));
-  }, [companies, companyQuery]);
+  // No auth yet: remember the last salesperson locally and preselect them.
+  const storedSalespersonId = useSyncExternalStore(
+    subscribeToStoredSalesperson,
+    readStoredSalesperson,
+    noStoredSalesperson
+  );
+  const rememberedSalespersonId =
+    storedSalespersonId && salespeople.some((u) => u.id === storedSalespersonId)
+      ? storedSalespersonId
+      : null;
+  // An explicit pick wins; otherwise fall back to whoever was remembered.
+  const salespersonId = salespersonOverride ?? rememberedSalespersonId ?? "";
+
+  function rememberSalesperson(id: string) {
+    try {
+      if (id) window.localStorage.setItem(SALESPERSON_KEY, id);
+    } catch {
+      // ignore
+    }
+  }
+
+  const companyOptions = useMemo(
+    () => companies.map((c) => ({ id: c.id, name: c.name, hint: c.locationName })),
+    [companies]
+  );
 
   const selectedCompany = companies.find((c) => c.id === companyId) ?? null;
   const goesToPipeline = orderType === "project" || needsPricing === "yes";
+
+  // A deal without a client is not useful — keep the CTA closed until one is chosen.
+  const clientReady = clientMode === "new" || companyId !== "";
 
   const namedItemCount = items.filter((i) => i.name.trim() !== "").length;
   const clientLabel =
@@ -181,7 +232,11 @@ export function IntakeForm({
   }
 
   return (
-    <form action={submitIntake} className="pb-4">
+    <form
+      action={submitIntake}
+      onSubmit={() => rememberSalesperson(salespersonId)}
+      className="pb-4"
+    >
       {/* hidden mirrors of the branching state so the server action sees plain fields */}
       <input type="hidden" name="clientMode" value={clientMode} />
       <input type="hidden" name="contactMode" value={contactMode} />
@@ -190,61 +245,33 @@ export function IntakeForm({
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         {/* ---------------- LEFT: who / when ---------------- */}
         <div className="space-y-4">
-          <Panel
-            title="Who"
-            action={
-              <Segmented
-                ariaLabel="Client type"
-                value={clientMode}
-                onChange={(v) => setClientMode(v as "existing" | "new")}
-                options={[
-                  { value: "existing", label: "Existing" },
-                  { value: "new", label: "New client" },
-                ]}
-              />
-            }
-          >
+          <Panel title="Who">
             {clientMode === "existing" ? (
               <div className="space-y-3">
-                <label className="block">
-                  <span className={labelClass}>Find the business</span>
-                  <input
-                    type="search"
-                    value={companyQuery}
-                    onChange={(e) => setCompanyQuery(e.target.value)}
-                    placeholder="Start typing a name…"
-                    className={inputClass}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className={labelClass}>
-                    Business
-                    {companyQuery.trim() ? (
-                      <span className="ml-1 font-normal text-gray">
-                        ({filteredCompanies.length} match
-                        {filteredCompanies.length === 1 ? "" : "es"})
-                      </span>
-                    ) : null}
-                  </span>
-                  <select
-                    name="companyId"
-                    required
-                    value={companyId}
-                    onChange={(e) => {
-                      setCompanyId(e.target.value);
-                      setContactMode("existing");
-                    }}
-                    className={inputClass}
-                  >
-                    <option value="">— select a business —</option>
-                    {filteredCompanies.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <BusinessCombobox
+                  query={companyQuery}
+                  setQuery={(next) => {
+                    setCompanyQuery(next);
+                    // Typing again means they're re-searching — drop the old pick.
+                    if (companyId) setCompanyId("");
+                  }}
+                  options={companyOptions}
+                  maxResults={MAX_COMPANY_RESULTS}
+                  selectedId={companyId}
+                  onPick={(o) => {
+                    setCompanyId(o.id);
+                    setCompanyQuery(o.name);
+                    setContactMode("existing");
+                  }}
+                  onCreate={(name) => {
+                    setClientMode("new");
+                    setNewCompanyName(name);
+                    setCompanyId("");
+                    setContactMode("new");
+                  }}
+                />
+                {/* The combobox is a display control; this carries the real value. */}
+                <input type="hidden" name="companyId" value={companyId} />
 
                 {selectedCompany ? (
                   <>
@@ -292,12 +319,28 @@ export function IntakeForm({
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="badge badge-green">New business</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setClientMode("existing");
+                      setContactMode("existing");
+                      setCompanyQuery(newCompanyName);
+                    }}
+                    className="text-xs text-gray-dark transition-colors hover:text-accent"
+                  >
+                    ← Search existing instead
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="block sm:col-span-2">
                     <span className={labelClass}>Business name</span>
                     <input
                       name="newCompanyName"
                       required
+                      autoFocus
                       value={newCompanyName}
                       onChange={(e) => setNewCompanyName(e.target.value)}
                       className={inputClass}
@@ -349,11 +392,20 @@ export function IntakeForm({
               </label>
               <label className="block">
                 <span className={labelClass}>Salesperson</span>
-                <select name="salespersonId" className={inputClass} defaultValue="">
+                <select
+                  name="salespersonId"
+                  className={inputClass}
+                  value={salespersonId}
+                  onChange={(e) => {
+                    setSalespersonOverride(e.target.value);
+                    rememberSalesperson(e.target.value);
+                  }}
+                >
                   <option value="">— unassigned —</option>
                   {salespeople.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name}
+                      {u.id === rememberedSalespersonId ? " (you)" : ""}
                     </option>
                   ))}
                 </select>
@@ -575,12 +627,23 @@ export function IntakeForm({
               {clientLabel}
             </span>
           </p>
-          <PendingButton
-            className="btn btn-primary active:scale-[0.99]"
-            pendingText={goesToPipeline ? "Creating opportunity…" : "Creating order…"}
-          >
-            {goesToPipeline ? "Create opportunity" : "Create order"}
-          </PendingButton>
+          {clientReady ? (
+            <PendingButton
+              className="btn btn-primary active:scale-[0.99]"
+              pendingText={goesToPipeline ? "Creating opportunity…" : "Creating order…"}
+            >
+              {goesToPipeline ? "Create opportunity" : "Create order"}
+            </PendingButton>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title="Pick or create a business first"
+              className="btn btn-primary cursor-not-allowed opacity-50"
+            >
+              {goesToPipeline ? "Create opportunity" : "Create order"}
+            </button>
+          )}
         </div>
       </div>
     </form>
@@ -600,13 +663,20 @@ function NewContactFields() {
       </label>
       <label className="block">
         <span className={labelClass}>Title</span>
-        <select name="newContactTitle" className={inputClass} defaultValue="">
-          <option value="">— none —</option>
-          <option value="manager">Manager</option>
-          <option value="purchasing">Purchasing</option>
-          <option value="billing">Billing</option>
-          <option value="other">Other</option>
-        </select>
+        {/* Free text — a fixed list hid people's real jobs. Stored as typed. */}
+        <input
+          name="newContactTitle"
+          list="intake-title-suggestions"
+          placeholder="e.g. Head Chef, Owner"
+          className={inputClass}
+        />
+        <datalist id="intake-title-suggestions">
+          <option value="Manager" />
+          <option value="Purchasing" />
+          <option value="Billing" />
+          <option value="Owner" />
+          <option value="Head Chef" />
+        </datalist>
       </label>
       <label className="block">
         <span className={labelClass}>Email</span>

@@ -5,15 +5,14 @@ import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/flow";
 import { PendingButton } from "@/lib/ui";
 import { markOpportunityLost, markOpportunityWon } from "../actions";
+import { LineItemRow } from "../LineItemRow";
 import {
   Card,
   DELIVERY_TYPES,
   DESIGN_STATUSES,
   DetailHeader,
   DetailRow,
-  DeliveryLabel,
   ORDER_TYPES,
-  RfqBadge,
   StageBadge,
   fmtDate,
   fmtMoney,
@@ -44,6 +43,12 @@ export default async function OpportunityDetailPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
+
+  const suppliers = await prisma.company.findMany({
+    where: { type: { in: ["supplier", "vendor"] } },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   const opportunity = await prisma.opportunity.findUnique({
     where: { id },
@@ -261,7 +266,16 @@ export default async function OpportunityDetailPage({
             </div>
             {opportunity.lineItems.length === 0 ? (
               <div className="p-4">
-                <div className="empty-state">No line items on this deal.</div>
+                <div className="empty-state">
+                  No line items yet. Items arrive from Intake, or add them on the{" "}
+                  <Link
+                    href={`/pipeline/${opportunity.id}/edit`}
+                    className="text-accent transition-colors hover:underline"
+                  >
+                    deal
+                  </Link>
+                  .
+                </div>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -279,24 +293,7 @@ export default async function OpportunityDetailPage({
                   </thead>
                   <tbody>
                     {opportunity.lineItems.map((li) => (
-                      <tr key={li.id}>
-                        <td>
-                          <div className="font-medium text-ink">{li.name}</div>
-                          {li.description ? (
-                            <div className="text-xs text-gray">{li.description}</div>
-                          ) : null}
-                        </td>
-                        <td className="text-gray-dark">{li.qty}</td>
-                        <td className="text-gray-dark">{li.supplier?.name ?? "—"}</td>
-                        <td className="text-gray-dark">{fmtMoney(li.unitCost)}</td>
-                        <td className="text-gray-dark">{fmtMoney(li.unitPrice)}</td>
-                        <td>
-                          <RfqBadge status={li.rfqStatus} />
-                        </td>
-                        <td className="text-xs text-gray-dark">
-                          <DeliveryLabel status={li.deliveryStatus} />
-                        </td>
-                      </tr>
+                      <LineItemRow key={li.id} item={li} suppliers={suppliers} />
                     ))}
                   </tbody>
                 </table>

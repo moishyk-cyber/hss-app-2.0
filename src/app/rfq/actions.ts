@@ -32,14 +32,9 @@ export async function updateLineItemPricing(
   revalidatePath("/rfq");
 }
 
-export async function advanceRfqStatus(lineItemId: string) {
-  const item = await prisma.lineItem.findUnique({ where: { id: lineItemId } });
-  if (!item) return;
-  const order = ["needs_pricing", "rfq_sent", "quote_received", "priced_in_autoquotes", "approved"];
-  const idx = order.indexOf(item.rfqStatus);
-  const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : item.rfqStatus;
-  await prisma.lineItem.update({ where: { id: lineItemId }, data: { rfqStatus: next } });
-  await log(lineItemId, "rfq_status_advanced", `RFQ status advanced to ${next}`);
+export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string) {
+  await prisma.lineItem.update({ where: { id: lineItemId }, data: { rfqStatus } });
+  await log(lineItemId, "rfq_status_set", `RFQ status set to ${rfqStatus}`);
   revalidatePath("/rfq");
 }
 

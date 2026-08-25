@@ -1,7 +1,7 @@
 "use client";
 
-import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
-import { OptimisticSelect, PendingButton } from "@/lib/ui";
+import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS } from "@/lib/constants";
+import { BadgeSelect, PendingButton } from "@/lib/ui";
 import { setOrderStatus, setOrderUrgency, updateOrderQbInvoice } from "../actions";
 
 export function UrgencyStatusControls({
@@ -14,29 +14,29 @@ export function UrgencyStatusControls({
   status: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <OptimisticSelect
-        value={urgency}
-        options={ORDER_URGENCIES}
-        action={(next) => setOrderUrgency(orderId, next)}
-        className="input-klyne"
-        render={(val, pending) => (
-          <span className={`badge ${URGENCY_COLORS[val] ?? "badge-gray"} ${pending ? "opacity-60" : ""}`}>
-            {labelFor(ORDER_URGENCIES, val)}
-          </span>
-        )}
-      />
-      <OptimisticSelect
-        value={status}
-        options={ORDER_STATUSES}
-        action={(next) => setOrderStatus(orderId, next)}
-        className="input-klyne"
-        render={(val, pending) => (
-          <span className={`badge ${ORDER_STATUS_COLORS[val] ?? "badge-gray"} ${pending ? "opacity-60" : ""}`}>
-            {val.replace(/_/g, " ")}
-          </span>
-        )}
-      />
+    <div className="flex flex-wrap items-center gap-4">
+      <label className="flex items-center gap-2">
+        <span className="field-label" style={{ marginBottom: 0 }}>
+          Urgency
+        </span>
+        <BadgeSelect
+          value={urgency}
+          options={ORDER_URGENCIES}
+          action={(next) => setOrderUrgency(orderId, next)}
+          colorMap={URGENCY_COLORS}
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="field-label" style={{ marginBottom: 0 }}>
+          Status
+        </span>
+        <BadgeSelect
+          value={status}
+          options={ORDER_STATUSES}
+          action={(next) => setOrderStatus(orderId, next)}
+          colorMap={ORDER_STATUS_COLORS}
+        />
+      </label>
     </div>
   );
 }

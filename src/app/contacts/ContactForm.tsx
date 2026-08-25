@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PendingButton } from "@/lib/ui";
-import { CONTACT_STATUSES, CONTACT_TITLES, Field, Select, TextArea } from "./_ui";
+import { BusinessField } from "./BusinessField";
+import { CONTACT_STATUSES, Field, Select, TextArea, TitleField } from "./_ui";
 
 type ContactFormValues = {
   id?: string;
@@ -33,7 +34,8 @@ export function ContactForm({
   returnTo?: string;
   error?: string;
 }) {
-  const companyOptions = companies.map((c) => ({ value: c.id, label: c.name }));
+  const defaultCompanyName =
+    companies.find((c) => c.id === contact?.companyId)?.name ?? null;
 
   return (
     <form action={action} className="card max-w-3xl p-6">
@@ -50,21 +52,12 @@ export function ContactForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="First name" name="firstName" defaultValue={contact?.firstName} required />
         <Field label="Last name" name="lastName" defaultValue={contact?.lastName} />
-        <Select
-          label="Business"
-          name="companyId"
-          options={companyOptions}
-          defaultValue={contact?.companyId}
-          includeBlank="— select a business —"
-          required
+        <BusinessField
+          companies={companies}
+          defaultCompanyId={contact?.companyId}
+          defaultCompanyName={defaultCompanyName}
         />
-        <Select
-          label="Title"
-          name="title"
-          options={CONTACT_TITLES}
-          defaultValue={contact?.title}
-          includeBlank="— none —"
-        />
+        <TitleField defaultValue={contact?.title} />
         <Field label="Email" name="email" type="email" defaultValue={contact?.email} />
         <Field label="Phone" name="phone" defaultValue={contact?.phone} />
         <Field label="Phone extension" name="phoneExt" defaultValue={contact?.phoneExt} />

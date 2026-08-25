@@ -1,20 +1,15 @@
 "use client";
 
-import { useOptimistic } from "react";
-import { labelFor, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { PendingButton, OptimisticSelect, ActionButton } from "@/lib/ui";
+import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
+import { PendingButton, OptimisticSelect, ActionButton, BadgeSelect } from "@/lib/ui";
 import {
-  advanceRfqStatus,
   markLineItemRemoved,
+  setLineItemRfqStatus,
   setLineItemSupplier,
   updateLineItemPricing,
 } from "./actions";
-import { RFQ_QUEUE_STATUSES } from "./queue-statuses";
 
 type SupplierOption = { id: string; name: string };
-
-const RFQ_ORDER = ["needs_pricing", "rfq_sent", "quote_received", "priced_in_autoquotes", "approved"];
-const ALL_RFQ_STATUSES = [...RFQ_QUEUE_STATUSES, { value: "approved", label: "Approved" }, { value: "removed", label: "Removed" }];
 
 export default function RfqRow({
   item,
@@ -38,24 +33,10 @@ export default function RfqRow({
   parentHref: string | null;
   parentLabel: string;
 }) {
-  const [optimisticStatus, setOptimisticStatus] = useOptimistic(item.rfqStatus);
-
   async function handleSavePricing(formData: FormData) {
     const cost = String(formData.get("cost") ?? "");
     const price = String(formData.get("price") ?? "");
     await updateLineItemPricing(item.id, cost === "" ? null : parseFloat(cost), price === "" ? null : parseFloat(price));
-  }
-
-  async function handleAdvance() {
-    const idx = RFQ_ORDER.indexOf(optimisticStatus);
-    const next = idx >= 0 && idx < RFQ_ORDER.length - 1 ? RFQ_ORDER[idx + 1] : optimisticStatus;
-    setOptimisticStatus(next);
-    await advanceRfqStatus(item.id);
-  }
-
-  async function handleRemove() {
-    setOptimisticStatus("removed");
-    await markLineItemRemoved(item.id);
   }
 
   return (
@@ -108,13 +89,16 @@ export default function RfqRow({
       <td className="text-gray-dark">{item.assignee?.name ?? "—"}</td>
       <td>
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`badge ${RFQ_STATUS_COLORS[optimisticStatus] ?? "badge-gray"}`}>
-            {labelFor(ALL_RFQ_STATUSES, optimisticStatus)}
-          </span>
-          <ActionButton action={handleAdvance} className="btn btn-sm active:scale-[0.99]">
-            Advance
-          </ActionButton>
-          <ActionButton action={handleRemove} className="btn btn-sm btn-danger active:scale-[0.99]">
+          <BadgeSelect
+            value={item.rfqStatus}
+            options={RFQ_STATUSES}
+            action={(next) => setLineItemRfqStatus(item.id, next)}
+            colorMap={RFQ_STATUS_COLORS}
+          />
+          <ActionButton
+            action={() => markLineItemRemoved(item.id)}
+            className="btn btn-sm btn-danger active:scale-[0.99]"
+          >
             Remove
           </ActionButton>
         </div>

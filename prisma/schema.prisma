@@ -21,6 +21,7 @@ model User {
   orders        Order[]       @relation("OrderOwner")
   lineItems     LineItem[]    @relation("ItemAssignee")
   tasks         Task[]        @relation("TaskAssignee")
+  taskComments  TaskComment[]
   createdAt     DateTime      @default(now())
 }
 
@@ -231,8 +232,20 @@ model Task {
   parentTask     Task?     @relation("Subtasks", fields: [parentTaskId], references: [id])
   parentTaskId   String?
   subtasks       Task[]    @relation("Subtasks")
+  comments       TaskComment[]
   mondayId       String?   @unique
   createdAt      DateTime  @default(now())
+}
+
+model TaskComment {
+  id         String   @id @default(cuid())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  author     User?    @relation(fields: [authorId], references: [id])
+  authorId   String?
+  authorName String?
+  body       String
+  createdAt  DateTime @default(now())
 }
 
 model IntakeSubmission {

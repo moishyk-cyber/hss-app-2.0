@@ -15,18 +15,16 @@ export function AssignCompanySelect({
     ...companies.map((c) => ({ value: c.id, label: c.name })),
   ];
 
+  // Not a status pill — this is an assignment picker, so it stays a plain select.
   return (
-    // OptimisticSelect renders an inline-flex span — give it a predictable width.
-    <div className="[&>span]:flex [&>span]:w-full [&>span]:max-w-xs">
-      <OptimisticSelect
-        value=""
-        options={options}
-        className="input-klyne min-w-0 flex-1 py-1 text-xs"
-        action={async (companyId) => {
-          if (!companyId) return;
-          await assignContactCompany(contactId, companyId);
-        }}
-      />
-    </div>
+    <OptimisticSelect
+      value=""
+      options={options}
+      className="input-klyne max-w-xs py-1 text-xs"
+      action={async (companyId) => {
+        if (!companyId) return;
+        await assignContactCompany(contactId, companyId);
+      }}
+    />
   );
 }

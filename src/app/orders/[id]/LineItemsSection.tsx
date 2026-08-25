@@ -1,9 +1,9 @@
 "use client";
 
-import { DELIVERY_STATUSES, labelFor } from "@/lib/constants";
+import { DELIVERY_STATUSES } from "@/lib/constants";
 import { setLineItemDeliveryStatus } from "../actions";
 import { DELIVERY_STATUS_COLORS, fmtDate } from "../utils";
-import { OptimisticSelect } from "@/lib/ui";
+import { BadgeSelect } from "@/lib/ui";
 
 type Item = {
   id: string;
@@ -45,16 +45,11 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
               <td className="text-gray-dark">{item.supplier?.name ?? "—"}</td>
               <td className="text-gray-dark">{item.unitCost != null ? `$${item.unitCost}` : "—"}</td>
               <td>
-                <OptimisticSelect
+                <BadgeSelect
                   value={item.deliveryStatus}
                   options={DELIVERY_STATUSES}
                   action={(next) => setLineItemDeliveryStatus(item.id, next)}
-                  className="input-klyne px-1.5 py-0.5 text-xs"
-                  render={(val, pending) => (
-                    <span className={`badge ${DELIVERY_STATUS_COLORS[val] ?? "badge-gray"} ${pending ? "opacity-60" : ""}`}>
-                      {labelFor(DELIVERY_STATUSES, val)}
-                    </span>
-                  )}
+                  colorMap={DELIVERY_STATUS_COLORS}
                 />
               </td>
               <td className="text-xs text-gray">
