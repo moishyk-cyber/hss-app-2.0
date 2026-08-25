@@ -74,10 +74,12 @@ export async function setLineItemDeliveryStatus(lineItemId: string, deliveryStat
   }
 }
 
-export async function createPurchaseOrder(orderId: string, supplierId: string) {
+/** Create a PO for one vendor, attaching only the explicitly chosen line items. */
+export async function createPurchaseOrder(orderId: string, supplierId: string, lineItemIds: string[]) {
+  if (!supplierId || lineItemIds.length === 0) return;
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { purchaseOrders: true, company: true },
+    include: { purchaseOrders: true },
   });
   if (!order) return;
   const supplier = await prisma.company.findUnique({ where: { id: supplierId } });
@@ -88,39 +90,10 @@ export async function createPurchaseOrder(orderId: string, supplierId: string) {
     data: { orderId, supplierId, poNumber, status: "draft" },
   });
   await prisma.lineItem.updateMany({
-    where: { orderId, supplierId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
+    where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
     data: { purchaseOrderId: po.id },
   });
-  await log(orderId, "po_created", `PO ${poNumber} created for ${supplier?.name ?? "supplier"}`);
-  revalidateOrder(orderId);
-}
-
-/** Header CTA: create one PO per supplier for every still-unassigned, supplier-tagged line item on the order. */
-export async function createAllPurchaseOrders(orderId: string) {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      purchaseOrders: true,
-      lineItems: { where: { purchaseOrderId: null, rfqStatus: { not: "removed" }, supplierId: { not: null } } },
-    },
-  });
-  if (!order) return;
-
-  const supplierIds = Array.from(new Set(order.lineItems.map((li) => li.supplierId).filter((v): v is string => !!v)));
-  let n = order.purchaseOrders.length;
-  const base = order.jobId || order.id.slice(-6).toUpperCase();
-
-  for (const supplierId of supplierIds) {
-    n += 1;
-    const supplier = await prisma.company.findUnique({ where: { id: supplierId } });
-    const poNumber = `PO-${base}-${n}`;
-    const po = await prisma.purchaseOrder.create({ data: { orderId, supplierId, poNumber, status: "draft" } });
-    await prisma.lineItem.updateMany({
-      where: { orderId, supplierId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-      data: { purchaseOrderId: po.id },
-    });
-    await log(orderId, "po_created", `PO ${poNumber} created for ${supplier?.name ?? "supplier"}`);
-  }
+  await log(orderId, "po_created", `PO ${poNumber} created for ${supplier?.name ?? "vendor"} (${lineItemIds.length} item(s))`);
   revalidateOrder(orderId);
 }
 

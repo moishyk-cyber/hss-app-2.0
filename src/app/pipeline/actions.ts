@@ -68,27 +68,6 @@ export async function updateLineItemQty(lineItemId: string, qty: number) {
   revalidateLineItem(item.opportunityId);
 }
 
-export async function updateLineItemSupplier(lineItemId: string, supplierId: string) {
-  const supplier = supplierId
-    ? await prisma.company.findUnique({
-        where: { id: supplierId },
-        select: { id: true, name: true },
-      })
-    : null;
-
-  const item = await prisma.lineItem.update({
-    where: { id: lineItemId },
-    data: { supplierId: supplier?.id ?? null },
-  });
-  await logActivity(
-    "line_item",
-    lineItemId,
-    "supplier_changed",
-    `"${item.name}" supplier set to ${supplier?.name ?? "none"}`
-  );
-  revalidateLineItem(item.opportunityId);
-}
-
 export async function updateLineItemPricing(
   lineItemId: string,
   unitCost: number | null,

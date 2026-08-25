@@ -2,12 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { DELIVERY_STATUSES, RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
+import { BadgeSelect, Spinner } from "@/lib/ui";
 import {
   updateLineItemPricing,
   updateLineItemQty,
   updateLineItemRfqStatus,
-  updateLineItemSupplier,
 } from "./actions";
 
 export type EditableLineItem = {
@@ -15,7 +14,6 @@ export type EditableLineItem = {
   name: string;
   description: string | null;
   qty: number;
-  supplierId: string | null;
   unitCost: number | null;
   unitPrice: number | null;
   rfqStatus: string;
@@ -77,18 +75,7 @@ function InlineNumber({
   );
 }
 
-export function LineItemRow({
-  item,
-  suppliers,
-}: {
-  item: EditableLineItem;
-  suppliers: { id: string; name: string }[];
-}) {
-  const supplierOptions = [
-    { value: "", label: "— none —" },
-    ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-  ];
-
+export function LineItemRow({ item }: { item: EditableLineItem }) {
   return (
     <tr>
       <td>
@@ -106,17 +93,6 @@ export function LineItemRow({
           min="1"
           onSave={async (raw) => {
             await updateLineItemQty(item.id, Number.parseInt(raw, 10));
-          }}
-        />
-      </td>
-
-      <td>
-        <OptimisticSelect
-          value={item.supplierId ?? ""}
-          options={supplierOptions}
-          className="input-klyne max-w-[11rem] px-2 py-1 text-xs"
-          action={async (next) => {
-            await updateLineItemSupplier(item.id, next);
           }}
         />
       </td>

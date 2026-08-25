@@ -21,7 +21,8 @@ type Po = {
   lineItems: PoLineItem[];
 };
 
-type UnassignedGroup = { supplierId: string; supplierName: string; count: number };
+type UnassignedLineItem = { id: string; name: string; qty: number };
+type Vendor = { id: string; name: string };
 
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
 const GATE_MESSAGE = "Payment gate: deposit/full payment required before POs are sent";
@@ -29,15 +30,18 @@ const GATE_MESSAGE = "Payment gate: deposit/full payment required before POs are
 export default function PurchaseOrdersSection({
   orderId,
   purchaseOrders,
-  unassignedGroups,
+  unassignedLineItems,
+  vendors,
   hasPaidPayment,
 }: {
   orderId: string;
   purchaseOrders: Po[];
-  unassignedGroups: UnassignedGroup[];
+  unassignedLineItems: UnassignedLineItem[];
+  vendors: Vendor[];
   hasPaidPayment: boolean;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [creating, setCreating] = useState(false);
 
   async function handleAdvance(poId: string, blocked: boolean) {
     if (blocked) {
@@ -56,29 +60,62 @@ export default function PurchaseOrdersSection({
     }
   }
 
-  async function handleCreatePo(supplierId: string) {
-    await createPurchaseOrder(orderId, supplierId);
+  async function handleCreatePo(formData: FormData) {
+    const supplierId = String(formData.get("supplierId") ?? "");
+    const lineItemIds = formData.getAll("lineItemIds").map(String);
+    if (!supplierId || lineItemIds.length === 0) return;
+    await createPurchaseOrder(orderId, supplierId, lineItemIds);
+    setCreating(false);
   }
 
   return (
     <div className="space-y-4">
-      {unassignedGroups.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {unassignedGroups.map((g) => (
-            <form key={g.supplierId} action={() => handleCreatePo(g.supplierId)}>
+      {unassignedLineItems.length > 0 &&
+        (creating ? (
+          <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
+            <div className="section-label">Create Purchase Order</div>
+            <div>
+              <span className="field-label">Vendor</span>
+              <select name="supplierId" required className="input-klyne w-full max-w-xs">
+                <option value="">— select vendor —</option>
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="field-label">Items</span>
+              <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface p-2">
+                {unassignedLineItems.map((li) => (
+                  <label key={li.id} className="flex items-center gap-2 text-sm text-ink">
+                    <input type="checkbox" name="lineItemIds" value={li.id} defaultChecked />
+                    {li.name} <span className="text-gray">x{li.qty}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn btn-sm" onClick={() => setCreating(false)}>
+                Cancel
+              </button>
               <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Creating PO…">
-                Create PO for {g.supplierName} ({g.count} items)
+                Create PO
               </PendingButton>
-            </form>
-          ))}
-        </div>
-      )}
+            </div>
+          </form>
+        ) : (
+          <button type="button" className="btn btn-primary btn-sm active:scale-[0.99]" onClick={() => setCreating(true)}>
+            Create PO
+          </button>
+        ))}
 
       {purchaseOrders.length === 0 ? (
         <div className="empty-state">
-          {unassignedGroups.length > 0
-            ? "No purchase orders yet — use the buttons above to create one per supplier."
-            : "No purchase orders yet. Assign suppliers to line items in the RFQ Queue first."}
+          {unassignedLineItems.length > 0
+            ? "No purchase orders yet — use the Create PO button above."
+            : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -91,7 +128,7 @@ export default function PurchaseOrdersSection({
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="font-medium text-ink">{po.poNumber ?? "(no PO#)"}</div>
-                    <div className="text-xs text-gray-dark">{po.supplier?.name ?? "No supplier"}</div>
+                    <div className="text-xs text-gray-dark">{po.supplier?.name ?? "No vendor"}</div>
                   </div>
                   <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
                     {labelFor(PO_STATUSES, po.status)}

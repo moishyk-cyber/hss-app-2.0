@@ -584,8 +584,8 @@ export function IntakeForm({
                 {deliveryType === "inside" ? (
                   <div className="banner-warn sm:col-span-2">
                     Inside delivery: confirm the openings fit before ordering. Equipment that will
-                    not fit through the door comes back with a supplier restocking fee — tell the
-                    client up front.
+                    not fit through the door comes back with a restocking fee — tell the client up
+                    front.
                   </div>
                 ) : null}
                 <div className="sm:col-span-2">

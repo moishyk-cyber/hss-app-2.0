@@ -8,7 +8,7 @@ import LineItemsSection from "./LineItemsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
 import { FlowStepper, type FlowStep } from "@/lib/flow";
 import { ActionButton } from "@/lib/ui";
-import { acknowledgeAllSentPos, createAllPurchaseOrders, setOrderStatus } from "../actions";
+import { acknowledgeAllSentPos, setOrderStatus } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -18,34 +18,35 @@ type Phase = (typeof PHASE_ORDER)[number];
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const order = await prisma.order.findUnique({
-    where: { id },
-    include: {
-      company: true,
-      contact: true,
-      owner: true,
-      payments: true,
-      lineItems: { include: { supplier: true }, orderBy: { createdAt: "asc" } },
-      purchaseOrders: {
-        include: { supplier: true, lineItems: { select: { id: true, name: true, qty: true } } },
-        orderBy: { createdAt: "asc" },
+  const [order, vendors] = await Promise.all([
+    prisma.order.findUnique({
+      where: { id },
+      include: {
+        company: true,
+        contact: true,
+        owner: true,
+        payments: true,
+        lineItems: { orderBy: { createdAt: "asc" } },
+        purchaseOrders: {
+          include: { supplier: true, lineItems: { select: { id: true, name: true, qty: true } } },
+          orderBy: { createdAt: "asc" },
+        },
       },
-    },
-  });
+    }),
+    prisma.company.findMany({
+      where: { type: { in: ["supplier", "vendor"] } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   if (!order) notFound();
 
   const hasPaidPayment = order.payments.some((p) => p.status === "paid");
 
-  const unassignedMap = new Map<string, { supplierId: string; supplierName: string; count: number }>();
-  for (const li of order.lineItems) {
-    if (li.supplierId && !li.purchaseOrderId && li.rfqStatus !== "removed") {
-      const existing = unassignedMap.get(li.supplierId);
-      if (existing) existing.count += 1;
-      else unassignedMap.set(li.supplierId, { supplierId: li.supplierId, supplierName: li.supplier?.name ?? "Supplier", count: 1 });
-    }
-  }
-  const unassignedGroups = Array.from(unassignedMap.values());
+  const unassignedLineItems = order.lineItems
+    .filter((li) => !li.purchaseOrderId && li.rfqStatus !== "removed")
+    .map((li) => ({ id: li.id, name: li.name, qty: li.qty }));
 
   const activeLineItems = order.lineItems.filter((li) => li.rfqStatus !== "removed");
   const allPosReceived = order.purchaseOrders.length > 0 && order.purchaseOrders.every((po) => po.status === "received");
@@ -60,7 +61,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   let phase: Phase;
   if (!hasPaidPayment) phase = "payment";
   else if (order.status === "complete") phase = "complete";
-  else if (unassignedGroups.length > 0 || anyDraft || anySent) phase = "pos";
+  else if (unassignedLineItems.length > 0 || anyDraft || anySent) phase = "pos";
   else if (hasAnyPo && !allPosReceived) phase = "in_transit";
   else phase = "delivery";
 
@@ -77,8 +78,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       state: phaseIdx < 1 ? "upcoming" : phaseIdx === 1 ? "current" : "done",
       hint:
         phaseIdx === 1
-          ? unassignedGroups.length > 0
-            ? `Create ${unassignedGroups.length} PO${unassignedGroups.length > 1 ? "s" : ""}`
+          ? unassignedLineItems.length > 0
+            ? `Create PO${unassignedLineItems.length > 1 ? "s" : ""} for ${unassignedLineItems.length} item${unassignedLineItems.length > 1 ? "s" : ""}`
             : anyDraft
             ? "Send draft POs"
             : "Awaiting supplier acknowledgment"
@@ -105,11 +106,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         Record payment
       </a>
     );
-  } else if (unassignedGroups.length > 0) {
+  } else if (unassignedLineItems.length > 0) {
     primaryAction = (
-      <ActionButton action={createAllPurchaseOrders.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
+      <a href="#purchase-orders" className="btn btn-primary active:scale-[0.99]">
         Create POs
-      </ActionButton>
+      </a>
     );
   } else if (anySent) {
     primaryAction = (
@@ -168,7 +169,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       <PurchaseOrdersSection
         orderId={order.id}
         purchaseOrders={order.purchaseOrders}
-        unassignedGroups={unassignedGroups}
+        unassignedLineItems={unassignedLineItems}
+        vendors={vendors}
         hasPaidPayment={hasPaidPayment}
       />
     </section>

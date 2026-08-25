@@ -1,19 +1,11 @@
 "use client";
 
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { PendingButton, OptimisticSelect, ActionButton, BadgeSelect } from "@/lib/ui";
-import {
-  markLineItemRemoved,
-  setLineItemRfqStatus,
-  setLineItemSupplier,
-  updateLineItemPricing,
-} from "./actions";
-
-type SupplierOption = { id: string; name: string };
+import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
+import { markLineItemRemoved, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
 
 export default function RfqRow({
   item,
-  suppliers,
   parentHref,
   parentLabel,
 }: {
@@ -25,11 +17,9 @@ export default function RfqRow({
     leadTimeDays: number | null;
     unitCost: number | null;
     unitPrice: number | null;
-    supplierId: string | null;
     rfqStatus: string;
     assignee: { name: string } | null;
   };
-  suppliers: SupplierOption[];
   parentHref: string | null;
   parentLabel: string;
 }) {
@@ -54,14 +44,6 @@ export default function RfqRow({
         ) : (
           <span className="text-gray">—</span>
         )}
-      </td>
-      <td>
-        <OptimisticSelect
-          value={item.supplierId ?? ""}
-          options={[{ value: "", label: "— none —" }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]}
-          action={(next) => setLineItemSupplier(item.id, next)}
-          className="input-klyne px-1.5 py-1 text-xs"
-        />
       </td>
       <td>
         <form action={handleSavePricing} className="flex items-center gap-1">

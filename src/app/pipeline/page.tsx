@@ -1,24 +1,21 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES } from "@/lib/constants";
-import { StageSelect } from "./StageSelect";
+import { KanbanBoard, type KanbanCard } from "./KanbanBoard";
+import { PipelineList } from "./PipelineList";
 import { PageHeader, StageBadge, daysSince, fmtDate, fmtMoney, isOverdue } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
 const CLOSED_STAGES = ["won", "lost"];
 
-type PipelineOpportunity = {
-  id: string;
-  title: string;
-  stage: string;
-  value: number | null;
-  createdAt: Date;
-  nextFollowUp: Date | null;
-  company: { id: string; name: string } | null;
-};
+export default async function PipelinePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const { view } = await searchParams;
+  const isList = view === "list";
 
-export default async function PipelinePage() {
   const [opportunities, stageChanges] = await Promise.all([
     prisma.opportunity.findMany({
       orderBy: { createdAt: "desc" },
@@ -44,38 +41,52 @@ export default async function PipelinePage() {
   for (const log of stageChanges) {
     if (!lastStageChange.has(log.linkedId)) lastStageChange.set(log.linkedId, log.at);
   }
-  const daysInStage = (o: PipelineOpportunity) =>
-    daysSince(lastStageChange.get(o.id) ?? o.createdAt);
 
-  const openStages = OPPORTUNITY_STAGES.filter((s) => !CLOSED_STAGES.includes(s.value));
-  const byStage = new Map<string, PipelineOpportunity[]>();
-  for (const s of OPPORTUNITY_STAGES) byStage.set(s.value, []);
-  for (const o of opportunities) {
-    const bucket = byStage.get(o.stage);
-    if (bucket) bucket.push(o);
-    else byStage.set(o.stage, [o]);
-  }
+  // Everything the client board needs, already formatted — no dates cross the boundary.
+  const cards: KanbanCard[] = opportunities.map((o) => ({
+    id: o.id,
+    title: o.title,
+    stage: o.stage,
+    value: o.value,
+    companyName: o.company?.name ?? null,
+    daysInStage: daysSince(lastStageChange.get(o.id) ?? o.createdAt),
+    followUpLabel: o.nextFollowUp ? fmtDate(o.nextFollowUp) : null,
+    followUpOverdue: isOverdue(o.nextFollowUp),
+  }));
 
-  const openTotal = opportunities
-    .filter((o) => !CLOSED_STAGES.includes(o.stage))
-    .reduce((sum, o) => sum + (o.value ?? 0), 0);
-
-  const won = byStage.get("won") ?? [];
-  const lost = byStage.get("lost") ?? [];
-  const openCount = opportunities.length - won.length - lost.length;
+  const openCards = cards.filter((c) => !CLOSED_STAGES.includes(c.stage));
+  const openTotal = openCards.reduce((sum, c) => sum + (c.value ?? 0), 0);
+  const won = cards.filter((c) => c.stage === "won");
+  const lost = cards.filter((c) => c.stage === "lost");
 
   return (
     <div>
       <PageHeader
         title="Pipeline"
-        subtitle={`${openCount} open · ${fmtMoney(openTotal)} in play`}
+        subtitle={`${openCards.length} open · ${fmtMoney(openTotal)} in play`}
       >
+        <div className="flex items-center gap-1.5">
+          <Link
+            href="/pipeline"
+            className={`chip transition-colors active:scale-[0.98] ${isList ? "" : "chip-active"}`}
+          >
+            Kanban
+          </Link>
+          <Link
+            href="/pipeline?view=list"
+            className={`chip transition-colors active:scale-[0.98] ${isList ? "chip-active" : ""}`}
+          >
+            List
+          </Link>
+        </div>
         <Link href="/intake" className="btn btn-primary active:scale-[0.99]">
           New intake
         </Link>
       </PageHeader>
 
-      {opportunities.length === 0 ? (
+      {isList ? (
+        <PipelineList cards={cards} />
+      ) : cards.length === 0 ? (
         <div className="empty-state">
           <p className="text-gray-dark">No deals yet.</p>
           <p className="mt-1">
@@ -87,130 +98,60 @@ export default async function PipelinePage() {
           </p>
         </div>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-4">
-          {openStages.map((stage, stageIndex) => {
-            const cards = byStage.get(stage.value) ?? [];
-            const total = cards.reduce((sum, o) => sum + (o.value ?? 0), 0);
-            return (
-              <div key={stage.value} className="card flex w-72 shrink-0 flex-col">
-                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
-                  <h2 className="section-label">{stage.label}</h2>
-                  <div className="flex items-center gap-2">
-                    {total > 0 ? <span className="text-xs text-gray">{fmtMoney(total)}</span> : null}
-                    <span className="badge badge-gray">{cards.length}</span>
-                  </div>
-                </div>
-
-                <div className="flex-1 space-y-2 p-3">
-                  {cards.map((o) => {
-                    const overdue = isOverdue(o.nextFollowUp);
-                    return (
-                      <article
-                        key={o.id}
-                        className="rounded-[10px] border border-border bg-surface p-3 transition-shadow hover:shadow-[0_2px_8px_rgba(28,33,32,0.08)]"
-                      >
-                        <Link
-                          href={`/pipeline/${o.id}`}
-                          className="block text-[13px] font-medium text-ink transition-colors hover:text-accent"
-                        >
-                          {o.title}
-                        </Link>
-                        <div className="mt-1 truncate text-xs text-gray">
-                          {o.company ? o.company.name : "No company"}
-                        </div>
-
-                        <div className="mt-2 flex items-center justify-between text-xs">
-                          <span className="font-medium text-ink">{fmtMoney(o.value)}</span>
-                          <span className="text-gray">{daysInStage(o)}d in stage</span>
-                        </div>
-
-                        {o.nextFollowUp ? (
-                          <div className="mt-2">
-                            <span className={`badge ${overdue ? "badge-orange" : "badge-gray"}`}>
-                              {overdue ? "Follow up overdue" : "Follow up"} ·{" "}
-                              {fmtDate(o.nextFollowUp)}
-                            </span>
-                          </div>
-                        ) : null}
-
-                        <div className="mt-2.5">
-                          <StageSelect opportunityId={o.id} stage={o.stage} />
-                        </div>
-                      </article>
-                    );
-                  })}
-
-                  {cards.length === 0 ? (
-                    <p className="px-1 py-8 text-center text-xs leading-relaxed text-gray">
-                      {stageIndex === 0 ? (
-                        <>
-                          Deals land here from{" "}
-                          <Link
-                            href="/intake"
-                            className="text-accent transition-colors hover:underline"
-                          >
-                            Intake
-                          </Link>
-                          .
-                        </>
-                      ) : (
-                        <>Nothing here — deals arrive from {openStages[stageIndex - 1].label}.</>
-                      )}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <p className="page-sub mb-2">Drag a card between columns to move the deal.</p>
+          <KanbanBoard cards={openCards} />
+        </>
       )}
 
-      <details className="card mt-2">
-        <summary className="cursor-pointer px-4 py-3">
-          <span className="section-label">Closed deals</span>
-          <span className="ml-3 badge badge-green">{won.length} won</span>
-          <span className="ml-2 badge badge-gray">{lost.length} lost</span>
-        </summary>
-        <div className="border-t border-border">
-          {won.length + lost.length === 0 ? (
-            <div className="p-4">
-              <div className="empty-state">
-                Nothing closed yet. Deals land here once you mark them Won or Lost.
+      {isList ? null : (
+        <details className="card mt-2">
+          <summary className="cursor-pointer px-4 py-3">
+            <span className="section-label">Closed deals</span>
+            <span className="ml-3 badge badge-green">{won.length} won</span>
+            <span className="ml-2 badge badge-gray">{lost.length} lost</span>
+          </summary>
+          <div className="border-t border-border">
+            {won.length + lost.length === 0 ? (
+              <div className="p-4">
+                <div className="empty-state">
+                  Nothing closed yet. Deals land here once you mark them Won or Lost.
+                </div>
               </div>
-            </div>
-          ) : (
-            <table className="table-klyne">
-              <thead>
-                <tr>
-                  <th>Deal</th>
-                  <th>Company</th>
-                  <th>Value</th>
-                  <th>Stage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...won, ...lost].map((o) => (
-                  <tr key={o.id}>
-                    <td>
-                      <Link
-                        href={`/pipeline/${o.id}`}
-                        className="font-medium text-ink transition-colors hover:text-accent"
-                      >
-                        {o.title}
-                      </Link>
-                    </td>
-                    <td className="text-gray-dark">{o.company?.name ?? "—"}</td>
-                    <td className="text-gray-dark">{fmtMoney(o.value)}</td>
-                    <td>
-                      <StageBadge stage={o.stage} />
-                    </td>
+            ) : (
+              <table className="table-klyne">
+                <thead>
+                  <tr>
+                    <th>Deal</th>
+                    <th>Company</th>
+                    <th>Value</th>
+                    <th>Stage</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </details>
+                </thead>
+                <tbody>
+                  {[...won, ...lost].map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <Link
+                          href={`/pipeline/${c.id}`}
+                          className="font-medium text-ink transition-colors hover:text-accent"
+                        >
+                          {c.title}
+                        </Link>
+                      </td>
+                      <td className="text-gray-dark">{c.companyName ?? "—"}</td>
+                      <td className="text-gray-dark">{fmtMoney(c.value)}</td>
+                      <td>
+                        <StageBadge stage={c.stage} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

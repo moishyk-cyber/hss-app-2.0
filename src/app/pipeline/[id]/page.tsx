@@ -44,19 +44,13 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const suppliers = await prisma.company.findMany({
-    where: { type: { in: ["supplier", "vendor"] } },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-
   const opportunity = await prisma.opportunity.findUnique({
     where: { id },
     include: {
       company: true,
       primaryContact: true,
       salesperson: true,
-      lineItems: { include: { supplier: { select: { id: true, name: true } } } },
+      lineItems: true,
       orders: { select: { id: true, title: true, status: true } },
     },
   });
@@ -284,7 +278,6 @@ export default async function OpportunityDetailPage({
                     <tr>
                       <th>Item</th>
                       <th>Qty</th>
-                      <th>Supplier</th>
                       <th>Cost</th>
                       <th>Price</th>
                       <th>RFQ status</th>
@@ -293,7 +286,7 @@ export default async function OpportunityDetailPage({
                   </thead>
                   <tbody>
                     {opportunity.lineItems.map((li) => (
-                      <LineItemRow key={li.id} item={li} suppliers={suppliers} />
+                      <LineItemRow key={li.id} item={li} />
                     ))}
                   </tbody>
                 </table>

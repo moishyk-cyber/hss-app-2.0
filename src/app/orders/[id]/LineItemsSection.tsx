@@ -9,7 +9,6 @@ type Item = {
   id: string;
   name: string;
   qty: number;
-  supplier: { name: string } | null;
   unitCost: number | null;
   deliveryStatus: string;
   dateOrdered: Date | null;
@@ -30,7 +29,6 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
           <tr>
             <th>Item</th>
             <th>Qty</th>
-            <th>Supplier</th>
             <th>Cost</th>
             <th>Delivery Status</th>
             <th>Ordered / Arrived</th>
@@ -42,7 +40,6 @@ export default function LineItemsSection({ items }: { items: Item[] }) {
             <tr key={item.id} className="transition-colors">
               <td className="font-medium text-ink">{item.name}</td>
               <td className="text-gray-dark">{item.qty}</td>
-              <td className="text-gray-dark">{item.supplier?.name ?? "—"}</td>
               <td className="text-gray-dark">{item.unitCost != null ? `$${item.unitCost}` : "—"}</td>
               <td>
                 <BadgeSelect
