@@ -2,21 +2,37 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { FlowStepper, type FlowStep } from "@/lib/flow";
 import { PendingButton } from "@/lib/ui";
 import { markOpportunityLost, markOpportunityWon } from "../actions";
 import {
   Card,
   DELIVERY_TYPES,
   DESIGN_STATUSES,
+  DetailHeader,
   DetailRow,
   DeliveryLabel,
   ORDER_TYPES,
-  PageHeader,
   RfqBadge,
   StageBadge,
   fmtDate,
   fmtMoney,
+  isOverdue,
 } from "../_ui";
+
+/** Where this deal sits in the journey of UX_FLOW §2. */
+const FLOW_STEPS = ["Intake", "Estimating", "Proposal", "Negotiation", "Closed"] as const;
+
+const STEP_INDEX_BY_STAGE: Record<string, number> = {
+  new: 0,
+  info_missing: 0,
+  estimating: 1,
+  proposal_sent: 2,
+  revisions_needed: 2,
+  negotiation: 3,
+  won: 4,
+  lost: 4,
+};
 
 export const dynamic = "force-dynamic";
 
@@ -41,22 +57,124 @@ export default async function OpportunityDetailPage({
   });
   if (!opportunity) notFound();
 
-  const closed = opportunity.stage === "won" || opportunity.stage === "lost";
+  const stage = opportunity.stage;
+  const closed = stage === "won" || stage === "lost";
   const isProject = opportunity.orderType === "project";
+  const linkedOrder = opportunity.orders[0] ?? null;
+
+  // Next action is derived cheaply from the line items' RFQ status counts.
+  const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
+  const needsPricingCount = liveItems.filter((li) => li.rfqStatus === "needs_pricing").length;
+  const awaitingQuoteCount = liveItems.filter((li) => li.rfqStatus === "rfq_sent").length;
+  const pricedCount = liveItems.filter(
+    (li) => li.rfqStatus === "quote_received" || li.rfqStatus === "priced_in_autoquotes"
+  ).length;
+
+  const lostReason = opportunity.lostReason;
+  const itemCount = liveItems.length;
+
+  const nextActionHint = ((): string => {
+    if (stage === "won") return "View order";
+    if (stage === "lost") return lostReason ?? "Deal lost";
+    if (needsPricingCount > 0) {
+      return `Price ${needsPricingCount} item${needsPricingCount === 1 ? "" : "s"}`;
+    }
+    if (awaitingQuoteCount > 0) {
+      return `Chase ${awaitingQuoteCount} quote${awaitingQuoteCount === 1 ? "" : "s"}`;
+    }
+    if (stage === "revisions_needed") return "Send revised proposal";
+    if (stage === "proposal_sent") return "Awaiting client — mark won or lost";
+    if (stage === "negotiation") return "Close the deal";
+    if (itemCount === 0) return "Add line items";
+    if (pricedCount > 0) return "Send proposal";
+    return "Move to estimating";
+  })();
+
+  const currentStepIndex = STEP_INDEX_BY_STAGE[stage] ?? 0;
+  const steps: FlowStep[] = FLOW_STEPS.map((label, i) => {
+    // A closed deal has finished the whole journey, including the final step.
+    const state: FlowStep["state"] =
+      closed || i < currentStepIndex ? "done" : i === currentStepIndex ? "current" : "upcoming";
+    return {
+      label,
+      state,
+      hint: i === currentStepIndex ? nextActionHint : undefined,
+    };
+  });
+
+  // Exactly one contextual primary action (UX_FLOW §H).
+  const primaryAction =
+    stage === "won" && linkedOrder
+      ? { href: `/orders/${linkedOrder.id}`, label: "View order" }
+      : closed
+        ? { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" }
+        : needsPricingCount > 0
+          ? { href: "/rfq", label: `Open RFQ items (${needsPricingCount})` }
+          : stage === "proposal_sent" || stage === "revisions_needed" || stage === "negotiation"
+            ? { href: "#close-deal", label: "Mark won or lost" }
+            : { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" };
+
+  const followUpOverdue = isOverdue(opportunity.nextFollowUp);
 
   return (
     <div>
-      <PageHeader
+      <DetailHeader
+        backHref="/pipeline"
+        backLabel="Pipeline"
         title={opportunity.title}
         subtitle={opportunity.company?.name ?? "No company linked"}
-      >
-        <Link href="/pipeline" className="btn">
-          Back to pipeline
-        </Link>
-        <Link href={`/pipeline/${opportunity.id}/edit`} className="btn btn-primary">
-          Edit
-        </Link>
-      </PageHeader>
+        badges={
+          <>
+            <StageBadge stage={stage} />
+            <span className="badge badge-gray">{labelFor(ORDER_TYPES, opportunity.orderType)}</span>
+            {followUpOverdue ? (
+              <span className="badge badge-orange">
+                Follow up overdue · {fmtDate(opportunity.nextFollowUp)}
+              </span>
+            ) : null}
+          </>
+        }
+        secondary={
+          !closed || stage === "won" ? (
+            <Link
+              href={`/pipeline/${opportunity.id}/edit`}
+              className="btn active:scale-[0.99]"
+            >
+              Edit
+            </Link>
+          ) : null
+        }
+        action={
+          <Link href={primaryAction.href} className="btn btn-primary active:scale-[0.99]">
+            {primaryAction.label}
+          </Link>
+        }
+      />
+
+      <div className="card mb-4 px-5 py-4">
+        <FlowStepper steps={steps} />
+        {closed ? (
+          <p className="mt-3 border-t border-border pt-3 text-center text-xs text-gray-dark">
+            {stage === "won" ? (
+              linkedOrder ? (
+                <>
+                  Won — now an order:{" "}
+                  <Link
+                    href={`/orders/${linkedOrder.id}`}
+                    className="text-accent transition-colors hover:underline"
+                  >
+                    {linkedOrder.title}
+                  </Link>
+                </>
+              ) : (
+                "Won — no order linked yet."
+              )
+            ) : (
+              <>Lost — {opportunity.lostReason ?? "no reason recorded"}</>
+            )}
+          </p>
+        ) : null}
+      </div>
 
       {error === "lost_reason_required" ? (
         <div className="banner-warn mb-4">
@@ -206,14 +324,10 @@ export default async function OpportunityDetailPage({
             </Card>
           ) : null}
 
-          <Card title="Close this deal">
-            {closed ? (
-              <p className="text-[13px] text-gray-dark">
-                This deal is already closed as{" "}
-                <span className="font-medium text-ink">{opportunity.stage}</span>.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {closed ? null : (
+            <div id="close-deal" className="scroll-mt-6">
+              <Card title="Close this deal">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <form action={markOpportunityWon}>
                   <input type="hidden" name="id" value={opportunity.id} />
                   <p className="mb-3 text-[13px] text-gray-dark">
@@ -228,11 +342,12 @@ export default async function OpportunityDetailPage({
                     </span>
                     .
                   </p>
+                  {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
                   <PendingButton
-                    className="btn btn-primary active:scale-[0.99]"
+                    className="btn active:scale-[0.99]"
                     pendingText="Creating order…"
                   >
-                    Mark Won
+                    ✓ Mark Won
                   </PendingButton>
                 </form>
 
@@ -256,9 +371,10 @@ export default async function OpportunityDetailPage({
                     Mark Lost
                   </PendingButton>
                 </form>
-              </div>
-            )}
-          </Card>
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
     </div>

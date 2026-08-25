@@ -1,4 +1,17 @@
 // Local presentational helpers for the /contacts module.
+import Link from "next/link";
+
+/** Back link for sub-pages (edit forms) where the form's own submit is the one primary. */
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+    >
+      <span aria-hidden>←</span> {label}
+    </Link>
+  );
+}
 
 export function PageHeader({
   title,

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { updateContact } from "../../actions";
 import { ContactForm } from "../../ContactForm";
-import { PageHeader } from "../../_ui";
+import { BackLink, PageHeader } from "../../_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,7 @@ export default async function EditContactPage({
 
   return (
     <div>
+      <BackLink href="/phonebook" label="Phone Book" />
       <PageHeader title={`Edit ${fullName}`} subtitle="Contact details" />
       <ContactForm
         action={updateContact}

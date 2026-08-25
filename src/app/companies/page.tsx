@@ -70,7 +70,19 @@ export default async function CompaniesPage({
       </div>
 
       {companies.length === 0 ? (
-        <div className="empty-state">No companies match this filter.</div>
+        <div className="empty-state">
+          {search || typeFilter ? (
+            "No businesses match this filter."
+          ) : (
+            <>
+              No businesses yet.{" "}
+              <Link href="/companies/new" className="text-accent transition-colors hover:underline">
+                Add the first one
+              </Link>{" "}
+              — every contact, deal and order hangs off a business.
+            </>
+          )}
+        </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="table-klyne">

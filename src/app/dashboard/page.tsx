@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { URGENCY_COLORS } from "@/lib/constants";
+import { PO_STATUS_COLORS } from "../orders/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -12,200 +13,279 @@ function fmtMoney(v: number | null | undefined) {
   if (v == null) return "$0";
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
+function dueMeta(date: Date, now: Date) {
+  const d0 = new Date(date);
+  d0.setHours(0, 0, 0, 0);
+  const t0 = new Date(now);
+  t0.setHours(0, 0, 0, 0);
+  const days = Math.round((t0.getTime() - d0.getTime()) / 86400000);
+  if (days <= 0) return "Due today";
+  return `${days}d overdue`;
+}
+function daysWaiting(createdAt: Date, now: Date) {
+  const days = Math.floor((now.getTime() - new Date(createdAt).getTime()) / 86400000);
+  return days <= 0 ? "today" : `${days}d waiting`;
+}
+
+type QueueRow = { href: string; primary: string; right: React.ReactNode };
+
+function QueueCard({
+  title,
+  emoji,
+  rows,
+  totalCount,
+  viewAllHref,
+  emptyText,
+  urgent,
+}: {
+  title: string;
+  emoji?: string;
+  rows: QueueRow[];
+  totalCount: number;
+  viewAllHref: string;
+  emptyText: string;
+  urgent?: boolean;
+}) {
+  return (
+    <div className={`card p-4 ${urgent ? "border-l-4" : ""}`} style={urgent ? { borderLeftColor: "var(--red)" } : undefined}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="section-label">
+          {emoji ? `${emoji} ` : ""}
+          {title}
+        </h2>
+        {totalCount > 0 && <span className="badge badge-gray">{totalCount}</span>}
+      </div>
+      {rows.length === 0 ? (
+        <div className="py-2 text-sm text-gray">{emptyText}</div>
+      ) : (
+        <ul className="space-y-0.5">
+          {rows.map((r, i) => (
+            <li key={i}>
+              <Link
+                href={r.href}
+                className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-hover"
+              >
+                <span className="truncate font-medium text-ink">{r.primary}</span>
+                <span className="shrink-0">{r.right}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {rows.length > 0 && (
+        <Link href={viewAllHref} className="mt-2 inline-block text-xs font-medium text-blue transition-colors hover:underline">
+          View all →
+        </Link>
+      )}
+    </div>
+  );
+}
 
 export default async function DashboardPage() {
   const now = new Date();
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
   const [
     openOpportunities,
     needsPricingCount,
-    ordersInFlight,
-    overdueOpps,
-    overdueOrders,
-    overdueItems,
-    urgentOrders,
+    ordersInFlightCount,
+    urgentOrdersRaw,
     followUpOpps,
     followUpOrders,
     followUpItems,
-    awaitingPaymentOrders,
-    staleNeedsPricingItems,
-    recentActivity,
+    itemsNeedingPricing,
+    ordersAwaitingPayment,
+    posInFlight,
+    deliveriesThisWeek,
   ] = await Promise.all([
-    prisma.opportunity.findMany({
-      where: { stage: { notIn: ["won", "lost"] } },
-      select: { value: true },
-    }),
+    prisma.opportunity.findMany({ where: { stage: { notIn: ["won", "lost"] } }, select: { value: true } }),
     prisma.lineItem.count({ where: { rfqStatus: "needs_pricing" } }),
     prisma.order.count({ where: { status: { notIn: ["complete", "delivered"] } } }),
-    prisma.opportunity.count({ where: { nextFollowUp: { lt: now }, stage: { notIn: ["won", "lost"] } } }),
-    prisma.order.count({ where: { nextFollowUp: { lt: now }, status: { notIn: ["complete"] } } }),
-    prisma.lineItem.count({ where: { nextFollowUp: { lt: now }, followedUp: false, rfqStatus: { not: "removed" } } }),
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
       include: { company: true },
     }),
     prisma.opportunity.findMany({
-      where: { nextFollowUp: { gte: now, lte: in7Days }, stage: { notIn: ["won", "lost"] } },
+      where: { nextFollowUp: { lte: endOfToday }, stage: { notIn: ["won", "lost"] } },
       select: { id: true, title: true, nextFollowUp: true },
     }),
     prisma.order.findMany({
-      where: { nextFollowUp: { gte: now, lte: in7Days } },
+      where: { nextFollowUp: { lte: endOfToday }, status: { notIn: ["complete"] } },
       select: { id: true, title: true, nextFollowUp: true },
     }),
     prisma.lineItem.findMany({
-      where: { nextFollowUp: { gte: now, lte: in7Days }, rfqStatus: { not: "removed" } },
+      where: { nextFollowUp: { lte: endOfToday }, followedUp: false, rfqStatus: { not: "removed" } },
       select: { id: true, name: true, nextFollowUp: true, orderId: true, opportunityId: true },
+    }),
+    prisma.lineItem.findMany({
+      where: { rfqStatus: "needs_pricing" },
+      select: { id: true, name: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
     }),
     prisma.order.findMany({
       where: { status: "awaiting_payment" },
-      select: { id: true, title: true },
+      select: { id: true, title: true, orderValue: true, orderType: true, neededByDate: true, company: { select: { name: true } } },
+      orderBy: { neededByDate: "asc" },
     }),
-    prisma.lineItem.findMany({
-      where: { rfqStatus: "needs_pricing", createdAt: { lt: threeDaysAgo } },
-      select: { id: true, name: true, createdAt: true },
+    prisma.purchaseOrder.findMany({
+      where: { status: { in: ["sent", "shipped"] } },
+      include: { supplier: true, order: { select: { id: true, title: true } } },
+      orderBy: { sentDate: "asc" },
     }),
-    prisma.activityLog.findMany({ orderBy: { at: "desc" }, take: 10 }),
+    prisma.order.findMany({
+      where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+      include: { company: true },
+      orderBy: { neededByDate: "asc" },
+    }),
   ]);
 
   const pipelineValue = openOpportunities.reduce((sum, o) => sum + (o.value ?? 0), 0);
-  const overdueFollowUps = overdueOpps + overdueOrders + overdueItems;
 
-  urgentOrders.sort((a, b) => {
+  const urgentOrders = [...urgentOrdersRaw].sort((a, b) => {
     const rank: Record<string, number> = { emergency: 0, same_day: 1 };
-    return (rank[a.urgency] ?? 9) - (rank[b.urgency] ?? 9);
+    const ur = (rank[a.urgency] ?? 9) - (rank[b.urgency] ?? 9);
+    if (ur !== 0) return ur;
+    const ad = a.neededByDate ? new Date(a.neededByDate).getTime() : Infinity;
+    const bd = b.neededByDate ? new Date(b.neededByDate).getTime() : Infinity;
+    return ad - bd;
   });
 
-  const followUps = [
-    ...followUpOpps.map((o) => ({ href: `/pipeline/${o.id}`, label: `Opportunity: ${o.title}`, date: o.nextFollowUp })),
-    ...followUpOrders.map((o) => ({ href: `/orders/${o.id}`, label: `Order: ${o.title}`, date: o.nextFollowUp })),
-    ...followUpItems.map((i) => ({
-      href: i.orderId ? `/orders/${i.orderId}` : i.opportunityId ? `/pipeline/${i.opportunityId}` : "#",
-      label: `Line item: ${i.name}`,
-      date: i.nextFollowUp,
-    })),
-  ].sort((a, b) => (a.date && b.date ? new Date(a.date).getTime() - new Date(b.date).getTime() : 0));
+  type FollowUp = { href: string; label: string; date: Date; kind: "opportunity" | "order" | "line_item" };
+  const followUpsAll: FollowUp[] = [
+    ...followUpOpps
+      .filter((o) => o.nextFollowUp)
+      .map((o) => ({ href: `/pipeline/${o.id}`, label: o.title, date: o.nextFollowUp as Date, kind: "opportunity" as const })),
+    ...followUpOrders
+      .filter((o) => o.nextFollowUp)
+      .map((o) => ({ href: `/orders/${o.id}`, label: o.title, date: o.nextFollowUp as Date, kind: "order" as const })),
+    ...followUpItems
+      .filter((i) => i.nextFollowUp)
+      .map((i) => ({
+        href: i.orderId ? `/orders/${i.orderId}` : i.opportunityId ? `/pipeline/${i.opportunityId}` : "/rfq",
+        label: i.name,
+        date: i.nextFollowUp as Date,
+        kind: "line_item" as const,
+      })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const fuCounts = { opportunity: followUpOpps.length, order: followUpOrders.length, line_item: followUpItems.length };
+  const topKind = (Object.entries(fuCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "order") as keyof typeof fuCounts;
+  const followUpsViewAllHref = topKind === "opportunity" ? "/pipeline" : topKind === "line_item" ? "/rfq" : "/orders";
+
+  const urgentRows: QueueRow[] = urgentOrders.slice(0, 5).map((o) => ({
+    href: `/orders/${o.id}`,
+    primary: `${o.title} — ${o.company?.name ?? "—"}`,
+    right: (
+      <span className="flex items-center gap-2">
+        <span className={`badge ${URGENCY_COLORS[o.urgency] ?? "badge-gray"}`}>{o.urgency.replace("_", " ")}</span>
+        <span className="text-xs text-gray-dark">{fmtDate(o.neededByDate)}</span>
+      </span>
+    ),
+  }));
+
+  const followUpRows: QueueRow[] = followUpsAll.slice(0, 5).map((f) => ({
+    href: f.href,
+    primary: f.label,
+    right: <span className="text-xs text-gray-dark">{dueMeta(f.date, now)}</span>,
+  }));
+
+  const pricingRows: QueueRow[] = itemsNeedingPricing.slice(0, 5).map((i) => ({
+    href: `/rfq#li-${i.id}`,
+    primary: i.name,
+    right: <span className="text-xs text-gray-dark">{daysWaiting(i.createdAt, now)}</span>,
+  }));
+
+  const paymentRows: QueueRow[] = ordersAwaitingPayment.slice(0, 5).map((o) => ({
+    href: `/orders/${o.id}`,
+    primary: `${o.title} — ${o.company?.name ?? "—"}`,
+    right: (
+      <span className="text-xs text-gray-dark">
+        {fmtMoney(o.orderValue)} · {o.orderType === "project" ? "deposit" : "full"}
+      </span>
+    ),
+  }));
+
+  const poRows: QueueRow[] = posInFlight.slice(0, 5).map((po) => ({
+    href: `/orders/${po.order.id}`,
+    primary: `${po.poNumber ?? "PO"} — ${po.supplier?.name ?? "Supplier"}`,
+    right: (
+      <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
+        {po.status === "sent" ? "awaiting ack" : "in transit"}
+      </span>
+    ),
+  }));
+
+  const deliveryRows: QueueRow[] = deliveriesThisWeek.slice(0, 5).map((o) => ({
+    href: `/orders/${o.id}`,
+    primary: `${o.title} — ${o.company?.name ?? "—"}`,
+    right: <span className="text-xs text-gray-dark">{fmtDate(o.neededByDate)}</span>,
+  }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="page-title">Dashboard</h1>
         <p className="page-sub">What needs attention across sales, RFQ, and fulfillment.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Open Opportunities" value={String(openOpportunities.length)} sub={fmtMoney(pipelineValue)} />
-        <StatCard label="Needs Pricing" value={String(needsPricingCount)} sub="line items" />
-        <StatCard label="Orders In Flight" value={String(ordersInFlight)} sub="not complete/delivered" />
-        <StatCard label="Overdue Follow-ups" value={String(overdueFollowUps)} sub="across all records" alert={overdueFollowUps > 0} />
+      <div className="flex flex-wrap gap-2">
+        <span className="chip cursor-default">
+          {openOpportunities.length} open opportunities · {fmtMoney(pipelineValue)}
+        </span>
+        <span className="chip cursor-default">{needsPricingCount} need pricing</span>
+        <span className="chip cursor-default">{ordersInFlightCount} orders in flight</span>
+        <span className="chip cursor-default">{followUpsAll.length} follow-ups due</span>
       </div>
 
-      <section>
-        <h2 className="section-label mb-2 text-red" style={{ color: "var(--red)" }}>
-          Urgent — Same Day / Emergency
-        </h2>
-        {urgentOrders.length === 0 ? (
-          <div className="empty-state">No urgent orders outstanding.</div>
-        ) : (
-          <div className="space-y-2">
-            {urgentOrders.map((o) => (
-              <Link
-                key={o.id}
-                href={`/orders/${o.id}`}
-                className={`card flex items-center justify-between border-l-4 px-4 py-3 text-sm transition-colors hover:bg-hover ${
-                  o.urgency === "emergency" ? "border-l-red" : "border-l-orange"
-                }`}
-                style={{ borderLeftColor: o.urgency === "emergency" ? "var(--red)" : "var(--orange)" }}
-              >
-                <div>
-                  <span className="font-medium text-ink">{o.title}</span>{" "}
-                  <span className="text-gray-dark">— {o.company?.name ?? "—"}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`badge ${URGENCY_COLORS[o.urgency] ?? "badge-gray"}`}>
-                    {o.urgency.replace("_", " ")}
-                  </span>
-                  <span className="text-xs text-gray-dark">Needed: {fmtDate(o.neededByDate)}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      <QueueCard
+        title="Urgent orders"
+        emoji="🔴"
+        urgent
+        rows={urgentRows}
+        totalCount={urgentOrders.length}
+        viewAllHref="/orders"
+        emptyText="No urgent orders outstanding."
+      />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section>
-          <h2 className="section-label mb-2">Follow-ups Due (next 7 days)</h2>
-          {followUps.length === 0 ? (
-            <div className="empty-state">Nothing due this week.</div>
-          ) : (
-            <ul className="card space-y-1.5 p-3">
-              {followUps.map((f, i) => (
-                <li key={i} className="flex items-center justify-between text-sm">
-                  <Link href={f.href} className="text-blue transition-colors hover:underline">
-                    {f.label}
-                  </Link>
-                  <span className="text-xs text-gray-dark">{fmtDate(f.date)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section>
-          <h2 className="section-label mb-2">Needs Attention</h2>
-          <ul className="card space-y-1.5 p-3 text-sm">
-            {awaitingPaymentOrders.map((o) => (
-              <li key={`o-${o.id}`}>
-                <Link href={`/orders/${o.id}`} className="text-blue transition-colors hover:underline">
-                  Order awaiting payment: {o.title}
-                </Link>
-              </li>
-            ))}
-            {staleNeedsPricingItems.map((i) => (
-              <li key={`i-${i.id}`}>
-                <Link href="/rfq" className="text-blue transition-colors hover:underline">
-                  Needs pricing (3+ days): {i.name}
-                </Link>
-              </li>
-            ))}
-            {awaitingPaymentOrders.length === 0 && staleNeedsPricingItems.length === 0 && (
-              <li className="text-gray">Nothing needs attention right now.</li>
-            )}
-          </ul>
-        </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <QueueCard
+          title="Follow-ups due"
+          rows={followUpRows}
+          totalCount={followUpsAll.length}
+          viewAllHref={followUpsViewAllHref}
+          emptyText="Nothing due today or overdue."
+        />
+        <QueueCard
+          title="Items needing pricing"
+          rows={pricingRows}
+          totalCount={itemsNeedingPricing.length}
+          viewAllHref="/rfq"
+          emptyText="Nothing needs pricing."
+        />
+        <QueueCard
+          title="Orders awaiting payment"
+          rows={paymentRows}
+          totalCount={ordersAwaitingPayment.length}
+          viewAllHref="/orders?status=awaiting_payment"
+          emptyText="No orders waiting on payment."
+        />
+        <QueueCard
+          title="POs awaiting ack / in transit"
+          rows={poRows}
+          totalCount={posInFlight.length}
+          viewAllHref="/orders?status=pos_in_progress"
+          emptyText="No purchase orders in flight."
+        />
+        <QueueCard
+          title="Deliveries this week"
+          rows={deliveryRows}
+          totalCount={deliveriesThisWeek.length}
+          viewAllHref="/orders?due=week"
+          emptyText="Nothing due for delivery this week."
+        />
       </div>
-
-      <section>
-        <h2 className="section-label mb-2">Recent Activity</h2>
-        {recentActivity.length === 0 ? (
-          <div className="empty-state">No activity yet.</div>
-        ) : (
-          <ul className="card space-y-1 p-3 text-sm">
-            {recentActivity.map((a) => (
-              <li key={a.id} className="flex items-center justify-between">
-                <span className="text-gray-dark">
-                  <span className="text-gray">[{a.action}]</span> {a.detail}
-                </span>
-                <span className="text-xs text-gray">{new Date(a.at).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function StatCard({ label, value, sub, alert }: { label: string; value: string; sub?: string; alert?: boolean }) {
-  return (
-    <div className={`stat-card ${alert ? "border-red" : ""}`} style={alert ? { borderColor: "var(--red)" } : undefined}>
-      <div className="section-label">{label}</div>
-      <div className={`stat-value mt-1 ${alert ? "text-red" : ""}`} style={alert ? { color: "var(--red)" } : undefined}>
-        {value}
-      </div>
-      {sub && <div className="mt-0.5 text-xs text-gray">{sub}</div>}
     </div>
   );
 }

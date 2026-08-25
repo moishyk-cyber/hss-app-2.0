@@ -95,6 +95,48 @@ export async function createPurchaseOrder(orderId: string, supplierId: string) {
   revalidateOrder(orderId);
 }
 
+/** Header CTA: create one PO per supplier for every still-unassigned, supplier-tagged line item on the order. */
+export async function createAllPurchaseOrders(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      purchaseOrders: true,
+      lineItems: { where: { purchaseOrderId: null, rfqStatus: { not: "removed" }, supplierId: { not: null } } },
+    },
+  });
+  if (!order) return;
+
+  const supplierIds = Array.from(new Set(order.lineItems.map((li) => li.supplierId).filter((v): v is string => !!v)));
+  let n = order.purchaseOrders.length;
+  const base = order.jobId || order.id.slice(-6).toUpperCase();
+
+  for (const supplierId of supplierIds) {
+    n += 1;
+    const supplier = await prisma.company.findUnique({ where: { id: supplierId } });
+    const poNumber = `PO-${base}-${n}`;
+    const po = await prisma.purchaseOrder.create({ data: { orderId, supplierId, poNumber, status: "draft" } });
+    await prisma.lineItem.updateMany({
+      where: { orderId, supplierId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
+      data: { purchaseOrderId: po.id },
+    });
+    await log(orderId, "po_created", `PO ${poNumber} created for ${supplier?.name ?? "supplier"}`);
+  }
+  revalidateOrder(orderId);
+}
+
+/** Header CTA: bulk-advance every "sent" PO on the order to "acknowledged" in one click. */
+export async function acknowledgeAllSentPos(orderId: string) {
+  const sentPos = await prisma.purchaseOrder.findMany({ where: { orderId, status: "sent" } });
+  for (const po of sentPos) {
+    await prisma.purchaseOrder.update({
+      where: { id: po.id },
+      data: { status: "acknowledged", ackDate: po.ackDate ?? new Date() },
+    });
+    await log(orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to acknowledged`);
+  }
+  revalidateOrder(orderId);
+}
+
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
 
 export async function advancePoStatus(poId: string) {

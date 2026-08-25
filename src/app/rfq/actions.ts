@@ -48,3 +48,22 @@ export async function markLineItemRemoved(lineItemId: string) {
   await log(lineItemId, "rfq_item_removed", "Line item marked removed from RFQ");
   revalidatePath("/rfq");
 }
+
+/** By-supplier view: bulk-mark every needs_pricing item for one supplier as rfq_sent. */
+export async function markSupplierItemsRfqSent(supplierId: string) {
+  const result = await prisma.lineItem.updateMany({
+    where: { supplierId, rfqStatus: "needs_pricing" },
+    data: { rfqStatus: "rfq_sent" },
+  });
+  const supplier = await prisma.company.findUnique({ where: { id: supplierId } });
+  await prisma.activityLog.create({
+    data: {
+      userName: "System",
+      linkedType: "company",
+      linkedId: supplierId,
+      action: "rfq_bulk_sent",
+      detail: `${result.count} item(s) marked RFQ Sent for ${supplier?.name ?? "supplier"}`,
+    },
+  });
+  revalidatePath("/rfq");
+}

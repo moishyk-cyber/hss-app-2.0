@@ -75,7 +75,11 @@ export default function PurchaseOrdersSection({
       )}
 
       {purchaseOrders.length === 0 ? (
-        <div className="empty-state">No purchase orders yet.</div>
+        <div className="empty-state">
+          {unassignedGroups.length > 0
+            ? "No purchase orders yet — use the buttons above to create one per supplier."
+            : "No purchase orders yet. Assign suppliers to line items in the RFQ Queue first."}
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {purchaseOrders.map((po) => {

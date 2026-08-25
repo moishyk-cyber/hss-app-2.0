@@ -140,9 +140,17 @@ export default async function PhoneBookPage({
 
       {companies.length === 0 ? (
         <div className="empty-state">
-          {search
-            ? `Nothing in the phone book matches “${search}”.`
-            : "No businesses yet — add one to get started."}
+          {search ? (
+            `Nothing in the phone book matches “${search}”.`
+          ) : (
+            <>
+              No businesses yet.{" "}
+              <Link href="/companies/new" className="text-accent transition-colors hover:underline">
+                Add the first one
+              </Link>{" "}
+              — every contact, deal and order hangs off a business.
+            </>
+          )}
         </div>
       ) : (
         <div className="card divide-y divide-border overflow-hidden">

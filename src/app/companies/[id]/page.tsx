@@ -8,7 +8,15 @@ import {
   STAGE_COLORS,
   labelFor,
 } from "@/lib/constants";
-import { Card, DetailRow, PageHeader, TypeBadge, VerticalLabel, fmtDate, fmtMoney } from "../_ui";
+import {
+  Card,
+  DetailHeader,
+  DetailRow,
+  TypeBadge,
+  VerticalLabel,
+  fmtDate,
+  fmtMoney,
+} from "../_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -30,14 +38,31 @@ export default async function CompanyDetailPage({
 
   return (
     <div>
-      <PageHeader title={company.name} subtitle={company.locationName ?? undefined}>
-        <Link href="/companies" className="btn">
-          Back to list
-        </Link>
-        <Link href={`/companies/${company.id}/edit`} className="btn btn-primary">
-          Edit
-        </Link>
-      </PageHeader>
+      <DetailHeader
+        backHref="/phonebook"
+        backLabel="Phone Book"
+        title={company.name}
+        subtitle={company.locationName ?? undefined}
+        badges={
+          <>
+            <TypeBadge type={company.type} />
+            {company.priorityClient ? <span className="badge badge-red">Priority</span> : null}
+          </>
+        }
+        secondary={
+          <Link href={`/companies/${company.id}/edit`} className="btn active:scale-[0.99]">
+            Edit
+          </Link>
+        }
+        action={
+          <Link
+            href={`/intake?companyId=${company.id}`}
+            className="btn btn-primary active:scale-[0.99]"
+          >
+            New intake for this company
+          </Link>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-1">
@@ -84,7 +109,16 @@ export default async function CompanyDetailPage({
             }
           >
             {company.contacts.length === 0 ? (
-              <div className="empty-state">No contacts yet.</div>
+              <div className="empty-state">
+                No people on file yet.{" "}
+                <Link
+                  href={`/contacts/new?companyId=${company.id}`}
+                  className="text-accent transition-colors hover:underline"
+                >
+                  Add the first contact
+                </Link>{" "}
+                so calls and intakes have someone to reach.
+              </div>
             ) : (
               <ul className="divide-y divide-border">
                 {company.contacts.map((c) => (
@@ -108,7 +142,16 @@ export default async function CompanyDetailPage({
 
           <Card title={`Opportunities (${company.opportunities.length})`}>
             {company.opportunities.length === 0 ? (
-              <div className="empty-state">No opportunities yet.</div>
+              <div className="empty-state">
+                No deals yet. Start one from{" "}
+                <Link
+                  href={`/intake?companyId=${company.id}`}
+                  className="text-accent transition-colors hover:underline"
+                >
+                  Intake
+                </Link>{" "}
+                — projects and anything needing a price land in the pipeline.
+              </div>
             ) : (
               <ul className="divide-y divide-border">
                 {company.opportunities.map((o) => (
@@ -134,7 +177,10 @@ export default async function CompanyDetailPage({
 
           <Card title={`Orders (${company.orders.length})`}>
             {company.orders.length === 0 ? (
-              <div className="empty-state">No orders yet.</div>
+              <div className="empty-state">
+                No orders yet. Orders appear here once a deal is marked Won, or straight from
+                Intake when the pricing is already known.
+              </div>
             ) : (
               <ul className="divide-y divide-border">
                 {company.orders.map((o) => (

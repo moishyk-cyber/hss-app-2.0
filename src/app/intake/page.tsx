@@ -1,9 +1,16 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { IntakeForm } from "./IntakeForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function IntakePage() {
+export default async function IntakePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ companyId?: string }>;
+}) {
+  const { companyId } = await searchParams;
+
   const [companies, salespeople] = await Promise.all([
     prisma.company.findMany({
       where: { type: { in: ["customer", "lead"] } },
@@ -26,16 +33,29 @@ export default async function IntakePage() {
     }),
   ]);
 
+  const preselected = companyId ? companies.find((c) => c.id === companyId) : undefined;
+
   return (
     <div>
-      <div className="mb-6 max-w-4xl">
-        <h1 className="page-title">New Order Intake</h1>
-        <p className="page-sub">
-          Sales Process 2.0 — one form for every incoming request. Projects and anything that
-          still needs pricing land in the pipeline; priced re-orders become orders straight away.
-        </p>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">New Intake</h1>
+          <p className="page-sub">
+            {preselected
+              ? `New request for ${preselected.name}.`
+              : "Take the call and capture it here — projects and anything needing a price go to the pipeline, priced re-orders become orders."}
+          </p>
+        </div>
+        <Link href="/pipeline" className="btn active:scale-[0.99]">
+          View pipeline
+        </Link>
       </div>
-      <IntakeForm companies={companies} salespeople={salespeople} />
+
+      <IntakeForm
+        companies={companies}
+        salespeople={salespeople}
+        initialCompanyId={preselected?.id}
+      />
     </div>
   );
 }

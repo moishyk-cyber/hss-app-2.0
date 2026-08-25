@@ -59,7 +59,7 @@ export default function RfqRow({
   }
 
   return (
-    <tr className="align-top transition-colors">
+    <tr id={`li-${item.id}`} className="align-top scroll-mt-4 transition-colors">
       <td>
         <div className="font-medium text-ink">{item.name}</div>
         {item.brand && <div className="text-xs text-gray">{item.brand}</div>}

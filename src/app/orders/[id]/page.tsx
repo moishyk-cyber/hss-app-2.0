@@ -6,8 +6,14 @@ import { UrgencyStatusControls, QbInvoiceEdit } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
 import LineItemsSection from "./LineItemsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
+import { FlowStepper, type FlowStep } from "@/lib/flow";
+import { ActionButton } from "@/lib/ui";
+import { acknowledgeAllSentPos, createAllPurchaseOrders, setOrderStatus } from "../actions";
 
 export const dynamic = "force-dynamic";
+
+const PHASE_ORDER = ["payment", "pos", "in_transit", "delivery", "complete"] as const;
+type Phase = (typeof PHASE_ORDER)[number];
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -44,7 +50,135 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const activeLineItems = order.lineItems.filter((li) => li.rfqStatus !== "removed");
   const allPosReceived = order.purchaseOrders.length > 0 && order.purchaseOrders.every((po) => po.status === "received");
   const allItemsArrived = activeLineItems.length > 0 && activeLineItems.every((li) => li.deliveryStatus === "arrived_complete");
-  const suggestDelivered = allPosReceived && allItemsArrived && !["delivered", "complete"].includes(order.status);
+
+  // ---- Flow phase derivation (docs/UX_FLOW.md §3B/§3G) ----
+  const poStatuses = order.purchaseOrders.map((po) => po.status);
+  const hasAnyPo = poStatuses.length > 0;
+  const anyDraft = poStatuses.includes("draft");
+  const anySent = poStatuses.includes("sent");
+
+  let phase: Phase;
+  if (!hasPaidPayment) phase = "payment";
+  else if (order.status === "complete") phase = "complete";
+  else if (unassignedGroups.length > 0 || anyDraft || anySent) phase = "pos";
+  else if (hasAnyPo && !allPosReceived) phase = "in_transit";
+  else phase = "delivery";
+
+  const phaseIdx = PHASE_ORDER.indexOf(phase);
+
+  const steps: FlowStep[] = [
+    {
+      label: "Payment",
+      state: phase === "payment" ? "blocked" : "done",
+      hint: phase === "payment" ? "Record deposit/full payment" : undefined,
+    },
+    {
+      label: "POs",
+      state: phaseIdx < 1 ? "upcoming" : phaseIdx === 1 ? "current" : "done",
+      hint:
+        phaseIdx === 1
+          ? unassignedGroups.length > 0
+            ? `Create ${unassignedGroups.length} PO${unassignedGroups.length > 1 ? "s" : ""}`
+            : anyDraft
+            ? "Send draft POs"
+            : "Awaiting supplier acknowledgment"
+          : undefined,
+    },
+    {
+      label: "In Transit",
+      state: phaseIdx < 2 ? "upcoming" : phaseIdx === 2 ? "current" : "done",
+      hint: phaseIdx === 2 ? "Track shipments to delivery" : undefined,
+    },
+    {
+      label: "Delivery",
+      state: phaseIdx < 3 ? "upcoming" : phaseIdx === 3 ? "current" : "done",
+      hint: phaseIdx === 3 ? "Confirm delivery-day check" : undefined,
+    },
+    { label: "Complete", state: phase === "complete" ? "done" : "upcoming" },
+  ];
+
+  // ---- Header pattern (spec §H): ONE contextual primary action ----
+  let primaryAction: React.ReactNode = null;
+  if (!hasPaidPayment) {
+    primaryAction = (
+      <a href="#payments" className="btn btn-primary active:scale-[0.99]">
+        Record payment
+      </a>
+    );
+  } else if (unassignedGroups.length > 0) {
+    primaryAction = (
+      <ActionButton action={createAllPurchaseOrders.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
+        Create POs
+      </ActionButton>
+    );
+  } else if (anySent) {
+    primaryAction = (
+      <ActionButton action={acknowledgeAllSentPos.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
+        Mark acknowledged
+      </ActionButton>
+    );
+  } else if (allPosReceived && allItemsArrived && order.status !== "complete") {
+    primaryAction = (
+      <ActionButton
+        action={setOrderStatus.bind(null, order.id, "complete")}
+        className="btn btn-primary active:scale-[0.99]"
+      >
+        Mark complete
+      </ActionButton>
+    );
+  }
+
+  // ---- Sections in flow order (spec §G); current phase's section gets an accent border ----
+  const accentTarget: "payments" | "lineItems" | "purchaseOrders" | null =
+    phase === "payment"
+      ? "payments"
+      : phase === "pos" || phase === "in_transit"
+      ? "purchaseOrders"
+      : phase === "delivery"
+      ? "lineItems"
+      : null;
+
+  function sectionClass(name: typeof accentTarget) {
+    return accentTarget === name ? "card border-l-4 p-4" : "card p-4";
+  }
+  function sectionStyle(name: typeof accentTarget) {
+    return accentTarget === name ? { borderLeftColor: "var(--accent)" } : undefined;
+  }
+
+  const paymentsSection = (
+    <section key="payments" id="payments" className={sectionClass("payments")} style={sectionStyle("payments")}>
+      <h2 className="section-label mb-3">Payments</h2>
+      <PaymentsSection orderId={order.id} payments={order.payments} />
+    </section>
+  );
+  const lineItemsSection = (
+    <section key="line-items" className={sectionClass("lineItems")} style={sectionStyle("lineItems")}>
+      <h2 className="section-label mb-3">Line Items</h2>
+      <LineItemsSection items={order.lineItems} />
+    </section>
+  );
+  const purchaseOrdersSection = (
+    <section
+      key="purchase-orders"
+      id="purchase-orders"
+      className={sectionClass("purchaseOrders")}
+      style={sectionStyle("purchaseOrders")}
+    >
+      <h2 className="section-label mb-3">Purchase Orders</h2>
+      <PurchaseOrdersSection
+        orderId={order.id}
+        purchaseOrders={order.purchaseOrders}
+        unassignedGroups={unassignedGroups}
+        hasPaidPayment={hasPaidPayment}
+      />
+    </section>
+  );
+
+  // Payment section leads while unpaid (it's blocking); otherwise it moves to the back as a reference section.
+  const orderedSections =
+    phase === "payment"
+      ? [paymentsSection, lineItemsSection, purchaseOrdersSection]
+      : [lineItemsSection, purchaseOrdersSection, paymentsSection];
 
   return (
     <div className="space-y-6">
@@ -73,6 +207,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               <span className="badge badge-gray capitalize">{order.orderType}</span>
             </div>
           </div>
+          {primaryAction}
+        </div>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <FlowStepper steps={steps} />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <UrgencyStatusControls orderId={order.id} urgency={order.urgency} status={order.status} />
         </div>
 
@@ -100,38 +242,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {suggestDelivered && (
-        <div className="banner-info">
-          All POs received and items arrived — consider marking this order <strong>Delivered</strong>.
-        </div>
-      )}
-
-      {!hasPaidPayment && (
-        <div className="banner-warn">
-          <strong>Payment gate:</strong>{" "}
-          {order.orderType === "project" ? "deposit" : "full"} payment required before POs are sent.
-        </div>
-      )}
-
-      <section className="card p-4">
-        <h2 className="section-label mb-3">Payments</h2>
-        <PaymentsSection orderId={order.id} payments={order.payments} />
-      </section>
-
-      <section className="card p-4">
-        <h2 className="section-label mb-3">Line Items</h2>
-        <LineItemsSection items={order.lineItems} />
-      </section>
-
-      <section className="card p-4">
-        <h2 className="section-label mb-3">Purchase Orders</h2>
-        <PurchaseOrdersSection
-          orderId={order.id}
-          purchaseOrders={order.purchaseOrders}
-          unassignedGroups={unassignedGroups}
-          hasPaidPayment={hasPaidPayment}
-        />
-      </section>
+      {orderedSections}
     </div>
   );
 }

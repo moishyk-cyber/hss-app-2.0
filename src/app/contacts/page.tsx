@@ -44,7 +44,19 @@ export default async function ContactsPage({
       </div>
 
       {contacts.length === 0 ? (
-        <div className="empty-state">No contacts found.</div>
+        <div className="empty-state">
+          {search ? (
+            `No contacts match “${search}”.`
+          ) : (
+            <>
+              No people yet. Add them from the{" "}
+              <Link href="/phonebook" className="text-accent transition-colors hover:underline">
+                Phone Book
+              </Link>{" "}
+              — every contact belongs to a business.
+            </>
+          )}
+        </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="table-klyne">

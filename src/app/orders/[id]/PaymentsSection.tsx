@@ -28,7 +28,9 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
   return (
     <div className="space-y-3">
       {payments.length === 0 ? (
-        <div className="empty-state">No payments recorded yet.</div>
+        <div className="empty-state">
+          No payments recorded yet. Record the deposit or full payment below to unlock purchase orders.
+        </div>
       ) : (
         <table className="table-klyne">
           <thead>

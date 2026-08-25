@@ -94,7 +94,13 @@ export default async function TasksPage() {
         </PendingButton>
       </form>
 
-      {grouped.map((group) => (
+      {tasks.length === 0 ? (
+        <div className="empty-state">
+          No tasks yet. Create one above — tasks also get added automatically as orders and customer requests move
+          through fulfillment.
+        </div>
+      ) : (
+        grouped.map((group) => (
         <section key={group.status}>
           <h2 className="section-label mb-2 flex items-center gap-2">
             {group.label}
@@ -181,7 +187,8 @@ export default async function TasksPage() {
             </div>
           )}
         </section>
-      ))}
+        ))
+      )}
     </div>
   );
 }

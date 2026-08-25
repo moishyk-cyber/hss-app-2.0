@@ -44,6 +44,12 @@ export default async function EditOpportunityPage({
 
   return (
     <div>
+      <Link
+        href={`/pipeline/${opportunity.id}`}
+        className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+      >
+        <span aria-hidden>←</span> {opportunity.title}
+      </Link>
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
       <form action={updateOpportunity} className="card max-w-4xl space-y-6 p-6">

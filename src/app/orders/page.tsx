@@ -10,12 +10,22 @@ const URGENCY_RANK: Record<string, number> = { emergency: 0, same_day: 1, standa
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; due?: string }>;
 }) {
-  const { status } = await searchParams;
+  const { status, due } = await searchParams;
+
+  const now = new Date();
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const where: Record<string, unknown> = {};
+  if (status) where.status = status;
+  if (due === "week") {
+    where.neededByDate = { gte: now, lte: in7Days };
+    where.status = { notIn: ["delivered", "complete"] };
+  }
 
   const orders = await prisma.order.findMany({
-    where: status ? { status } : undefined,
+    where,
     include: { company: true, payments: { select: { status: true } } },
   });
 
@@ -35,7 +45,7 @@ export default async function OrdersPage({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Link href="/orders" className={!status ? "chip chip-active" : "chip"}>
+        <Link href="/orders" className={!status && !due ? "chip chip-active" : "chip"}>
           All
         </Link>
         {ORDER_STATUSES.map((s) => (
@@ -43,10 +53,25 @@ export default async function OrdersPage({
             {s.label}
           </Link>
         ))}
+        <Link href="/orders?due=week" className={due === "week" ? "chip chip-active" : "chip"}>
+          Due this week
+        </Link>
       </div>
 
       {orders.length === 0 ? (
-        <div className="empty-state">No orders found.</div>
+        <div className="empty-state">
+          {status || due ? (
+            "No orders match this filter."
+          ) : (
+            <>
+              No orders yet. Orders are created automatically when an opportunity is won, or directly from a
+              simple intake.{" "}
+              <Link href="/intake" className="text-blue transition-colors hover:underline">
+                Go to Intake →
+              </Link>
+            </>
+          )}
+        </div>
       ) : (
         <div className="card overflow-hidden overflow-x-auto">
           <table className="table-klyne min-w-[900px]">

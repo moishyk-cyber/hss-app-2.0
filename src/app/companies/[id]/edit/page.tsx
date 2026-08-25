@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { updateCompany } from "../../actions";
 import { CompanyForm } from "../../CompanyForm";
-import { PageHeader } from "../../_ui";
+import { BackLink, PageHeader } from "../../_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,7 @@ export default async function EditCompanyPage({
 
   return (
     <div>
+      <BackLink href={`/companies/${company.id}`} label={company.name} />
       <PageHeader title={`Edit ${company.name}`} subtitle="Company details" />
       <CompanyForm
         action={updateCompany}

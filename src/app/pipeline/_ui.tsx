@@ -1,4 +1,5 @@
 // Local presentational helpers for the /pipeline module.
+import Link from "next/link";
 import {
   DELIVERY_STATUSES,
   OPPORTUNITY_STAGES,
@@ -60,6 +61,52 @@ export function PageHeader({
         {subtitle ? <p className="page-sub">{subtitle}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Detail-page header (UX_FLOW §H): back link · title · badges, and exactly ONE
+ * contextual primary action on the right. Everything else stays secondary.
+ */
+export function DetailHeader({
+  backHref,
+  backLabel,
+  title,
+  subtitle,
+  badges,
+  action,
+  secondary,
+}: {
+  backHref: string;
+  backLabel: string;
+  title: string;
+  subtitle?: string | null;
+  badges?: React.ReactNode;
+  action?: React.ReactNode;
+  secondary?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6">
+      <Link
+        href={backHref}
+        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+      >
+        <span aria-hidden>←</span> {backLabel}
+      </Link>
+      <div className="mt-1.5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="page-title">{title}</h1>
+            {badges}
+          </div>
+          {subtitle ? <p className="page-sub">{subtitle}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {secondary}
+          {action}
+        </div>
+      </div>
     </div>
   );
 }
@@ -221,4 +268,12 @@ export function fmtMoney(amount: number | null | undefined): string {
 export function daysSince(date: Date): number {
   const ms = Date.now() - date.getTime();
   return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+/** A follow-up is overdue once its day is behind us. */
+export function isOverdue(date: Date | null | undefined): boolean {
+  if (!date) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date.getTime() < today.getTime();
 }

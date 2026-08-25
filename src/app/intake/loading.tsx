@@ -1,33 +1,48 @@
-// Skeleton for the intake form: header + the four numbered step cards.
+// Skeleton for the intake screen: header + two-column who/items layout + outcome bar.
+function PanelSkeleton({ rows = 2 }: { rows?: number }) {
+  return (
+    <section className="card">
+      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+        <div className="h-3 w-24 rounded bg-hover" />
+        <div className="h-7 w-36 rounded-lg bg-hover" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2">
+        {Array.from({ length: rows * 2 }).map((_, i) => (
+          <div key={i}>
+            <div className="mb-1.5 h-2.5 w-20 rounded bg-hover" />
+            <div className="h-9 rounded-lg bg-hover" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Loading() {
   return (
     <div className="animate-pulse">
-      <div className="mb-6 max-w-4xl">
-        <div className="h-6 w-52 rounded bg-hover" />
-        <div className="mt-2 h-3 w-full max-w-xl rounded bg-hover" />
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <div className="h-6 w-36 rounded bg-hover" />
+          <div className="mt-2 h-3 w-96 max-w-full rounded bg-hover" />
+        </div>
+        <div className="h-8 w-28 rounded-lg bg-hover" />
       </div>
 
-      <div className="max-w-4xl space-y-5">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <section key={i} className="card">
-            <div className="flex items-start gap-3 border-b border-border px-6 py-5">
-              <div className="h-8 w-8 shrink-0 rounded-full bg-hover" />
-              <div className="flex-1">
-                <div className="h-4 w-40 rounded bg-hover" />
-                <div className="mt-2 h-3 w-72 rounded bg-hover" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 px-6 py-6 sm:grid-cols-2">
-              <div className="h-14 rounded-[10px] bg-hover" />
-              <div className="h-14 rounded-[10px] bg-hover" />
-            </div>
-          </section>
-        ))}
-
-        <div className="card flex items-center gap-4 px-6 py-5">
-          <div className="h-8 w-32 rounded-lg bg-hover" />
-          <div className="h-3 w-72 rounded bg-hover" />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <PanelSkeleton rows={2} />
+          <PanelSkeleton rows={1} />
         </div>
+        <div className="space-y-4">
+          <PanelSkeleton rows={2} />
+          <PanelSkeleton rows={1} />
+        </div>
+      </div>
+
+      <div className="card mt-4 flex items-center justify-between gap-3 px-5 py-3.5">
+        <div className="h-3 w-56 rounded bg-hover" />
+        <div className="h-8 w-40 rounded-lg bg-hover" />
       </div>
     </div>
   );

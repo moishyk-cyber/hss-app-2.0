@@ -1,4 +1,5 @@
 // Local presentational helpers for the /companies module.
+import Link from "next/link";
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
 // Company type has no colour map in constants — map onto the shared badge palette.
@@ -41,6 +42,64 @@ export function PageHeader({
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Detail-page header (UX_FLOW §H): back link · title · badges, and exactly ONE
+ * contextual primary action on the right. Everything else stays secondary.
+ */
+export function DetailHeader({
+  backHref,
+  backLabel,
+  title,
+  subtitle,
+  badges,
+  action,
+  secondary,
+}: {
+  backHref: string;
+  backLabel: string;
+  title: string;
+  subtitle?: string | null;
+  badges?: React.ReactNode;
+  action?: React.ReactNode;
+  secondary?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6">
+      <Link
+        href={backHref}
+        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+      >
+        <span aria-hidden>←</span> {backLabel}
+      </Link>
+      <div className="mt-1.5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="page-title">{title}</h1>
+            {badges}
+          </div>
+          {subtitle ? <p className="page-sub">{subtitle}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {secondary}
+          {action}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Back link for sub-pages (edit forms) where the form's own submit is the one primary. */
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+    >
+      <span aria-hidden>←</span> {label}
+    </Link>
   );
 }
 

@@ -3,43 +3,77 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/intake", label: "New Order Intake" },
-  { href: "/pipeline", label: "Sales Pipeline" },
-  { href: "/rfq", label: "RFQ Queue" },
-  { href: "/orders", label: "Orders" },
-  { href: "/phonebook", label: "Phone Book" },
-  { href: "/tasks", label: "Tasks" },
+const SECTIONS: { label: string | null; items: { href: string; label: string }[] }[] = [
+  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }] },
+  {
+    label: "Sell",
+    items: [
+      { href: "/pipeline", label: "Pipeline" },
+      { href: "/rfq", label: "RFQ Queue" },
+    ],
+  },
+  {
+    label: "Fulfill",
+    items: [{ href: "/orders", label: "Orders" }],
+  },
+  {
+    label: "Everyone",
+    items: [
+      { href: "/phonebook", label: "Phone Book" },
+      { href: "/tasks", label: "Tasks" },
+    ],
+  },
 ];
+
+const ALIASES: Record<string, string[]> = {
+  "/phonebook": ["/companies", "/contacts"],
+};
 
 export default function Nav() {
   const pathname = usePathname();
+  const isActive = (href: string) =>
+    pathname === href ||
+    pathname.startsWith(href + "/") ||
+    (ALIASES[href] ?? []).some((a) => pathname.startsWith(a));
+
   return (
-    <nav className="flex-1 px-2 py-3 space-y-0.5">
-      {NAV.map((item) => {
-        const aliases: Record<string, string[]> = {
-          "/phonebook": ["/companies", "/contacts"],
-        };
-        const active =
-          pathname === item.href ||
-          pathname.startsWith(item.href + "/") ||
-          (aliases[item.href] ?? []).some((a) => pathname.startsWith(a));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={
-              "block rounded-lg px-3 py-2 text-[13px] font-medium transition-colors " +
-              (active
-                ? "bg-accent text-white"
-                : "text-gray-dark hover:bg-hover hover:text-ink")
-            }
-          >
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="flex-1 px-3 py-2 space-y-4">
+      <Link
+        href="/intake"
+        className={
+          "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors active:scale-[0.99] " +
+          (isActive("/intake")
+            ? "bg-accent text-white"
+            : "bg-accent text-white hover:bg-[#d90001]")
+        }
+      >
+        + New Intake
+      </Link>
+      {SECTIONS.map((section, si) => (
+        <div key={si}>
+          {section.label && (
+            <div className="px-3 pb-1 font-heading text-[10px] font-semibold uppercase tracking-[0.08em] text-gray">
+              {section.label}
+            </div>
+          )}
+          <div className="space-y-0.5">
+            {section.items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={
+                  "block rounded-lg px-3 py-2 text-[13px] font-medium transition-colors " +
+                  (isActive(item.href)
+                    ? "bg-ink text-white"
+                    : "text-gray-dark hover:bg-hover hover:text-ink")
+                }
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }
