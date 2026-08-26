@@ -147,7 +147,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     // is unlayered custom CSS and beats a layered Tailwind utility for the
     // same longhand (border-left-width), so a utility class here would be a
     // silent no-op. Width AND color both need to be set inline to win.
-    return accentTarget === name ? { borderLeftWidth: 4, borderLeftColor: "var(--accent)" } : undefined;
+    if (accentTarget !== name) return undefined;
+    // Payments is a blocking gate but not an emergency — "needs attention"
+    // (amber), matching FlowStepper's "blocked" state. Red stays reserved for
+    // true urgency (same-day/emergency orders, overdue). POs/line items mark
+    // the current step in the flow, an active state, not a warning — Charcoal.
+    const color = name === "payments" ? "var(--orange)" : "var(--primary)";
+    return { borderLeftWidth: 4, borderLeftColor: color };
   }
 
   const paymentsSection = (

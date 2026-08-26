@@ -19,7 +19,7 @@ function InlineError({ message }: { message: string }) {
   return (
     <span
       role="alert"
-      className="banner-warn absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs"
+      className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs"
     >
       {message}
     </span>
@@ -39,7 +39,7 @@ export function FormAlert({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div ref={ref} role="alert" tabIndex={-1} className="banner-warn mb-5">
+    <div ref={ref} role="alert" tabIndex={-1} className="banner-alert mb-5">
       {children}
     </div>
   );

@@ -98,7 +98,7 @@ function Segmented({
           onClick={() => onChange(o.value)}
           className={`rounded-[6px] px-3 py-1.5 text-[13px] font-medium transition-colors active:scale-[0.98] ${
             value === o.value
-              ? "bg-surface text-ink shadow-[0_1px_2px_rgba(28,33,32,0.08)]"
+              ? "bg-surface text-ink shadow-[var(--shadow-card)]"
               : "text-gray-dark hover:text-ink"
           }`}
         >
@@ -126,7 +126,7 @@ function InlineRadio({
   return (
     <label
       className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] transition-colors ${
-        checked ? "border-accent bg-accent-soft text-ink" : "border-border bg-surface hover:bg-hover"
+        checked ? "border-primary bg-hover text-ink" : "border-border bg-surface hover:bg-hover"
       }`}
     >
       <input
@@ -135,7 +135,7 @@ function InlineRadio({
         value={value}
         checked={checked}
         onChange={() => onChange(value)}
-        className="h-3.5 w-3.5 accent-accent"
+        className="h-3.5 w-3.5 accent-primary"
       />
       {label}
     </label>
@@ -326,7 +326,7 @@ export function IntakeForm({
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="badge badge-green">New business</span>
+                  <span className="badge badge-blue">New business</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -334,7 +334,7 @@ export function IntakeForm({
                       setContactMode("existing");
                       setCompanyQuery(newCompanyName);
                     }}
-                    className="text-xs text-gray-dark transition-colors hover:text-accent"
+                    className="text-xs text-gray-dark transition-colors hover:text-ink"
                   >
                     ← Search existing instead
                   </button>
@@ -643,7 +643,7 @@ export function IntakeForm({
           ) : (
             // Why the button is dead has to be readable, not just a hover tooltip.
             <div className="flex flex-wrap items-center gap-2.5">
-              <p id="intake-cta-reason" className="text-[13px] font-medium text-accent">
+              <p id="intake-cta-reason" className="text-[13px] font-medium text-ink">
                 Pick or create a business first
               </p>
               <button

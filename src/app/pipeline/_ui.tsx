@@ -90,7 +90,7 @@ export function DetailHeader({
     <div className="mb-6">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
       >
         <span aria-hidden>←</span> {backLabel}
       </Link>
@@ -265,7 +265,7 @@ export function Checkbox({
         name={name}
         value="1"
         defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-border accent-accent"
+        className="h-4 w-4 rounded border-border accent-primary"
       />
       {label}
     </label>

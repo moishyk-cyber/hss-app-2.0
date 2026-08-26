@@ -30,7 +30,10 @@ export default async function ContactsPage({
 
   return (
     <div>
-      <PageHeader title="Contacts" subtitle={`${contacts.length} record(s)`}>
+      <PageHeader
+        title="Contacts"
+        subtitle={`${contacts.length} ${contacts.length === 1 ? "person" : "people"}`}
+      >
         <Link href="/contacts/new" className="btn btn-primary">
           New contact
         </Link>
@@ -50,7 +53,7 @@ export default async function ContactsPage({
           ) : (
             <>
               No people yet. Add them from the{" "}
-              <Link href="/phonebook" className="text-accent transition-colors hover:underline">
+              <Link href="/phonebook" className="text-primary transition-colors hover:underline">
                 Phone Book
               </Link>{" "}
               — every contact belongs to a business.
@@ -78,7 +81,7 @@ export default async function ContactsPage({
                   <td>
                     <Link
                       href={`/contacts/${c.id}/edit`}
-                      className="font-medium text-ink transition-colors hover:text-accent"
+                      className="font-medium text-ink hover:underline"
                     >
                       {[c.firstName, c.lastName].filter(Boolean).join(" ")}
                     </Link>
@@ -87,7 +90,7 @@ export default async function ContactsPage({
                     {c.company ? (
                       <Link
                         href={`/companies/${c.company.id}`}
-                        className="text-accent hover:underline"
+                        className="text-primary hover:underline"
                       >
                         {c.company.name}
                       </Link>

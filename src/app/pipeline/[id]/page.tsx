@@ -180,7 +180,7 @@ export default async function OpportunityDetailPage({
                   Won — now an order:{" "}
                   <Link
                     href={`/orders/${linkedOrder.id}`}
-                    className="text-accent transition-colors hover:underline"
+                    className="text-primary transition-colors hover:underline"
                   >
                     {linkedOrder.title}
                   </Link>
@@ -196,11 +196,11 @@ export default async function OpportunityDetailPage({
       </div>
 
       {error === "lost_reason_required" ? (
-        <div className="banner-warn mb-4">
+        <div className="banner-alert mb-4">
           A lost reason is required before a deal can be marked Lost.
         </div>
       ) : error === "save_failed" ? (
-        <div className="banner-warn mb-4">Something went wrong while saving. Please try again.</div>
+        <div className="banner-alert mb-4">Something went wrong while saving. Please try again.</div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -221,7 +221,7 @@ export default async function OpportunityDetailPage({
                 opportunity.company ? (
                   <Link
                     href={`/companies/${opportunity.company.id}`}
-                    className="text-accent hover:underline"
+                    className="text-primary hover:underline"
                   >
                     {opportunity.company.name}
                   </Link>
@@ -300,7 +300,7 @@ export default async function OpportunityDetailPage({
                   No line items yet. Items arrive from Intake, or add them on the{" "}
                   <Link
                     href={`/pipeline/${opportunity.id}/edit`}
-                    className="text-accent transition-colors hover:underline"
+                    className="text-primary transition-colors hover:underline"
                   >
                     deal
                   </Link>
@@ -338,7 +338,7 @@ export default async function OpportunityDetailPage({
                   <li key={o.id} className="flex items-center justify-between py-2.5 text-[13px]">
                     <Link
                       href={`/orders/${o.id}`}
-                      className="font-medium text-ink transition-colors hover:text-accent"
+                      className="font-medium text-ink hover:underline"
                     >
                       {o.title}
                     </Link>
@@ -377,7 +377,7 @@ export default async function OpportunityDetailPage({
                     className="btn active:scale-[0.99]"
                     pendingText="Creating order…"
                   >
-                    ✓ Mark Won
+                    Mark Won
                   </PendingButton>
                 </form>
 

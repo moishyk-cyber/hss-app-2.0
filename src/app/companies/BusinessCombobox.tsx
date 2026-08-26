@@ -134,7 +134,7 @@ export function BusinessCombobox({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          className={`input-klyne w-full ${selectedId ? "border-green" : ""}`}
+          className={`input-klyne w-full ${selectedId ? "border-primary" : ""}`}
         />
       </label>
 
@@ -170,8 +170,8 @@ export function BusinessCombobox({
               aria-selected={highlight === createIndex}
               onMouseEnter={() => setHighlight(createIndex)}
               onClick={() => choose(createIndex)}
-              className={`cursor-pointer border-t border-border px-3 py-2 text-[13px] font-medium text-accent ${
-                highlight === createIndex ? "bg-accent-soft" : ""
+              className={`cursor-pointer border-t border-border px-3 py-2 text-[13px] font-medium text-primary ${
+                highlight === createIndex ? "bg-hover" : ""
               }`}
             >
               ＋ Create “{trimmed}”

@@ -38,7 +38,7 @@ export function BusinessField({
               setCreatingName("");
               setQuery("");
             }}
-            className="text-xs text-gray-dark transition-colors hover:text-accent"
+            className="text-xs text-gray-dark transition-colors hover:text-ink"
           >
             ← Search existing instead
           </button>
@@ -52,7 +52,7 @@ export function BusinessField({
           className="input-klyne w-full"
         />
         <p className="text-xs text-gray">
-          <span className="badge badge-green">New</span> This business will be created and the
+          <span className="badge badge-blue">New</span> This business will be created and the
           contact attached to it.
         </p>
         <input type="hidden" name="companyId" value="" />

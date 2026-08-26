@@ -145,7 +145,7 @@ export default async function PhoneBookPage({
           ) : (
             <>
               No businesses yet.{" "}
-              <Link href="/companies/new" className="text-accent transition-colors hover:underline">
+              <Link href="/companies/new" className="text-primary transition-colors hover:underline">
                 Add the first one
               </Link>{" "}
               — every contact, deal and order hangs off a business.
@@ -161,7 +161,7 @@ export default async function PhoneBookPage({
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   {company.priorityClient ? (
                     <span
-                      className="text-[15px] leading-none text-accent"
+                      className="text-[15px] leading-none text-ink"
                       title="Priority client"
                       aria-label="Priority client"
                     >
@@ -170,7 +170,7 @@ export default async function PhoneBookPage({
                   ) : null}
                   <Link
                     href={`/companies/${company.id}`}
-                    className="font-heading text-[16px] font-semibold text-ink transition-colors hover:text-accent"
+                    className="font-heading text-[16px] font-semibold text-ink hover:underline"
                   >
                     {company.name}
                   </Link>
@@ -189,7 +189,7 @@ export default async function PhoneBookPage({
                   <span className="empty-value">No people yet.</span>{" "}
                   <Link
                     href={`/contacts/new?companyId=${company.id}`}
-                    className="text-accent transition-colors hover:underline"
+                    className="text-primary transition-colors hover:underline"
                   >
                     Add the first contact
                   </Link>
@@ -201,7 +201,7 @@ export default async function PhoneBookPage({
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                         <Link
                           href={`/contacts/${contact.id}/edit`}
-                          className="font-medium text-ink transition-colors hover:text-accent"
+                          className="font-medium text-ink hover:underline"
                         >
                           {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
                         </Link>
@@ -253,7 +253,7 @@ export default async function PhoneBookPage({
                   <div className="min-w-0">
                     <Link
                       href={`/contacts/${contact.id}/edit`}
-                      className="font-medium text-ink transition-colors hover:text-accent"
+                      className="font-medium text-ink hover:underline"
                     >
                       {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
                     </Link>

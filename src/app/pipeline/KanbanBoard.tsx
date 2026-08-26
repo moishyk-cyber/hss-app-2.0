@@ -76,7 +76,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               if (id) move(id, stage.value);
             }}
             className={`card flex w-72 shrink-0 flex-col transition-colors ${
-              isDropTarget ? "bg-accent-soft ring-2 ring-accent" : ""
+              isDropTarget ? "bg-hover ring-2 ring-primary" : ""
             }`}
           >
             <div className="mb-4 flex items-center justify-between gap-2">
@@ -115,7 +115,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   <Link
                     href={`/pipeline/${card.id}`}
                     draggable={false}
-                    className="block text-[13px] font-medium leading-snug text-ink transition-colors hover:text-accent"
+                    className="block text-[13px] font-medium leading-snug text-ink hover:underline"
                   >
                     {card.title}
                   </Link>
@@ -158,11 +158,11 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               {columnCards.length === 0 ? (
                 <p className="px-1 py-10 text-center text-xs leading-relaxed text-gray">
                   {isDropTarget ? (
-                    <span className="font-medium text-accent">Drop to move here</span>
+                    <span className="font-medium text-ink">Drop to move here</span>
                   ) : stageIndex === 0 ? (
                     <>
                       Deals land here from{" "}
-                      <Link href="/intake" className="text-accent transition-colors hover:underline">
+                      <Link href="/intake" className="text-primary transition-colors hover:underline">
                         Intake
                       </Link>
                       .

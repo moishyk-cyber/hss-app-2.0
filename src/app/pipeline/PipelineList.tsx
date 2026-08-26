@@ -23,7 +23,7 @@ export function PipelineList({ cards }: { cards: KanbanCard[] }) {
         <p className="text-gray-dark">No deals yet.</p>
         <p className="mt-1">
           Deals land here from{" "}
-          <Link href="/intake" className="text-accent transition-colors hover:underline">
+          <Link href="/intake" className="text-primary transition-colors hover:underline">
             Intake
           </Link>{" "}
           whenever a request is a project or still needs pricing.
@@ -51,7 +51,7 @@ export function PipelineList({ cards }: { cards: KanbanCard[] }) {
               <td>
                 <Link
                   href={`/pipeline/${card.id}`}
-                  className="font-medium text-ink transition-colors hover:text-accent"
+                  className="font-medium text-ink hover:underline"
                 >
                   {card.title}
                 </Link>

@@ -3,14 +3,18 @@ import Link from "next/link";
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
 // Company type has no colour map in constants — map onto the shared badge palette.
+// Only the client lifecycle carries a status colour: an active customer is green, a
+// lead neutral, a dead lead grey. Supply-side partners are categories, not statuses,
+// so they stay grey — amber would read as "needs attention" when nothing is wrong,
+// and the badge text already says which kind of partner it is.
 const TYPE_BADGES: Record<string, string> = {
   lead: "badge-blue",
   customer: "badge-green",
   lost_lead: "badge-gray",
-  vendor: "badge-yellow",
-  supplier: "badge-orange",
-  installer: "badge-blue",
-  delivery_partner: "badge-yellow",
+  vendor: "badge-gray",
+  supplier: "badge-gray",
+  installer: "badge-gray",
+  delivery_partner: "badge-gray",
 };
 
 export function TypeBadge({ type }: { type: string }) {
@@ -72,7 +76,7 @@ export function DetailHeader({
     <div className="mb-6">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
       >
         <span aria-hidden>←</span> {backLabel}
       </Link>
@@ -98,7 +102,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
     >
       <span aria-hidden>←</span> {label}
     </Link>
@@ -108,7 +112,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
 /** Visible required marker. The input's own `required` is what AT announces. */
 export function RequiredMark() {
   return (
-    <span aria-hidden="true" className="text-accent">
+    <span aria-hidden="true" className="text-gray-dark">
       {" *"}
     </span>
   );
@@ -245,7 +249,7 @@ export function Checkbox({
         name={name}
         value="1"
         defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-border accent-accent"
+        className="h-4 w-4 rounded border-border accent-primary"
       />
       {label}
     </label>

@@ -1,35 +1,37 @@
 @import "tailwindcss";
 
 /* ============================================================
-   HSS Kitchens — Klyne & Co design system v2
-   Palette + type lineage from klyne-tasks Frontend.html + HSS brand red.
-   v2: real spacing scale, layered depth, killed dash-itis, broke pill monotony.
-   See docs/DESIGN_V2.md for rationale.
+   HSS Kitchens — App Brand Guidelines (Klyne & Co, Aug 2026)
+   A 34-year-old, family-run Brooklyn kitchen outfitter's working
+   tool — not a generic SaaS dashboard. Direct, reliable, sturdy.
+   Red means "look at this now" — nowhere else.
    ============================================================ */
 
 :root {
-  --ink: #1c2120;
-  --accent: #fd0001; /* HSS brand red (hsskitchens.com) — interactive elements */
-  --accent-hover: #d90001;
-  --accent-soft: rgba(253, 0, 1, 0.07);
-  --blue: #3b9eff;
-  --blue-soft: rgba(59, 158, 255, 0.13);
-  --bg: #f7f7f5;
-  --surface: #ffffff;
-  --surface-sunken: #fafaf8; /* nested content — PO cards inside orders, subtasks */
-  --panel: #f1f1ee;
-  --gray: #9ca3a8;
-  --gray-dark: #6b7280;
-  --border: #e2e4e8;
-  --hover: #ededea;
-  --red: #e5484d;
-  --red-soft: rgba(229, 72, 77, 0.12);
-  --orange: #f5a623;
-  --orange-soft: rgba(245, 166, 35, 0.14);
-  --yellow: #c9a300;
-  --yellow-soft: rgba(201, 163, 0, 0.13);
-  --green: #2ecc71;
-  --green-soft: rgba(46, 204, 113, 0.14);
+  --ink: #0a0a0b; /* Off-Black — body text, high-emphasis text */
+  --primary: #1c1c1e; /* Charcoal — primary buttons, active nav, headers */
+  --primary-hover: #313133;
+  --accent: #c8102e; /* HSS Red — alerts, urgent flags, error states ONLY. Not buttons. */
+  --accent-hover: #a80d26;
+  --accent-soft: rgba(200, 16, 46, 0.08);
+  --blue: #5b6b7a; /* Slate — info / neutral pipeline stage. Not bright blue. */
+  --blue-soft: rgba(91, 107, 122, 0.1);
+  --bg: #f7f6f4; /* Paper — app background */
+  --surface: #ffffff; /* Card White */
+  --surface-sunken: #faf9f7; /* nested content — PO cards inside orders, subtasks */
+  --panel: #fbfaf8; /* sidebar — stays near-white per brief ("on the right track") */
+  --gray: #aba79e; /* Warm Gray — placeholders, disabled, dots on neutral state */
+  --gray-dark: #8a867f; /* Warm Gray 500 — secondary text, labels, metadata */
+  --border: #e4e1dc; /* Warm Gray 200 — borders, dividers */
+  --hover: #edebe7; /* warm-tinted hover background */
+  --red: #c8102e; /* Danger / Urgent / Overdue — same as brand red, on purpose */
+  --red-soft: rgba(200, 16, 46, 0.08);
+  --orange: #b8791a; /* Warning / Needs Attention — amber-brown, not bright yellow */
+  --orange-soft: rgba(184, 121, 26, 0.1);
+  --yellow: #b8791a; /* alias — collapses to the same amber-brown warning meaning */
+  --yellow-soft: rgba(184, 121, 26, 0.1);
+  --green: #3a7d44; /* Success / Won / Delivered — forest green */
+  --green-soft: rgba(58, 125, 68, 0.1);
 
   /* Spacing scale — use these, not ad-hoc px-2/py-3 guesses */
   --sp-1: 4px;
@@ -42,13 +44,14 @@
   --sp-10: 40px;
   --sp-12: 48px;
 
-  /* Layered elevation — ambient + key light, not a flat single shadow */
-  --shadow-card: 0 1px 2px rgba(28, 33, 32, 0.04), 0 2px 8px rgba(28, 33, 32, 0.05);
-  --shadow-card-hover: 0 2px 4px rgba(28, 33, 32, 0.05), 0 8px 20px rgba(28, 33, 32, 0.09);
+  /* Subtle elevation only — a working tool, not a glassy SaaS card */
+  --shadow-card: 0 1px 2px rgba(10, 10, 11, 0.05);
+  --shadow-card-hover: 0 2px 6px rgba(10, 10, 11, 0.08);
 }
 
 @theme inline {
   --color-ink: var(--ink);
+  --color-primary: var(--primary);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-blue: var(--blue);
@@ -69,15 +72,15 @@
   --color-yellow-soft: var(--yellow-soft);
   --color-green: var(--green);
   --color-green-soft: var(--green-soft);
-  --font-sans: var(--font-poppins);
-  --font-heading: var(--font-sora);
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-archivo);
 }
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-poppins), sans-serif;
-  font-size: 14.5px;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -85,7 +88,7 @@ h1,
 h2,
 h3,
 .font-heading {
-  font-family: var(--font-sora), sans-serif;
+  font-family: var(--font-archivo), sans-serif;
   letter-spacing: -0.01em;
 }
 
@@ -107,7 +110,7 @@ h3,
 .card-interactive:hover {
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-1px);
-  border-color: #d7dade;
+  border-color: #d7d3cc;
 }
 
 /* Nested/secondary content inside a card (PO cards, subtasks) */
@@ -127,10 +130,10 @@ h3,
 }
 
 .page-title {
-  font-family: var(--font-sora), sans-serif;
-  font-size: 26px;
+  font-family: var(--font-archivo), sans-serif;
+  font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
@@ -140,18 +143,27 @@ h3,
   margin-top: var(--sp-1);
 }
 
-.section-label {
-  font-family: var(--font-sora), sans-serif;
-  font-size: 11px;
+/* True H2 — a distinct subsection header, NOT the uppercase micro-label below.
+   Use where a page genuinely needs a second heading level. */
+.section-title {
+  font-family: var(--font-archivo), sans-serif;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.section-label {
+  font-family: var(--font-archivo), sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--gray-dark);
   margin-bottom: var(--sp-3);
   display: block;
 }
 
-/* Muted, non-dash empty-value phrase — see DESIGN_V2.md §2. Use instead of "—". */
+/* Muted, non-dash empty-value phrase — use instead of "—". */
 .empty-value {
   color: var(--gray);
   font-style: italic;
@@ -165,12 +177,12 @@ h3,
   font-size: 13px;
   font-weight: 500;
   padding: 8px 16px;
-  border-radius: 10px; /* buttons are actions — distinct shape from status pills */
+  border-radius: 6px; /* sharp-ish, not full pill — a tool's button, not a SaaS pill */
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--gray-dark);
   cursor: pointer;
-  transition: background 120ms, color 120ms, border-color 120ms, box-shadow 120ms;
+  transition: background 120ms, color 120ms, border-color 120ms;
 }
 .btn:hover {
   background: var(--hover);
@@ -179,28 +191,44 @@ h3,
 .btn:active {
   transform: scale(0.99);
 }
+/* Primary = the everyday action (Save, Send, Create). Charcoal, not red —
+   red is reserved for alerts. No gradient, no glow. */
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--primary);
+  border-color: var(--primary);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(253, 0, 1, 0.15), 0 4px 10px rgba(253, 0, 1, 0.18);
 }
 .btn-primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
   color: #fff;
 }
+/* Destructive (Remove/Delete) = outlined red, never filled. Filled red stays
+   reserved for true alerts/urgency. */
 .btn-danger {
   color: var(--red);
+  border-color: var(--red);
+  background: var(--surface);
 }
 .btn-danger:hover {
   background: var(--red-soft);
   color: var(--red);
 }
+/* A true alert-level action (rare) — the one case a button IS filled red. */
+.btn-alert {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-alert:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #fff;
+}
 .btn-sm {
   padding: 5px 12px;
   font-size: 12px;
-  border-radius: 8px;
+  border-radius: 5px;
 }
 
 .chip {
@@ -221,41 +249,58 @@ h3,
   color: var(--ink);
 }
 .chip-active {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--primary);
+  border-color: var(--primary);
   color: #fff;
 }
 
+/* Status pill — a small colored DOT + neutral-ink text, never a filled pastel
+   background. The dot carries the status meaning; text stays plain ink so it
+   never looks like five random hues shouting at once. */
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 600;
-  padding: 4px 11px;
+  padding: 4px 10px 4px 8px;
   min-height: 24px; /* WCAG 2.5.8 minimum pointer target for interactive pills */
   border-radius: 999px;
   white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
 }
-/* Text colors chosen for ≥4.5:1 contrast (AA) on the soft backgrounds over white */
-.badge-blue { background: var(--blue-soft); color: #155fa8; }
-.badge-green { background: var(--green-soft); color: #14733c; }
-.badge-orange { background: var(--orange-soft); color: #8a5308; }
-.badge-yellow { background: var(--yellow-soft); color: #6f5a00; }
-.badge-red { background: var(--red-soft); color: #b3222a; }
-.badge-gray { background: var(--hover); color: #4b5563; }
+.badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--dot-color, var(--gray));
+}
+/* Only four real meanings, per brief: success / warning / danger / neutral-info.
+   Class names stay the same across the app — only what they render as changes. */
+.badge-green { --dot-color: var(--green); }   /* success / won / delivered */
+.badge-orange { --dot-color: var(--orange); } /* warning / needs attention */
+.badge-yellow { --dot-color: var(--yellow); } /* warning / needs attention (alias) */
+.badge-red { --dot-color: var(--red); }       /* danger / urgent / overdue */
+.badge-blue { --dot-color: var(--blue); }     /* neutral / default pipeline stage */
+.badge-gray { --dot-color: var(--gray); }     /* inactive / removed */
 
-/* Keyboard focus: one consistent visible ring everywhere. Inputs keep their own
+/* Keyboard focus: one consistent visible ring everywhere, in Charcoal (strong
+   contrast, on-brand — not a leftover bright blue). Inputs keep their own
    focus treatment; the BadgeSelect pill shows the ring when its invisible
    overlaid select holds keyboard focus. */
 :focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .input-klyne:focus-visible {
   outline: none;
 }
 .badge:has(select:focus-visible) {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -282,18 +327,18 @@ h3,
   font-size: 13.5px;
 }
 .table-klyne th {
-  font-family: var(--font-sora), sans-serif;
+  font-family: var(--font-archivo), sans-serif;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--gray);
+  color: var(--gray-dark);
   text-align: left;
-  padding: var(--sp-3) var(--sp-4); /* 12px 16px — was 10px 12px, cramped */
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border);
 }
 .table-klyne td {
-  padding: 14px var(--sp-4); /* 14px 16px */
+  padding: 14px var(--sp-4);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -305,19 +350,19 @@ h3,
 }
 
 .input-klyne {
-  font-family: var(--font-poppins), sans-serif;
+  font-family: var(--font-inter), sans-serif;
   font-size: 13px;
   padding: 9px 13px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   outline: none;
   transition: border-color 120ms, box-shadow 120ms;
 }
 .input-klyne:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(28, 28, 30, 0.08);
 }
 .input-klyne::placeholder {
   color: var(--gray);
@@ -336,13 +381,14 @@ label > .field-label,
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: var(--sp-6) var(--sp-5); /* 24px 20px — hero numbers get more room */
+  padding: var(--sp-6) var(--sp-5);
   box-shadow: var(--shadow-card);
   position: relative;
   overflow: hidden;
 }
-/* Colored top accent bar — replaces "5 identical gray rectangles" with real rhythm.
-   Set --accent-bar to a semantic color per tile (e.g. var(--accent), var(--green)). */
+/* Colored top accent bar — keep to 2-3 semantic colors across a row of tiles,
+   never five unrelated hues. Set --accent-bar per tile (e.g. var(--primary),
+   var(--green), var(--accent) for the one urgent tile). */
 .stat-card::before {
   content: "";
   position: absolute;
@@ -353,7 +399,7 @@ label > .field-label,
   background: var(--accent-bar, var(--border));
 }
 .stat-value {
-  font-family: var(--font-sora), sans-serif;
+  font-family: var(--font-archivo), sans-serif;
   font-size: 28px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -363,24 +409,33 @@ label > .field-label,
 
 .banner-warn {
   background: var(--orange-soft);
-  border: 1px solid rgba(245, 166, 35, 0.4);
-  color: #8a5d10;
-  border-radius: 10px;
+  border: 1px solid rgba(184, 121, 26, 0.35);
+  color: #6b4a13;
+  border-radius: 8px;
   padding: var(--sp-3) var(--sp-4);
   font-size: 13px;
 }
 .banner-info {
   background: var(--blue-soft);
-  border: 1px solid rgba(59, 158, 255, 0.35);
-  color: #1d6fc4;
-  border-radius: 10px;
+  border: 1px solid rgba(91, 107, 122, 0.3);
+  color: #37424c;
+  border-radius: 8px;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: 13px;
+}
+/* True alert banner — red, reserved for genuine urgency (not routine warnings). */
+.banner-alert {
+  background: var(--accent-soft);
+  border: 1px solid rgba(200, 16, 46, 0.3);
+  color: #8f0b21;
+  border-radius: 8px;
   padding: var(--sp-3) var(--sp-4);
   font-size: 13px;
 }
 
 .empty-state {
   border: 1.5px dashed var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
   padding: var(--sp-8);
   text-align: center;
   font-size: 13px;

@@ -41,12 +41,7 @@ export default function Nav() {
     <nav className="flex-1 px-4 py-3 space-y-6">
       <Link
         href="/intake"
-        className={
-          "flex items-center justify-center gap-1.5 rounded-[10px] px-4 py-2.5 text-[13px] font-semibold shadow-[0_1px_2px_rgba(253,0,1,0.15),0_4px_10px_rgba(253,0,1,0.18)] transition-colors active:scale-[0.99] " +
-          (isActive("/intake")
-            ? "bg-accent text-white"
-            : "bg-accent text-white hover:bg-[#d90001]")
-        }
+        className="flex items-center justify-center gap-1.5 rounded-[6px] px-4 py-2.5 text-[13px] font-semibold bg-primary text-white transition-colors hover:bg-[var(--primary-hover)] active:scale-[0.99]"
       >
         + New Intake
       </Link>

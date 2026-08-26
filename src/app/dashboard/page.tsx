@@ -205,7 +205,7 @@ export default async function DashboardPage({
           className="card card-interactive flex items-center gap-3 text-sm"
           style={{ borderLeftWidth: 4, borderLeftColor: "var(--red)", padding: "14px 20px" }}
         >
-          <span className="badge badge-red shrink-0">🔴 {urgentOrders.length} urgent</span>
+          <span className="badge badge-red shrink-0">{urgentOrders.length} urgent</span>
           <span className="truncate text-ink">
             {urgentOrders
               .slice(0, 3)
@@ -222,17 +222,17 @@ export default async function DashboardPage({
           label="Open Pipeline Value"
           value={fmtMoney(openPipelineValue)}
           sub={`${openPipelineCount} open`}
-          accent="var(--blue)"
+          accent="var(--primary)"
         />
         <StatTile label={`Won (${cfg.label})`} value={fmtMoney(wonValueInRange)} accent="var(--green)" />
         <StatTile
           label="Open Orders Value"
           value={fmtMoney(openOrdersValue)}
           sub={`${openOrdersCount} open`}
-          accent="var(--orange)"
+          accent="var(--primary)"
         />
         <StatTile label="Awaiting Payment" value={fmtMoney(awaitingPaymentValue)} accent="var(--accent)" />
-        <StatTile label="Items Needing Pricing" value={fmtCount(needsPricingItems.length)} accent="var(--orange)" />
+        <StatTile label="Items Needing Pricing" value={fmtCount(needsPricingItems.length)} accent="var(--primary)" />
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">

@@ -4,7 +4,7 @@ import Link from "next/link";
 /** Visible required marker. The control's own `required` is what AT announces. */
 export function RequiredMark() {
   return (
-    <span aria-hidden="true" className="text-accent">
+    <span aria-hidden="true" className="text-gray-dark">
       {" *"}
     </span>
   );
@@ -15,7 +15,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
     >
       <span aria-hidden>←</span> {label}
     </Link>

@@ -132,7 +132,7 @@ export default async function TasksPage({
               key={s.value}
               href={active ? "/tasks" : `/tasks?status=${s.value}`}
               className="stat-card block transition-colors hover:bg-hover"
-              style={active ? { borderLeftWidth: 4, borderLeftColor: "var(--accent)" } : undefined}
+              style={active ? { borderLeftWidth: 4, borderLeftColor: "var(--primary)" } : undefined}
             >
               <div className="section-label">{s.label}</div>
               <div className="stat-value mt-1">{counts[s.value] ?? 0}</div>

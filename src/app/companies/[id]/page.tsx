@@ -47,7 +47,7 @@ export default async function CompanyDetailPage({
         badges={
           <>
             <TypeBadge type={company.type} />
-            {company.priorityClient ? <span className="badge badge-red">Priority</span> : null}
+            {company.priorityClient ? <span className="badge badge-blue">Priority</span> : null}
           </>
         }
         secondary={
@@ -76,7 +76,7 @@ export default async function CompanyDetailPage({
             {company.priorityClient ? (
               <DetailRow
                 label="Priority client"
-                value={<span className="badge badge-red">Priority</span>}
+                value={<span className="badge badge-blue">Priority</span>}
               />
             ) : null}
             <DetailRow
@@ -126,7 +126,7 @@ export default async function CompanyDetailPage({
                 No people on file yet.{" "}
                 <Link
                   href={`/contacts/new?companyId=${company.id}`}
-                  className="text-accent transition-colors hover:underline"
+                  className="text-primary transition-colors hover:underline"
                 >
                   Add the first contact
                 </Link>{" "}
@@ -140,7 +140,7 @@ export default async function CompanyDetailPage({
                     <li key={c.id} className="py-3 text-[13px] first:pt-0 last:pb-0">
                       <Link
                         href={`/contacts/${c.id}/edit`}
-                        className="font-medium text-ink transition-colors hover:text-accent"
+                        className="font-medium text-ink hover:underline"
                       >
                         {[c.firstName, c.lastName].filter(Boolean).join(" ")}
                       </Link>
@@ -160,7 +160,7 @@ export default async function CompanyDetailPage({
                 No deals yet. Start one from{" "}
                 <Link
                   href={`/intake?companyId=${company.id}`}
-                  className="text-accent transition-colors hover:underline"
+                  className="text-primary transition-colors hover:underline"
                 >
                   Intake
                 </Link>{" "}
@@ -175,7 +175,7 @@ export default async function CompanyDetailPage({
                   >
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink transition-colors hover:text-accent"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:underline"
                     >
                       {o.title}
                     </Link>
@@ -206,7 +206,7 @@ export default async function CompanyDetailPage({
                   >
                     <Link
                       href={`/orders/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink transition-colors hover:text-accent"
+                      className="min-w-0 flex-1 truncate font-medium text-ink hover:underline"
                     >
                       {o.title}
                     </Link>

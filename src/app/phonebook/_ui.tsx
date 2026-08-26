@@ -2,14 +2,17 @@
 import { COMPANY_TYPES, labelFor } from "@/lib/constants";
 
 // Company type has no colour map in constants — map onto the shared badge palette.
+// Kept in step with /companies: only the client lifecycle gets a status colour.
+// Supply-side partners are categories, not statuses, so they stay grey rather than
+// borrowing amber, which the brand reserves for "needs attention".
 const TYPE_BADGES: Record<string, string> = {
   lead: "badge-blue",
   customer: "badge-green",
   lost_lead: "badge-gray",
-  vendor: "badge-yellow",
-  supplier: "badge-orange",
-  installer: "badge-blue",
-  delivery_partner: "badge-yellow",
+  vendor: "badge-gray",
+  supplier: "badge-gray",
+  installer: "badge-gray",
+  delivery_partner: "badge-gray",
 };
 
 export function TypeBadge({ type }: { type: string }) {
@@ -94,7 +97,7 @@ export function PhoneLink({
   return (
     <a
       href={`tel:${dial}${ext ? `,${ext}` : ""}`}
-      className="inline-flex items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-accent"
+      className="inline-flex items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-ink"
       title={label ? `${label}: ${phone}` : phone}
     >
       <PhoneIcon />
@@ -109,7 +112,7 @@ export function EmailLink({ email }: { email: string | null }) {
   return (
     <a
       href={`mailto:${email}`}
-      className="inline-flex min-w-0 items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-accent"
+      className="inline-flex min-w-0 items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-ink"
       title={email}
     >
       <MailIcon />

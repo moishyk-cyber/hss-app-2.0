@@ -86,7 +86,7 @@ function InlineNumber({
       />
       {pending ? <Spinner className="text-gray" /> : null}
       {error && (
-        <span role="alert" className="banner-warn absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
+        <span role="alert" className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
           {error}
         </span>
       )}

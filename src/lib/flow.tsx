@@ -28,7 +28,7 @@ export function FlowStepper({ steps }: { steps: FlowStep[] }) {
                     (step.state === "done"
                       ? "bg-green text-white"
                       : step.state === "current"
-                      ? "bg-accent text-white ring-4 ring-accent-soft"
+                      ? "bg-primary text-white ring-4 ring-[rgba(28,28,30,0.12)]"
                       : step.state === "blocked"
                       ? "bg-orange-soft text-orange border border-orange"
                       : "bg-hover text-gray")
@@ -56,7 +56,7 @@ export function FlowStepper({ steps }: { steps: FlowStep[] }) {
                 {step.label}
               </span>
               {step.state === "current" && step.hint && (
-                <span className="mt-0.5 text-[10.5px] font-medium text-accent px-1 truncate max-w-full">
+                <span className="mt-0.5 text-[10.5px] font-medium text-primary px-1 truncate max-w-full">
                   {step.hint}
                 </span>
               )}

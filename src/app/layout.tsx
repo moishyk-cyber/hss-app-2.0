@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
-import { Sora, Poppins } from "next/font/google";
+import { Archivo, Inter } from "next/font/google";
 import Link from "next/link";
 import Nav from "./nav";
 import "./globals.css";
 
-const sora = Sora({
-  variable: "--font-sora",
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  weight: ["600", "700"],
 });
 
-const poppins = Poppins({
-  variable: "--font-poppins",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
 });
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${sora.variable} ${poppins.variable} h-full antialiased`}>
+    <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">
         <a href="#main" className="skip-link">
           Skip to content

@@ -48,7 +48,7 @@ export default async function EditOpportunityPage({
     <div>
       <Link
         href={`/pipeline/${opportunity.id}`}
-        className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-accent"
+        className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
       >
         <span aria-hidden>←</span> {opportunity.title}
       </Link>
@@ -56,7 +56,7 @@ export default async function EditOpportunityPage({
 
       <form action={updateOpportunity} className="card max-w-4xl space-y-8">
         {error === "save_failed" ? (
-          <div className="banner-warn">Something went wrong while saving. Please try again.</div>
+          <div className="banner-alert">Something went wrong while saving. Please try again.</div>
         ) : null}
         <input type="hidden" name="id" value={opportunity.id} />
 

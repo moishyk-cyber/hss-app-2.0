@@ -34,7 +34,10 @@ export default async function CompaniesPage({
 
   return (
     <div>
-      <PageHeader title="Companies" subtitle={`${companies.length} record(s)`}>
+      <PageHeader
+        title="Companies"
+        subtitle={`${companies.length} ${companies.length === 1 ? "business" : "businesses"}`}
+      >
         <Link href="/companies/new" className="btn btn-primary">
           New company
         </Link>
@@ -76,7 +79,7 @@ export default async function CompaniesPage({
           ) : (
             <>
               No businesses yet.{" "}
-              <Link href="/companies/new" className="text-accent transition-colors hover:underline">
+              <Link href="/companies/new" className="text-primary transition-colors hover:underline">
                 Add the first one
               </Link>{" "}
               — every contact, deal and order hangs off a business.
@@ -103,7 +106,7 @@ export default async function CompaniesPage({
                   <td>
                     <Link
                       href={`/companies/${c.id}`}
-                      className="font-medium text-ink transition-colors hover:text-accent"
+                      className="font-medium text-ink hover:underline"
                     >
                       {c.name}
                     </Link>
@@ -131,7 +134,7 @@ export default async function CompaniesPage({
                     {c._count.orders} orders
                   </td>
                   <td>
-                    {c.priorityClient ? <span className="badge badge-red">Priority</span> : null}
+                    {c.priorityClient ? <span className="badge badge-blue">Priority</span> : null}
                   </td>
                 </tr>
               ))}
