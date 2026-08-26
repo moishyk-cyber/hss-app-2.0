@@ -48,6 +48,7 @@ export default function TaskLinkCell({
           className="text-xs text-gray transition-colors hover:text-ink"
           onClick={() => setEditing(true)}
           title="Change linked record"
+          aria-label="Change linked record"
         >
           ✎
         </button>

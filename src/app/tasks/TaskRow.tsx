@@ -8,14 +8,6 @@ import TaskLinkCell from "./TaskLinkCell";
 import CommentThread from "./CommentThread";
 import { TASK_STATUS_COLORS, TASK_TYPE_LABELS, isOverdue } from "./lib";
 
-export type TaskComment = {
-  id: string;
-  body: string;
-  createdAt: Date;
-  authorName: string | null;
-  author: { name: string } | null;
-};
-
 export type TaskRowData = {
   id: string;
   title: string;
@@ -28,14 +20,14 @@ export type TaskRowData = {
   linkedType: string | null;
   linkedId: string | null;
   linkedLabel: string | null;
-  comments: TaskComment[];
+  commentCount: number;
   subtasks: TaskRowData[];
 };
 
 export default function TaskRow({ task, indent = false }: { task: TaskRowData; indent?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const overdue = isOverdue(task.dueDate, task.status);
-  const hasComments = task.comments.length > 0;
+  const hasComments = task.commentCount > 0;
 
   return (
     <>
@@ -55,7 +47,7 @@ export default function TaskRow({ task, indent = false }: { task: TaskRowData; i
               {indent ? "↳ " : ""}
               {task.title}
             </span>
-            {hasComments && <span className="badge badge-gray text-[10px]">{task.comments.length}</span>}
+            {hasComments && <span className="badge badge-gray text-[10px]">{task.commentCount}</span>}
           </div>
         </td>
         <td className="text-gray-dark">{task.assigneeName ?? "—"}</td>
@@ -91,7 +83,7 @@ export default function TaskRow({ task, indent = false }: { task: TaskRowData; i
       {expanded && (
         <tr>
           <td colSpan={7} className="bg-panel/40 p-3">
-            <CommentThread taskId={task.id} comments={task.comments} />
+            <CommentThread taskId={task.id} />
           </td>
         </tr>
       )}

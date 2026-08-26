@@ -28,7 +28,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         payments: true,
         lineItems: { orderBy: { createdAt: "asc" } },
         purchaseOrders: {
-          include: { supplier: true, lineItems: { select: { id: true, name: true, qty: true } } },
+          include: {
+            supplier: { select: { name: true } },
+            lineItems: { select: { id: true, name: true, qty: true } },
+          },
           orderBy: { createdAt: "asc" },
         },
       },

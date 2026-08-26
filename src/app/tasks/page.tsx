@@ -52,7 +52,7 @@ type TaskWithRelations = {
   type: string;
   linkedType: string | null;
   linkedId: string | null;
-  comments: TaskRowData["comments"];
+  _count: { comments: number };
 };
 
 export default async function TasksPage({
@@ -67,11 +67,11 @@ export default async function TasksPage({
       where: { parentTaskId: null },
       include: {
         assignee: { select: { id: true, name: true } },
-        comments: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+        _count: { select: { comments: true } },
         subtasks: {
           include: {
             assignee: { select: { id: true, name: true } },
-            comments: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
+            _count: { select: { comments: true } },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -100,7 +100,7 @@ export default async function TasksPage({
       linkedType: t.linkedType,
       linkedId: t.linkedId,
       linkedLabel: t.linkedType && t.linkedId ? labelMap.get(`${t.linkedType}:${t.linkedId}`) ?? null : null,
-      comments: t.comments,
+      commentCount: t._count.comments,
       subtasks: [],
     };
   }

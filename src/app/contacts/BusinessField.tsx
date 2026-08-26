@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
+import { RequiredMark } from "./_ui";
 
 /**
  * Business picker for the contact form. Every contact belongs to a business, but
@@ -27,7 +28,10 @@ export function BusinessField({
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="field-label mb-0">Business</span>
+          <span className="field-label mb-0">
+            Business
+            <RequiredMark />
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -59,6 +63,7 @@ export function BusinessField({
   return (
     <div>
       <BusinessCombobox
+        required
         options={companies.map((c) => ({ id: c.id, name: c.name }))}
         query={query}
         setQuery={(next) => {

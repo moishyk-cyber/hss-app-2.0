@@ -41,7 +41,12 @@ export default function TaskListClient({
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {!hasIdentity && (
+          <span id="mine-tasks-hint" className="text-xs text-gray">
+            Pick yourself once in any assignee field
+          </span>
+        )}
         <button type="button" className={!mineOnly ? "chip chip-active" : "chip"} onClick={() => setMineOnly(false)}>
           All tasks
         </button>
@@ -49,6 +54,7 @@ export default function TaskListClient({
           type="button"
           className={mineOnly ? "chip chip-active" : "chip"}
           title={!hasIdentity ? "Pick yourself once in any assignee field" : undefined}
+          aria-describedby={!hasIdentity ? "mine-tasks-hint" : undefined}
           onClick={() => setMineOnly(true)}
         >
           My tasks

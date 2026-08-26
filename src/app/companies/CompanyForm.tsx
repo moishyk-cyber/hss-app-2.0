@@ -57,9 +57,14 @@ export function CompanyForm({
           defaultChecked={company?.priorityClient}
         />
 
-        <Field label="Phone" name="phone" defaultValue={company?.phone} />
-        <Field label="Phone extension" name="phoneExt" defaultValue={company?.phoneExt} />
-        <Field label="Cell phone" name="cellPhone" defaultValue={company?.cellPhone} />
+        <Field label="Phone" name="phone" type="tel" defaultValue={company?.phone} />
+        <Field
+          label="Phone extension"
+          name="phoneExt"
+          type="tel"
+          defaultValue={company?.phoneExt}
+        />
+        <Field label="Cell phone" name="cellPhone" type="tel" defaultValue={company?.cellPhone} />
         <Field label="Email" name="email" type="email" defaultValue={company?.email} />
 
         <Field label="Website" name="website" defaultValue={company?.website} />

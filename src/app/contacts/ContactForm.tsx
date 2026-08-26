@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PendingButton } from "@/lib/ui";
 import { BusinessField } from "./BusinessField";
+import { FormAlert } from "./FormAlert";
 import { CONTACT_STATUSES, Field, Select, TextArea, TitleField } from "./_ui";
 
 type ContactFormValues = {
@@ -43,10 +44,10 @@ export function ContactForm({
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
 
       {error === "company_required" ? (
-        <div className="banner-warn mb-5">
+        <FormAlert>
           Every contact belongs to a business — pick one before saving. If the business isn&rsquo;t
           on the list yet, add it first.
-        </div>
+        </FormAlert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -59,9 +60,14 @@ export function ContactForm({
         />
         <TitleField defaultValue={contact?.title} />
         <Field label="Email" name="email" type="email" defaultValue={contact?.email} />
-        <Field label="Phone" name="phone" defaultValue={contact?.phone} />
-        <Field label="Phone extension" name="phoneExt" defaultValue={contact?.phoneExt} />
-        <Field label="Cell phone" name="cellPhone" defaultValue={contact?.cellPhone} />
+        <Field label="Phone" name="phone" type="tel" defaultValue={contact?.phone} />
+        <Field
+          label="Phone extension"
+          name="phoneExt"
+          type="tel"
+          defaultValue={contact?.phoneExt}
+        />
+        <Field label="Cell phone" name="cellPhone" type="tel" defaultValue={contact?.cellPhone} />
         <Select
           label="Status"
           name="status"

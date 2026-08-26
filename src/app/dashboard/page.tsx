@@ -105,7 +105,7 @@ export default async function DashboardPage() {
     prisma.order.count({ where: { status: { notIn: ["complete", "delivered"] } } }),
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
-      include: { company: true },
+      include: { company: { select: { id: true, name: true } } },
     }),
     prisma.opportunity.findMany({
       where: { nextFollowUp: { lte: endOfToday }, stage: { notIn: ["won", "lost"] } },
@@ -131,12 +131,12 @@ export default async function DashboardPage() {
     }),
     prisma.purchaseOrder.findMany({
       where: { status: { in: ["sent", "shipped"] } },
-      include: { supplier: true, order: { select: { id: true, title: true } } },
+      include: { supplier: { select: { id: true, name: true } }, order: { select: { id: true, title: true } } },
       orderBy: { sentDate: "asc" },
     }),
     prisma.order.findMany({
       where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
-      include: { company: true },
+      include: { company: { select: { id: true, name: true } } },
       orderBy: { neededByDate: "asc" },
     }),
   ]);

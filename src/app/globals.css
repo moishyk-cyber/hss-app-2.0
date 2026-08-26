@@ -168,16 +168,50 @@ h3,
   align-items: center;
   font-size: 11px;
   font-weight: 600;
-  padding: 3px 10px;
+  padding: 4px 11px;
+  min-height: 24px; /* WCAG 2.5.8 minimum pointer target for interactive pills */
   border-radius: 999px;
   white-space: nowrap;
 }
-.badge-blue { background: var(--blue-soft); color: #1d7fe0; }
-.badge-green { background: var(--green-soft); color: #1f9d55; }
-.badge-orange { background: var(--orange-soft); color: #c47d0e; }
-.badge-yellow { background: var(--yellow-soft); color: #9a7d00; }
-.badge-red { background: var(--red-soft); color: var(--red); }
-.badge-gray { background: var(--hover); color: var(--gray-dark); }
+/* Text colors chosen for ≥4.5:1 contrast (AA) on the soft backgrounds over white */
+.badge-blue { background: var(--blue-soft); color: #155fa8; }
+.badge-green { background: var(--green-soft); color: #14733c; }
+.badge-orange { background: var(--orange-soft); color: #8a5308; }
+.badge-yellow { background: var(--yellow-soft); color: #6f5a00; }
+.badge-red { background: var(--red-soft); color: #b3222a; }
+.badge-gray { background: var(--hover); color: #4b5563; }
+
+/* Keyboard focus: one consistent visible ring everywhere. Inputs keep their own
+   focus treatment; the BadgeSelect pill shows the ring when its invisible
+   overlaid select holds keyboard focus. */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.input-klyne:focus-visible {
+  outline: none;
+}
+.badge:has(select:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px 16px;
+  border-radius: 0 0 8px 0;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 13px;
+}
+.skip-link:focus {
+  left: 0;
+}
 
 .table-klyne {
   width: 100%;

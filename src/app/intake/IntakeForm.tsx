@@ -635,14 +635,21 @@ export function IntakeForm({
               {goesToPipeline ? "Create opportunity" : "Create order"}
             </PendingButton>
           ) : (
-            <button
-              type="button"
-              disabled
-              title="Pick or create a business first"
-              className="btn btn-primary cursor-not-allowed opacity-50"
-            >
-              {goesToPipeline ? "Create opportunity" : "Create order"}
-            </button>
+            // Why the button is dead has to be readable, not just a hover tooltip.
+            <div className="flex flex-wrap items-center gap-2.5">
+              <p id="intake-cta-reason" className="text-[13px] font-medium text-accent">
+                Pick or create a business first
+              </p>
+              <button
+                type="button"
+                disabled
+                aria-describedby="intake-cta-reason"
+                title="Pick or create a business first"
+                className="btn btn-primary cursor-not-allowed opacity-50"
+              >
+                {goesToPipeline ? "Create opportunity" : "Create order"}
+              </button>
+            </div>
           )}
         </div>
       </div>

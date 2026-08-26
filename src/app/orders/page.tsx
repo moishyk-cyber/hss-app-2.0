@@ -26,7 +26,7 @@ export default async function OrdersPage({
 
   const orders = await prisma.order.findMany({
     where,
-    include: { company: true, payments: { select: { status: true } } },
+    include: { company: { select: { id: true, name: true } }, payments: { select: { status: true } } },
   });
 
   orders.sort((a, b) => {

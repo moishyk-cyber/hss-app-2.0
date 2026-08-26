@@ -74,6 +74,23 @@ export async function addTaskComment(
   revalidatePath("/tasks");
 }
 
+export type TaskCommentData = {
+  id: string;
+  body: string;
+  createdAt: Date;
+  authorName: string | null;
+  author: { name: string } | null;
+};
+
+/** Comment bodies aren't shipped with the task list — fetched lazily on first expand. */
+export async function getTaskComments(taskId: string): Promise<TaskCommentData[]> {
+  return prisma.taskComment.findMany({
+    where: { taskId },
+    include: { author: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export type SearchResult = {
   type: "opportunity" | "order" | "line_item" | "company" | "contact";
   id: string;

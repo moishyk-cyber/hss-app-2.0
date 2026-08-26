@@ -58,8 +58,8 @@ export default async function ContactsPage({
           )}
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <table className="table-klyne">
+        <div className="card overflow-hidden overflow-x-auto">
+          <table className="table-klyne min-w-[960px]">
             <thead>
               <tr>
                 <th>Name</th>

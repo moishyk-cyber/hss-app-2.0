@@ -84,8 +84,8 @@ export default async function CompaniesPage({
           )}
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <table className="table-klyne">
+        <div className="card overflow-hidden overflow-x-auto">
+          <table className="table-klyne min-w-[900px]">
             <thead>
               <tr>
                 <th>Name</th>

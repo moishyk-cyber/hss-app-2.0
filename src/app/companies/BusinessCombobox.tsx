@@ -5,6 +5,7 @@
 // never dead-end because the business isn't on file yet.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { RequiredMark } from "./_ui";
 
 export type ComboboxOption = { id: string; name: string; hint?: string | null };
 
@@ -49,6 +50,11 @@ export function BusinessCombobox({
   const canCreate = trimmed !== "";
   const createIndex = results.length;
   const rowCount = results.length + (canCreate ? 1 : 0);
+
+  // Stable per-row ids so the input can point at whichever option is highlighted.
+  const optionId = (index: number) => `${listId}-opt-${index}`;
+  const activeOptionId =
+    open && rowCount > 0 ? optionId(Math.min(highlight, rowCount - 1)) : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -106,12 +112,16 @@ export function BusinessCombobox({
   return (
     <div ref={boxRef} className="relative">
       <label className="block">
-        <span className="field-label">{label}</span>
+        <span className="field-label">
+          {label}
+          {required ? <RequiredMark /> : null}
+        </span>
         <input
           type="text"
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}
+          aria-activedescendant={activeOptionId}
           aria-autocomplete="list"
           autoComplete="off"
           required={required}
@@ -139,6 +149,7 @@ export function BusinessCombobox({
           {results.map((o, i) => (
             <li
               key={o.id}
+              id={optionId(i)}
               role="option"
               aria-selected={i === highlight}
               onMouseEnter={() => setHighlight(i)}
@@ -154,6 +165,7 @@ export function BusinessCombobox({
 
           {canCreate ? (
             <li
+              id={optionId(createIndex)}
               role="option"
               aria-selected={highlight === createIndex}
               onMouseEnter={() => setHighlight(createIndex)}

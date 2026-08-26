@@ -78,6 +78,8 @@ model Contact {
   opportunities Opportunity[]
   orders    Order[]
   createdAt DateTime @default(now())
+
+  @@index([companyId])
 }
 
 model Opportunity {
@@ -117,6 +119,11 @@ model Opportunity {
   lineItems        LineItem[]
   orders           Order[]
   createdAt        DateTime  @default(now())
+
+  @@index([stage])
+  @@index([companyId])
+  @@index([salespersonId])
+  @@index([nextFollowUp])
 }
 
 model LineItem {
@@ -153,6 +160,14 @@ model LineItem {
   notes          String?
   mondayId       String?      @unique
   createdAt      DateTime     @default(now())
+
+  @@index([rfqStatus])
+  @@index([deliveryStatus])
+  @@index([opportunityId])
+  @@index([orderId])
+  @@index([purchaseOrderId])
+  @@index([supplierId])
+  @@index([nextFollowUp])
 }
 
 model Order {
@@ -182,6 +197,13 @@ model Order {
   purchaseOrders PurchaseOrder[]
   payments       Payment[]
   createdAt      DateTime     @default(now())
+
+  @@index([status])
+  @@index([urgency])
+  @@index([companyId])
+  @@index([opportunityId])
+  @@index([neededByDate])
+  @@index([nextFollowUp])
 }
 
 model PurchaseOrder {
@@ -201,6 +223,10 @@ model PurchaseOrder {
   notes            String?
   lineItems        LineItem[]
   createdAt        DateTime   @default(now())
+
+  @@index([orderId])
+  @@index([supplierId])
+  @@index([status])
 }
 
 model Payment {
@@ -214,6 +240,8 @@ model Payment {
   date          DateTime?
   notes         String?
   createdAt     DateTime @default(now())
+
+  @@index([orderId])
 }
 
 model Task {
@@ -235,6 +263,11 @@ model Task {
   comments       TaskComment[]
   mondayId       String?   @unique
   createdAt      DateTime  @default(now())
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([parentTaskId])
+  @@index([linkedType, linkedId])
 }
 
 model TaskComment {
@@ -246,6 +279,8 @@ model TaskComment {
   authorName String?
   body       String
   createdAt  DateTime @default(now())
+
+  @@index([taskId])
 }
 
 model IntakeSubmission {
@@ -266,6 +301,8 @@ model Document {
   fileUrl    String
   fileName   String?
   uploadedAt DateTime @default(now())
+
+  @@index([linkedType, linkedId])
 }
 
 model ActivityLog {
@@ -276,4 +313,7 @@ model ActivityLog {
   action     String
   detail     String?
   at         DateTime @default(now())
+
+  @@index([linkedType, linkedId])
+  @@index([at])
 }

@@ -25,12 +25,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${sora.variable} ${poppins.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
         <div className="flex min-h-screen">
           <aside className="w-60 shrink-0 bg-panel flex flex-col border-r border-border">
             <div className="px-5 py-5">
               <Link href="/dashboard" className="flex items-center gap-2.5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/hss-logo.png" alt="HSS Kitchens" className="h-8 w-auto" />
+                <img src="/hss-logo.png" alt="HSS Kitchens" width={44} height={32} className="h-8 w-auto" />
                 <div>
                   <div className="font-heading text-[16px] font-bold tracking-tight text-ink leading-tight">
                     HSS Kitchens
@@ -46,7 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               Built by Klyne &amp; Co.
             </div>
           </aside>
-          <main className="flex-1 min-w-0 px-8 py-7">{children}</main>
+          <main id="main" className="flex-1 min-w-0 px-8 py-7">{children}</main>
         </div>
       </body>
     </html>

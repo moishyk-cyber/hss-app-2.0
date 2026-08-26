@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PendingButton } from "@/lib/ui";
 import { TASK_PRIORITIES } from "@/lib/constants";
 import { createTask } from "./actions";
@@ -11,6 +11,27 @@ import { TYPE_LABELS } from "./lib";
 export default function CreateTaskPanel({ users }: { users: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<SearchResult | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Escape-to-close and outside-pointerdown-to-close, matching BusinessCombobox's pattern.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   async function handleSubmit(formData: FormData) {
     await createTask(formData);
@@ -21,6 +42,7 @@ export default function CreateTaskPanel({ users }: { users: { id: string; name: 
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="btn btn-primary fixed bottom-8 right-8 z-40 flex h-12 w-12 items-center justify-center text-2xl leading-none shadow-lg active:scale-[0.97]"
@@ -31,7 +53,7 @@ export default function CreateTaskPanel({ users }: { users: { id: string; name: 
       </button>
 
       {open && (
-        <div className="card fixed bottom-24 right-8 z-40 w-80 space-y-3 p-4 shadow-lg">
+        <div ref={panelRef} className="card fixed bottom-24 right-8 z-40 w-80 space-y-3 p-4 shadow-lg">
           <div className="section-label">New Task</div>
           <form action={handleSubmit} className="space-y-3">
             <div>

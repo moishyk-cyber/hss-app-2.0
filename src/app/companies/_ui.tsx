@@ -103,6 +103,15 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** Visible required marker. The input's own `required` is what AT announces. */
+export function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="text-accent">
+      {" *"}
+    </span>
+  );
+}
+
 export function Field({
   label,
   name,
@@ -122,9 +131,14 @@ export function Field({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {required ? <RequiredMark /> : null}
+      </span>
       <input
         type={type}
+        // Phone-shaped fields get the phone keypad on touch devices.
+        inputMode={type === "tel" ? "tel" : undefined}
         name={name}
         required={required}
         placeholder={placeholder}
@@ -167,6 +181,7 @@ export function Select({
   options,
   defaultValue,
   includeBlank,
+  required,
   className,
 }: {
   label: string;
@@ -174,12 +189,21 @@ export function Select({
   options: ReadonlyArray<{ value: string; label: string }>;
   defaultValue?: string | null;
   includeBlank?: string;
+  required?: boolean;
   className?: string;
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="field-label">{label}</span>
-      <select name={name} defaultValue={defaultValue ?? ""} className="input-klyne w-full">
+      <span className="field-label">
+        {label}
+        {required ? <RequiredMark /> : null}
+      </span>
+      <select
+        name={name}
+        required={required}
+        defaultValue={defaultValue ?? ""}
+        className="input-klyne w-full"
+      >
         {includeBlank !== undefined ? <option value="">{includeBlank}</option> : null}
         {options.map((o) => (
           <option key={o.value} value={o.value}>

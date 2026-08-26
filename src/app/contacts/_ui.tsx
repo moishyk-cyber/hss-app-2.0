@@ -1,6 +1,15 @@
 // Local presentational helpers for the /contacts module.
 import Link from "next/link";
 
+/** Visible required marker. The control's own `required` is what AT announces. */
+export function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="text-accent">
+      {" *"}
+    </span>
+  );
+}
+
 /** Back link for sub-pages (edit forms) where the form's own submit is the one primary. */
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
@@ -50,9 +59,14 @@ export function Field({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {required ? <RequiredMark /> : null}
+      </span>
       <input
         type={type}
+        // Phone-shaped fields get the phone keypad on touch devices.
+        inputMode={type === "tel" ? "tel" : undefined}
         name={name}
         required={required}
         defaultValue={defaultValue ?? ""}
@@ -81,7 +95,10 @@ export function Select({
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
-      <span className="field-label">{label}</span>
+      <span className="field-label">
+        {label}
+        {required ? <RequiredMark /> : null}
+      </span>
       <select
         name={name}
         required={required}

@@ -77,12 +77,11 @@ export async function setLineItemDeliveryStatus(lineItemId: string, deliveryStat
 /** Create a PO for one vendor, attaching only the explicitly chosen line items. */
 export async function createPurchaseOrder(orderId: string, supplierId: string, lineItemIds: string[]) {
   if (!supplierId || lineItemIds.length === 0) return;
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { purchaseOrders: true },
-  });
+  const [order, supplier] = await Promise.all([
+    prisma.order.findUnique({ where: { id: orderId }, include: { purchaseOrders: true } }),
+    prisma.company.findUnique({ where: { id: supplierId } }),
+  ]);
   if (!order) return;
-  const supplier = await prisma.company.findUnique({ where: { id: supplierId } });
   const n = order.purchaseOrders.length + 1;
   const base = order.jobId || order.id.slice(-6).toUpperCase();
   const poNumber = `PO-${base}-${n}`;
@@ -99,13 +98,12 @@ export async function createPurchaseOrder(orderId: string, supplierId: string, l
 
 /** Header CTA: bulk-advance every "sent" PO on the order to "acknowledged" in one click. */
 export async function acknowledgeAllSentPos(orderId: string) {
-  const sentPos = await prisma.purchaseOrder.findMany({ where: { orderId, status: "sent" } });
-  for (const po of sentPos) {
-    await prisma.purchaseOrder.update({
-      where: { id: po.id },
-      data: { status: "acknowledged", ackDate: po.ackDate ?? new Date() },
-    });
-    await log(orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to acknowledged`);
+  const result = await prisma.purchaseOrder.updateMany({
+    where: { orderId, status: "sent" },
+    data: { status: "acknowledged", ackDate: new Date() },
+  });
+  if (result.count > 0) {
+    await log(orderId, "po_status_advanced", `${result.count} PO(s) advanced to acknowledged`);
   }
   revalidateOrder(orderId);
 }

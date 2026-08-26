@@ -32,51 +32,53 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
           No payments recorded yet. Record the deposit or full payment below to unlock purchase orders.
         </div>
       ) : (
-        <table className="table-klyne">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>QB Ref</th>
-              <th>Date</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((p) => (
-              <tr key={p.id} className="transition-colors">
-                <td className="capitalize text-gray-dark">{p.type}</td>
-                <td className="text-gray-dark">${p.amount.toLocaleString()}</td>
-                <td>
-                  <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
-                </td>
-                <td className="text-gray">{p.quickbooksRef ?? "—"}</td>
-                <td className="text-gray">{fmtDate(p.date)}</td>
-                <td>
-                  <div className="flex gap-2">
-                    {p.status === "pending" && (
-                      <ActionButton
-                        action={() => markPaymentInvoiced(p.id)}
-                        className="btn btn-sm active:scale-[0.99]"
-                      >
-                        Mark invoiced
-                      </ActionButton>
-                    )}
-                    {p.status !== "paid" && (
-                      <ActionButton
-                        action={() => markPaymentPaid(p.id)}
-                        className="btn btn-primary btn-sm active:scale-[0.99]"
-                      >
-                        Mark paid
-                      </ActionButton>
-                    )}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="table-klyne">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>QB Ref</th>
+                <th>Date</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id} className="transition-colors">
+                  <td className="capitalize text-gray-dark">{p.type}</td>
+                  <td className="text-gray-dark">${p.amount.toLocaleString()}</td>
+                  <td>
+                    <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
+                  </td>
+                  <td className="text-gray">{p.quickbooksRef ?? "—"}</td>
+                  <td className="text-gray">{fmtDate(p.date)}</td>
+                  <td>
+                    <div className="flex gap-2">
+                      {p.status === "pending" && (
+                        <ActionButton
+                          action={() => markPaymentInvoiced(p.id)}
+                          className="btn btn-sm active:scale-[0.99]"
+                        >
+                          Mark invoiced
+                        </ActionButton>
+                      )}
+                      {p.status !== "paid" && (
+                        <ActionButton
+                          action={() => markPaymentPaid(p.id)}
+                          className="btn btn-primary btn-sm active:scale-[0.99]"
+                        >
+                          Mark paid
+                        </ActionButton>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <form action={handleAddPayment} className="flex items-end gap-2 rounded-lg border border-border bg-panel p-3">
