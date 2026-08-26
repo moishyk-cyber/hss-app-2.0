@@ -7,6 +7,43 @@
 import { useFormStatus } from "react-dom";
 import { useTransition, useOptimistic, useRef, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { ActionResult } from "./actionResult";
+
+/** Pulls a failure message out of an action's result, if it failed. */
+function errorFrom(result: ActionResult | void): string | null {
+  return result && result.ok === false ? result.message : null;
+}
+
+/** Small inline banner anchored under a control, positioned so it doesn't reflow layout. */
+function InlineError({ message }: { message: string }) {
+  return (
+    <span
+      role="alert"
+      className="banner-warn absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs"
+    >
+      {message}
+    </span>
+  );
+}
+
+/**
+ * Validation/error banner that announces itself and takes focus on mount, so a
+ * keyboard or screen-reader user lands on the reason a save was rejected instead
+ * of having to hunt for it.
+ */
+export function FormAlert({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  return (
+    <div ref={ref} role="alert" tabIndex={-1} className="banner-warn mb-5">
+      {children}
+    </div>
+  );
+}
 
 /** Submit button that instantly shows a pending state while its form's server action runs. */
 export function PendingButton({
@@ -60,15 +97,16 @@ export function OptimisticSelect({
 }: {
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
-  action: (next: string) => Promise<void>;
+  action: (next: string) => Promise<ActionResult | void>;
   className?: string;
   /** Optional: render the current value as a badge/label next to the select. */
   render?: (optimisticValue: string, pending: boolean) => React.ReactNode;
 }) {
   const [isPending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(value);
+  const [error, setError] = useState<string | null>(null);
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="relative inline-flex items-center gap-2">
       {render?.(optimistic, isPending)}
       <select
         className={`${className} ${isPending ? "opacity-60" : ""}`}
@@ -78,7 +116,12 @@ export function OptimisticSelect({
           const next = e.target.value;
           startTransition(async () => {
             setOptimistic(next);
-            await action(next);
+            setError(null);
+            try {
+              setError(errorFrom(await action(next)));
+            } catch {
+              setError("Something went wrong. Please try again.");
+            }
           });
         }}
       >
@@ -88,6 +131,7 @@ export function OptimisticSelect({
           </option>
         ))}
       </select>
+      {error && <InlineError message={error} />}
     </span>
   );
 }
@@ -106,12 +150,13 @@ export function BadgeSelect({
 }: {
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
-  action: (next: string) => Promise<void>;
+  action: (next: string) => Promise<ActionResult | void>;
   colorMap: Record<string, string>;
   fallback?: string;
 }) {
   const [isPending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(value);
+  const [error, setError] = useState<string | null>(null);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
   return (
     <span
@@ -133,7 +178,12 @@ export function BadgeSelect({
           const next = e.target.value;
           startTransition(async () => {
             setOptimistic(next);
-            await action(next);
+            setError(null);
+            try {
+              setError(errorFrom(await action(next)));
+            } catch {
+              setError("Something went wrong. Please try again.");
+            }
           });
         }}
       >
@@ -143,6 +193,7 @@ export function BadgeSelect({
           </option>
         ))}
       </select>
+      {error && <InlineError message={error} />}
     </span>
   );
 }
@@ -153,28 +204,41 @@ export function ActionButton({
   children,
   className = "btn btn-sm",
 }: {
-  action: () => Promise<void>;
+  action: () => Promise<ActionResult | void>;
   children: React.ReactNode;
   className?: string;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   return (
-    <button
-      type="button"
-      disabled={isPending}
-      aria-busy={isPending}
-      className={`${className} ${isPending ? "opacity-60 cursor-progress" : ""}`}
-      onClick={() => startTransition(async () => action())}
-    >
-      {isPending ? (
-        <span className="inline-flex items-center gap-1.5">
-          <Spinner />
-          {children}
-        </span>
-      ) : (
-        children
-      )}
-    </button>
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        disabled={isPending}
+        aria-busy={isPending}
+        className={`${className} ${isPending ? "opacity-60 cursor-progress" : ""}`}
+        onClick={() =>
+          startTransition(async () => {
+            setError(null);
+            try {
+              setError(errorFrom(await action()));
+            } catch {
+              setError("Something went wrong. Please try again.");
+            }
+          })
+        }
+      >
+        {isPending ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            {children}
+          </span>
+        ) : (
+          children
+        )}
+      </button>
+      {error && <InlineError message={error} />}
+    </span>
   );
 }
 

@@ -20,9 +20,11 @@ function getIdentityServerSnapshot() {
 export default function TaskListClient({
   tasks,
   visibleStatuses,
+  users,
 }: {
   tasks: TaskRowData[];
   visibleStatuses: string[];
+  users: { id: string; name: string }[];
 }) {
   const [mineOnly, setMineOnly] = useState(false);
   // Reads localStorage without the effect+setState anti-pattern; automatically
@@ -70,15 +72,15 @@ export default function TaskListClient({
       ) : (
         grouped.map((group) => (
           <section key={group.status}>
-            <h2 className="section-label mb-2 flex items-center gap-2">
+            <h2 className="section-label flex items-center gap-2">
               {group.label}
               <span className="badge badge-gray">{group.tasks.length}</span>
             </h2>
             {group.tasks.length === 0 ? (
               <div className="empty-state">Nothing here.</div>
             ) : (
-              <div className="card overflow-hidden overflow-x-auto">
-                <table className="table-klyne min-w-[860px]">
+              <div className="card card-flush overflow-hidden overflow-x-auto">
+                <table className="table-klyne min-w-[900px]">
                   <thead>
                     <tr>
                       <th>Title</th>
@@ -92,7 +94,7 @@ export default function TaskListClient({
                   </thead>
                   <tbody>
                     {group.tasks.map((task) => (
-                      <TaskRow key={task.id} task={task} />
+                      <TaskRow key={task.id} task={task} users={users} />
                     ))}
                   </tbody>
                 </table>

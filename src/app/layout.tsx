@@ -29,27 +29,27 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           Skip to content
         </a>
         <div className="flex min-h-screen">
-          <aside className="w-60 shrink-0 bg-panel flex flex-col border-r border-border">
-            <div className="px-5 py-5">
-              <Link href="/dashboard" className="flex items-center gap-2.5">
+          <aside className="w-64 shrink-0 bg-panel flex flex-col border-r border-border">
+            <div className="px-6 py-6">
+              <Link href="/dashboard" className="flex items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/hss-logo.png" alt="HSS Kitchens" width={44} height={32} className="h-8 w-auto" />
+                <img src="/hss-logo.png" alt="HSS Kitchens" width={44} height={32} className="h-9 w-auto" />
                 <div>
-                  <div className="font-heading text-[16px] font-bold tracking-tight text-ink leading-tight">
+                  <div className="font-heading text-[17px] font-bold tracking-tight text-ink leading-tight">
                     HSS Kitchens
                   </div>
-                  <div className="text-[10.5px] text-gray-dark">
+                  <div className="text-[11px] text-gray-dark mt-0.5">
                     Sales · Orders · Purchasing
                   </div>
                 </div>
               </Link>
             </div>
             <Nav />
-            <div className="px-5 py-4 text-[11px] text-gray">
+            <div className="px-6 py-5 text-[11px] text-gray">
               Built by Klyne &amp; Co.
             </div>
           </aside>
-          <main id="main" className="flex-1 min-w-0 px-8 py-7">{children}</main>
+          <main id="main" className="flex-1 min-w-0 px-10 py-9">{children}</main>
         </div>
       </body>
     </html>

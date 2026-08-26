@@ -122,20 +122,41 @@ export function Card({
 }) {
   return (
     <section className="card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
         <h2 className="section-label">{title}</h2>
         {action}
       </div>
-      <div className="p-4">{children}</div>
+      {children}
     </section>
   );
 }
 
-export function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+/** Muted italic stand-in — never a bare dash. See DESIGN_V2.md §2. */
+export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
+  return <span className="empty-value">{children}</span>;
+}
+
+/**
+ * One label/value line in a detail card. An empty value drops the row entirely
+ * unless `emptyLabel` is given, in which case absence is itself information.
+ */
+export function DetailRow({
+  label,
+  value,
+  emptyLabel,
+}: {
+  label: string;
+  value: React.ReactNode;
+  emptyLabel?: string;
+}) {
+  const isEmpty = value === null || value === undefined || value === false || value === "";
+  if (isEmpty && !emptyLabel) return null;
   return (
-    <div className="flex gap-3 border-b border-border py-2 text-[13px] last:border-b-0">
+    <div className="flex gap-4 py-2 text-[13px]">
       <div className="w-44 shrink-0 text-gray-dark">{label}</div>
-      <div className="min-w-0 break-words text-ink">{value || "—"}</div>
+      <div className="min-w-0 break-words text-ink">
+        {isEmpty ? <Empty>{emptyLabel}</Empty> : value}
+      </div>
     </div>
   );
 }
@@ -251,8 +272,9 @@ export function Checkbox({
   );
 }
 
-export function fmtDate(date: Date | null | undefined): string {
-  if (!date) return "—";
+/** Null when there is no date — callers decide how to say "nothing here". */
+export function fmtDate(date: Date | null | undefined): string | null {
+  if (!date) return null;
   return date.toISOString().slice(0, 10);
 }
 
@@ -260,8 +282,8 @@ export function dateInputValue(date: Date | null | undefined): string {
   return date ? date.toISOString().slice(0, 10) : "";
 }
 
-export function fmtMoney(amount: number | null | undefined): string {
-  if (amount == null) return "—";
+export function fmtMoney(amount: number | null | undefined): string | null {
+  if (amount == null) return null;
   return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 

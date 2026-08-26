@@ -31,6 +31,8 @@ model Company {
   type           String        @default("customer") // lead | customer | lost_lead | vendor | supplier | installer | delivery_partner
   vertical       String? // restaurant | supermarket | healthcare | venue_catering | school | shul | hotel | other
   priorityClient Boolean       @default(false)
+  requiresDeposit Boolean      @default(true) // toggle: does this account need a deposit before POs go out?
+  depositPercent Int           @default(30) // % of order value required as deposit, when requiresDeposit
   phone          String?
   phoneExt       String?
   cellPhone      String?
@@ -148,7 +150,8 @@ model LineItem {
   unitPrice      Float?
   leadTimeDays   Int?
   rfqStatus      String       @default("needs_pricing") // needs_pricing | rfq_sent | quote_received | priced_in_autoquotes | approved | removed
-  deliveryStatus String       @default("pending") // pending | ordered | in_transit_to_hss | in_transit_to_client | arrived_complete
+  deliveryStatus String       @default("pending") // pending | ordered | backordered | in_transit_to_hss | in_transit_to_client | arrived_complete
+  backorderExpected DateTime? // expected-available date while deliveryStatus = backordered
   dateOrdered    DateTime?
   dateArrivedHss DateTime?
   dateArrivedClient DateTime?
@@ -220,10 +223,20 @@ model PurchaseOrder {
   trackingUrl      String?
   trackingCarrier  String?
   expectedDelivery DateTime?
+  // Real-world delivery leg, modeled on the HSS Delivery Sheet (Google Sheets):
+  // pickup vendor -> trucker/courier -> client address, with its own cost + billing flag.
+  trucker              String?   // carrier or named driver, e.g. "ANDY", "UBER", "UPS DROPSHIP"
+  pickupAddress        String?   // defaults from supplier's address, overridable per shipment
+  scheduledDeliveryDate DateTime? // the "Schedule Delivery & Trucker" step
+  shipCost             Float?    // trucking/delivery cost
+  chargedToCustomer    Boolean   @default(false) // was shipCost billed back to the client?
+  deliveryContactPhone String?   // day-of-delivery contact number
+  deliveryStatus       String    @default("pending") // pending | scheduled | delivered_partial | delivered_full
   notes            String?
   lineItems        LineItem[]
   createdAt        DateTime   @default(now())
 
+  @@unique([orderId, poNumber])
   @@index([orderId])
   @@index([supplierId])
   @@index([status])

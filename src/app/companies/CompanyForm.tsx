@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { COMPANY_TYPES, COMPANY_VERTICALS } from "@/lib/constants";
-import { PendingButton } from "@/lib/ui";
+import { FormAlert, PendingButton } from "@/lib/ui";
 import { Checkbox, Field, Select, TextArea } from "./_ui";
 
 type CompanyFormValues = {
@@ -9,6 +9,8 @@ type CompanyFormValues = {
   type?: string | null;
   vertical?: string | null;
   priorityClient?: boolean;
+  requiresDeposit?: boolean;
+  depositPercent?: number | null;
   phone?: string | null;
   phoneExt?: string | null;
   cellPhone?: string | null;
@@ -26,14 +28,19 @@ export function CompanyForm({
   company,
   submitLabel,
   cancelHref,
+  error,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   company?: CompanyFormValues;
   submitLabel: string;
   cancelHref: string;
+  error?: string;
 }) {
   return (
-    <form action={action} className="card max-w-3xl p-6">
+    <form action={action} className="card max-w-3xl">
+      {error === "save_failed" ? (
+        <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : null}
       {company?.id ? <input type="hidden" name="id" value={company.id} /> : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -55,6 +62,23 @@ export function CompanyForm({
           label="Priority client"
           name="priorityClient"
           defaultChecked={company?.priorityClient}
+        />
+
+        {/* Deposit terms are per-account: they drive the payment staged when a deal is won. */}
+        <Checkbox
+          label="Requires deposit"
+          name="requiresDeposit"
+          defaultChecked={company?.requiresDeposit ?? true}
+        />
+        <Field
+          label="Deposit %"
+          name="depositPercent"
+          type="number"
+          min={0}
+          max={100}
+          step={1}
+          defaultValue={company?.depositPercent ?? 30}
+          hint="Only applies when a deposit is required."
         />
 
         <Field label="Phone" name="phone" type="tel" defaultValue={company?.phone} />

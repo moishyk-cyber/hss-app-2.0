@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { PendingButton } from "@/lib/ui";
+import { FormAlert, PendingButton } from "@/lib/ui";
 import { BusinessField } from "./BusinessField";
-import { FormAlert } from "./FormAlert";
 import { CONTACT_STATUSES, Field, Select, TextArea, TitleField } from "./_ui";
 
 type ContactFormValues = {
@@ -39,7 +38,7 @@ export function ContactForm({
     companies.find((c) => c.id === contact?.companyId)?.name ?? null;
 
   return (
-    <form action={action} className="card max-w-3xl p-6">
+    <form action={action} className="card max-w-3xl">
       {contact?.id ? <input type="hidden" name="id" value={contact.id} /> : null}
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
 
@@ -48,6 +47,8 @@ export function ContactForm({
           Every contact belongs to a business — pick one before saving. If the business isn&rsquo;t
           on the list yet, add it first.
         </FormAlert>
+      ) : error === "save_failed" ? (
+        <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

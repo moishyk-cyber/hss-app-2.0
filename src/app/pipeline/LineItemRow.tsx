@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { DELIVERY_STATUSES, RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, Spinner } from "@/lib/ui";
+import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
+import type { ActionResult } from "@/lib/actionResult";
 import {
+  updateLineItemAssignee,
   updateLineItemPricing,
   updateLineItemQty,
   updateLineItemRfqStatus,
@@ -18,6 +20,7 @@ export type EditableLineItem = {
   unitPrice: number | null;
   rfqStatus: string;
   deliveryStatus: string;
+  assigneeId: string | null;
 };
 
 function toNumberOrNull(raw: string): number | null {
@@ -39,20 +42,31 @@ function InlineNumber({
   initial: string;
   width?: string;
   min?: string;
-  onSave: (raw: string) => Promise<void>;
+  onSave: (raw: string) => Promise<ActionResult | void>;
 }) {
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function commit() {
     if (value === initial) return;
     startTransition(async () => {
-      await onSave(value);
+      setError(null);
+      try {
+        const result = await onSave(value);
+        if (result && result.ok === false) {
+          setError(result.message);
+          setValue(initial);
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+        setValue(initial);
+      }
     });
   }
 
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="relative inline-flex items-center gap-1">
       <input
         aria-label={label}
         type="number"
@@ -71,11 +85,28 @@ function InlineNumber({
         className={`input-klyne ${width} px-2 py-1 text-xs disabled:opacity-60`}
       />
       {pending ? <Spinner className="text-gray" /> : null}
+      {error && (
+        <span role="alert" className="banner-warn absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
+          {error}
+        </span>
+      )}
     </span>
   );
 }
 
-export function LineItemRow({ item }: { item: EditableLineItem }) {
+export function LineItemRow({
+  item,
+  users,
+}: {
+  item: EditableLineItem;
+  users: { id: string; name: string }[];
+}) {
+  // Assignee is optional everywhere — the blank option clears it.
+  const assigneeOptions = [
+    { value: "", label: "— unassigned —" },
+    ...users.map((u) => ({ value: u.id, label: u.name })),
+  ];
+
   return (
     <tr>
       <td>
@@ -91,9 +122,7 @@ export function LineItemRow({ item }: { item: EditableLineItem }) {
           initial={String(item.qty)}
           width="w-14"
           min="1"
-          onSave={async (raw) => {
-            await updateLineItemQty(item.id, Number.parseInt(raw, 10));
-          }}
+          onSave={(raw) => updateLineItemQty(item.id, Number.parseInt(raw, 10))}
         />
       </td>
 
@@ -101,9 +130,7 @@ export function LineItemRow({ item }: { item: EditableLineItem }) {
         <InlineNumber
           label={`Cost for ${item.name}`}
           initial={item.unitCost == null ? "" : String(item.unitCost)}
-          onSave={async (raw) => {
-            await updateLineItemPricing(item.id, toNumberOrNull(raw), item.unitPrice);
-          }}
+          onSave={(raw) => updateLineItemPricing(item.id, toNumberOrNull(raw), item.unitPrice)}
         />
       </td>
 
@@ -111,9 +138,16 @@ export function LineItemRow({ item }: { item: EditableLineItem }) {
         <InlineNumber
           label={`Price for ${item.name}`}
           initial={item.unitPrice == null ? "" : String(item.unitPrice)}
-          onSave={async (raw) => {
-            await updateLineItemPricing(item.id, item.unitCost, toNumberOrNull(raw));
-          }}
+          onSave={(raw) => updateLineItemPricing(item.id, item.unitCost, toNumberOrNull(raw))}
+        />
+      </td>
+
+      <td>
+        <OptimisticSelect
+          value={item.assigneeId ?? ""}
+          options={assigneeOptions}
+          className="input-klyne max-w-[10rem] px-2 py-1 text-xs"
+          action={(next) => updateLineItemAssignee(item.id, next)}
         />
       </td>
 
@@ -122,9 +156,7 @@ export function LineItemRow({ item }: { item: EditableLineItem }) {
           value={item.rfqStatus}
           options={RFQ_STATUSES}
           colorMap={RFQ_STATUS_COLORS}
-          action={async (next) => {
-            await updateLineItemRfqStatus(item.id, next);
-          }}
+          action={(next) => updateLineItemRfqStatus(item.id, next)}
         />
       </td>
 

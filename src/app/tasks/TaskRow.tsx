@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { TASK_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_COLORS } from "@/lib/constants";
-import { BadgeSelect } from "@/lib/ui";
-import { setTaskStatus, setTaskPriority } from "./actions";
+import { BadgeSelect, OptimisticSelect } from "@/lib/ui";
+import { setTaskAssignee, setTaskStatus, setTaskPriority } from "./actions";
 import TaskLinkCell from "./TaskLinkCell";
 import CommentThread from "./CommentThread";
 import { TASK_STATUS_COLORS, TASK_TYPE_LABELS, isOverdue } from "./lib";
@@ -24,7 +24,15 @@ export type TaskRowData = {
   subtasks: TaskRowData[];
 };
 
-export default function TaskRow({ task, indent = false }: { task: TaskRowData; indent?: boolean }) {
+export default function TaskRow({
+  task,
+  users,
+  indent = false,
+}: {
+  task: TaskRowData;
+  users: { id: string; name: string }[];
+  indent?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const overdue = isOverdue(task.dueDate, task.status);
   const hasComments = task.commentCount > 0;
@@ -50,9 +58,16 @@ export default function TaskRow({ task, indent = false }: { task: TaskRowData; i
             {hasComments && <span className="badge badge-gray text-[10px]">{task.commentCount}</span>}
           </div>
         </td>
-        <td className="text-gray-dark">{task.assigneeName ?? "—"}</td>
+        <td>
+          <OptimisticSelect
+            value={task.assigneeId ?? ""}
+            options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+            action={(next) => setTaskAssignee(task.id, next)}
+            className="input-klyne px-1.5 py-1 text-xs"
+          />
+        </td>
         <td className={overdue ? "font-semibold text-red" : "text-gray-dark"}>
-          {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—"}
+          {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : <span className="text-gray/60">–</span>}
         </td>
         <td>
           <BadgeSelect
@@ -88,7 +103,7 @@ export default function TaskRow({ task, indent = false }: { task: TaskRowData; i
         </tr>
       )}
       {task.subtasks.map((sub) => (
-        <TaskRow key={sub.id} task={sub} indent />
+        <TaskRow key={sub.id} task={sub} users={users} indent />
       ))}
     </>
   );

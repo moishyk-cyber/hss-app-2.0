@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { PendingButton } from "@/lib/ui";
+import { FormAlert, PendingButton } from "@/lib/ui";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
 
@@ -60,14 +60,14 @@ function Panel({
 }) {
   return (
     <section className="card">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div>
-          <h2 className="section-label">{title}</h2>
-          {hint ? <p className="mt-0.5 text-xs text-gray">{hint}</p> : null}
+          <h2 className="section-label !mb-0">{title}</h2>
+          {hint ? <p className="mt-1 text-xs text-gray">{hint}</p> : null}
         </div>
         {action}
       </header>
-      <div className="px-5 py-4">{children}</div>
+      {children}
     </section>
   );
 }
@@ -146,10 +146,12 @@ export function IntakeForm({
   companies,
   salespeople,
   initialCompanyId,
+  error,
 }: {
   companies: IntakeCompany[];
   salespeople: { id: string; name: string }[];
   initialCompanyId?: string;
+  error?: string;
 }) {
   const initialCompany = initialCompanyId
     ? companies.find((c) => c.id === initialCompanyId)
@@ -237,14 +239,18 @@ export function IntakeForm({
       onSubmit={() => rememberSalesperson(salespersonId)}
       className="pb-4"
     >
+      {error === "save_failed" ? (
+        <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : null}
+
       {/* hidden mirrors of the branching state so the server action sees plain fields */}
       <input type="hidden" name="clientMode" value={clientMode} />
       <input type="hidden" name="contactMode" value={contactMode} />
       <input type="hidden" name="orderType" value={orderType} />
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         {/* ---------------- LEFT: who / when ---------------- */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           <Panel title="Who">
             {clientMode === "existing" ? (
               <div className="space-y-3">
@@ -419,7 +425,7 @@ export function IntakeForm({
         </div>
 
         {/* ---------------- RIGHT: items / type ---------------- */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           <Panel
             title="Items needed"
             hint="Press Enter on the last row to add another."
@@ -540,11 +546,11 @@ export function IntakeForm({
           </Panel>
 
           {orderType === "project" ? (
-            <details open className="card">
-              <summary className="cursor-pointer px-5 py-3 marker:text-gray">
-                <span className="section-label">Project details</span>
+            <details open className="card card-flush">
+              <summary className="cursor-pointer px-5 py-4 marker:text-gray">
+                <span className="section-label !mb-0 !inline">Project details</span>
               </summary>
-              <div className="grid grid-cols-1 gap-3 border-t border-border px-5 py-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">
                 <label className="block">
                   <span className={labelClass}>Facility type</span>
                   <input name="facilityType" className={inputClass} />
@@ -614,8 +620,8 @@ export function IntakeForm({
       </div>
 
       {/* ---------------- sticky outcome bar ---------------- */}
-      <div className="sticky bottom-0 z-10 mt-4">
-        <div className="card flex flex-wrap items-center justify-between gap-3 bg-surface/85 px-5 py-3.5 backdrop-blur">
+      <div className="sticky bottom-0 z-10 mt-6">
+        <div className="card flex flex-wrap items-center justify-between gap-4 bg-surface/90 backdrop-blur">
           <p className="text-[13px] text-gray-dark">
             <span className="font-medium text-ink">
               {namedItemCount} item{namedItemCount === 1 ? "" : "s"}

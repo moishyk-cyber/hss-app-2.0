@@ -5,7 +5,7 @@ import { COMPANY_TYPES, labelFor } from "@/lib/constants";
 import { InstantSearch } from "@/lib/ui";
 import { CONTACT_TITLES } from "../contacts/_ui";
 import { AssignCompanySelect } from "./AssignCompanySelect";
-import { EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
+import { AddressLine, EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +100,7 @@ export default async function PhoneBookPage({
         </Link>
       </PageHeader>
 
-      <div className="mb-4">
+      <div className="mb-5">
         <label className="block">
           <span className="field-label">Search</span>
           <InstantSearch
@@ -111,7 +111,7 @@ export default async function PhoneBookPage({
         </label>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         <Link
           href={chipHref("")}
           className={`chip transition-colors active:scale-[0.98] ${
@@ -133,7 +133,7 @@ export default async function PhoneBookPage({
         ))}
       </div>
 
-      <p className="page-sub mb-4">
+      <p className="page-sub mb-5">
         {companies.length} business{companies.length === 1 ? "" : "es"} · {peopleCount} person
         {peopleCount === 1 ? "" : "s"}
       </p>
@@ -153,71 +153,80 @@ export default async function PhoneBookPage({
           )}
         </div>
       ) : (
-        <div className="card divide-y divide-border overflow-hidden">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           {companies.map((company) => (
-            <section key={company.id}>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-panel px-4 py-3">
-                {company.priorityClient ? (
-                  <span className="text-accent" title="Priority client" aria-label="Priority client">
-                    ★
-                  </span>
-                ) : null}
-                <Link
-                  href={`/companies/${company.id}`}
-                  className="font-heading text-[14px] font-semibold text-ink transition-colors hover:text-accent"
-                >
-                  {company.name}
-                </Link>
-                <TypeBadge type={company.type} />
-                <span className="badge badge-gray">{company.contacts.length}</span>
-
-                <span className="ml-auto flex flex-wrap items-center gap-x-3 text-xs text-gray-dark">
-                  <PhoneLink phone={company.phone} ext={company.phoneExt} />
-                  <EmailLink email={company.email} />
-                  {company.deliveryAddress || company.billingAddress ? (
-                    <span className="max-w-xs truncate text-gray">
-                      {company.deliveryAddress ?? company.billingAddress}
+            <section key={company.id} className="card card-interactive">
+              {/* Header: identity first, reach-the-business details underneath. */}
+              <header className="border-b border-border pb-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  {company.priorityClient ? (
+                    <span
+                      className="text-[15px] leading-none text-accent"
+                      title="Priority client"
+                      aria-label="Priority client"
+                    >
+                      ★
                     </span>
                   ) : null}
-                </span>
-              </div>
+                  <Link
+                    href={`/companies/${company.id}`}
+                    className="font-heading text-[16px] font-semibold text-ink transition-colors hover:text-accent"
+                  >
+                    {company.name}
+                  </Link>
+                  <TypeBadge type={company.type} />
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <PhoneLink phone={company.phone} ext={company.phoneExt} label="Main line" />
+                  <EmailLink email={company.email} />
+                  <AddressLine address={company.deliveryAddress ?? company.billingAddress} />
+                </div>
+              </header>
 
               {company.contacts.length === 0 ? (
-                <div className="px-4 py-3 text-xs text-gray">
-                  No people yet —{" "}
+                <p className="pt-4 text-[13px] text-gray">
+                  <span className="empty-value">No people yet.</span>{" "}
                   <Link
                     href={`/contacts/new?companyId=${company.id}`}
-                    className="text-accent hover:underline"
+                    className="text-accent transition-colors hover:underline"
                   >
-                    add one
+                    Add the first contact
                   </Link>
-                  .
-                </div>
+                </p>
               ) : (
                 <ul className="divide-y divide-border">
                   {company.contacts.map((contact) => (
-                    <li
-                      key={contact.id}
-                      className="grid grid-cols-1 gap-x-4 gap-y-1 px-4 py-2.5 text-[13px] transition-colors hover:bg-hover sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]"
-                    >
-                      <Link
-                        href={`/contacts/${contact.id}/edit`}
-                        className="truncate font-medium text-ink transition-colors hover:text-accent"
-                      >
-                        {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
-                      </Link>
-                      <span className="truncate text-gray-dark">
-                        {labelFor(CONTACT_TITLES, contact.title)}
-                      </span>
-                      <span className="truncate text-gray-dark">
-                        <PhoneLink phone={contact.phone} ext={contact.phoneExt} />
-                      </span>
-                      <span className="truncate text-gray-dark">
-                        <PhoneLink phone={contact.cellPhone} />
-                      </span>
-                      <span className="flex min-w-0 text-gray-dark">
-                        <EmailLink email={contact.email} />
-                      </span>
+                    <li key={contact.id} className="py-3.5 first:pt-4 last:pb-0">
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <Link
+                          href={`/contacts/${contact.id}/edit`}
+                          className="font-medium text-ink transition-colors hover:text-accent"
+                        >
+                          {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
+                        </Link>
+                        {contact.title ? (
+                          <span className="text-[12.5px] text-gray">
+                            {labelFor(CONTACT_TITLES, contact.title)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {contact.phone || contact.cellPhone || contact.email ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+                          <PhoneLink
+                            phone={contact.phone}
+                            ext={contact.phoneExt}
+                            label="Direct line"
+                          />
+                          <PhoneLink phone={contact.cellPhone} label="Cell" />
+                          <EmailLink email={contact.email} />
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 text-[13px]">
+                          <span className="empty-value">No phone or email on file</span>
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -228,33 +237,35 @@ export default async function PhoneBookPage({
       )}
 
       {unassigned.length > 0 ? (
-        <section className="mt-8">
-          <h2 className="section-label mb-2">Unassigned people</h2>
-          <div className="banner-warn mb-3">
+        <section className="mt-10">
+          <h2 className="section-label">Unassigned people</h2>
+          <div className="banner-warn mb-4">
             Every contact should belong to a business. Pick one for each person below to file them
             correctly.
           </div>
-          <div className="card divide-y divide-border overflow-hidden">
-            {unassigned.map((contact) => (
-              <div
-                key={contact.id}
-                className="grid grid-cols-1 gap-x-4 gap-y-2 px-4 py-3 text-[13px] sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]"
-              >
-                <Link
-                  href={`/contacts/${contact.id}/edit`}
-                  className="truncate font-medium text-ink transition-colors hover:text-accent"
+          <div className="card">
+            <ul className="divide-y divide-border">
+              {unassigned.map((contact) => (
+                <li
+                  key={contact.id}
+                  className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3.5 first:pt-0 last:pb-0"
                 >
-                  {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
-                </Link>
-                <span className="truncate text-gray-dark">
-                  <PhoneLink phone={contact.phone} ext={contact.phoneExt} />
-                </span>
-                <span className="flex min-w-0 text-gray-dark">
-                  <EmailLink email={contact.email} />
-                </span>
-                <AssignCompanySelect contactId={contact.id} companies={allCompanies} />
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <Link
+                      href={`/contacts/${contact.id}/edit`}
+                      className="font-medium text-ink transition-colors hover:text-accent"
+                    >
+                      {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
+                    </Link>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+                      <PhoneLink phone={contact.phone} ext={contact.phoneExt} />
+                      <EmailLink email={contact.email} />
+                    </div>
+                  </div>
+                  <AssignCompanySelect contactId={contact.id} companies={allCompanies} />
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
       ) : null}

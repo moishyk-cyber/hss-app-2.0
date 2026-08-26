@@ -84,7 +84,7 @@ export default async function CompaniesPage({
           )}
         </div>
       ) : (
-        <div className="card overflow-hidden overflow-x-auto">
+        <div className="card card-flush overflow-hidden overflow-x-auto">
           <table className="table-klyne min-w-[900px]">
             <thead>
               <tr>
@@ -118,20 +118,20 @@ export default async function CompaniesPage({
                     <VerticalLabel vertical={c.vertical} />
                   </td>
                   <td className="text-gray-dark">
-                    {c.phone ?? "—"}
-                    {c.phoneExt ? <span className="text-gray"> x{c.phoneExt}</span> : null}
+                    {c.phone ? (
+                      <>
+                        <span className="tabular-nums">{c.phone}</span>
+                        {c.phoneExt ? <span className="text-gray"> ext {c.phoneExt}</span> : null}
+                      </>
+                    ) : null}
                   </td>
-                  <td className="text-gray-dark">{c.email ?? "—"}</td>
+                  <td className="text-gray-dark">{c.email}</td>
                   <td className="text-xs text-gray">
                     {c._count.contacts} contacts · {c._count.opportunities} opps ·{" "}
                     {c._count.orders} orders
                   </td>
                   <td>
-                    {c.priorityClient ? (
-                      <span className="badge badge-red">Priority</span>
-                    ) : (
-                      <span className="text-gray">—</span>
-                    )}
+                    {c.priorityClient ? <span className="badge badge-red">Priority</span> : null}
                   </td>
                 </tr>
               ))}

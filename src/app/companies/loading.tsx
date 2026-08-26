@@ -18,7 +18,7 @@ export default function Loading() {
         ))}
       </div>
 
-      <div className="card overflow-hidden">
+      <div className="card card-flush overflow-hidden">
         <div className="border-b border-border px-4 py-3">
           <div className="h-3 w-full max-w-2xl rounded bg-hover" />
         </div>

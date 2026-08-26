@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { labelFor } from "@/lib/constants";
 import { InstantSearch } from "@/lib/ui";
-import { CONTACT_STATUSES, CONTACT_STATUS_BADGES, CONTACT_TITLES, PageHeader } from "./_ui";
+import { CONTACT_STATUSES, CONTACT_STATUS_BADGES, PageHeader } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +58,7 @@ export default async function ContactsPage({
           )}
         </div>
       ) : (
-        <div className="card overflow-hidden overflow-x-auto">
+        <div className="card card-flush overflow-hidden overflow-x-auto">
           <table className="table-klyne min-w-[960px]">
             <thead>
               <tr>
@@ -92,16 +92,16 @@ export default async function ContactsPage({
                         {c.company.name}
                       </Link>
                     ) : (
-                      <span className="text-gray">—</span>
+                      <span className="empty-value">no business</span>
                     )}
                   </td>
-                  <td className="text-gray-dark">{labelFor(CONTACT_TITLES, c.title)}</td>
-                  <td className="text-gray-dark">
-                    {c.phone ?? "—"}
-                    {c.phoneExt ? <span className="text-gray"> x{c.phoneExt}</span> : null}
+                  <td className="text-gray-dark">{c.title}</td>
+                  <td className="text-gray-dark tabular-nums">
+                    {c.phone}
+                    {c.phoneExt ? <span className="text-gray"> ext {c.phoneExt}</span> : null}
                   </td>
-                  <td className="text-gray-dark">{c.cellPhone ?? "—"}</td>
-                  <td className="text-gray-dark">{c.email ?? "—"}</td>
+                  <td className="text-gray-dark tabular-nums">{c.cellPhone}</td>
+                  <td className="text-gray-dark">{c.email}</td>
                   <td>
                     <span className={`badge ${CONTACT_STATUS_BADGES[c.status] ?? "badge-gray"}`}>
                       {labelFor(CONTACT_STATUSES, c.status)}

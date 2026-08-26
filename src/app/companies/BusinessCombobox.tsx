@@ -144,7 +144,7 @@ export function BusinessCombobox({
           role="listbox"
           // Keep focus in the input so blur doesn't close the list before a click lands.
           onMouseDown={(e) => e.preventDefault()}
-          className="card absolute z-30 mt-1 max-h-64 w-full overflow-y-auto py-1"
+          className="card card-flush absolute z-30 mt-1 max-h-64 w-full overflow-y-auto py-1.5"
         >
           {results.map((o, i) => (
             <li

@@ -1,15 +1,27 @@
-export function fmtDate(d: Date | string | null | undefined) {
-  if (!d) return "—";
+import type { ReactNode } from "react";
+
+// Table-cell date/money formatters. Per DESIGN_V2.md §2, a bare "—" is only
+// allowed inside table bodies for numeric/currency-like cells where column
+// alignment matters, and even then it must read as de-emphasized (reduced
+// opacity), never bold/dark. These return a muted thin dash for that case —
+// do NOT reuse them outside a <table>; card/detail views need the full
+// `.empty-value` muted phrase instead (see orders/[id]/page.tsx).
+function mutedDash() {
+  return <span className="text-gray/60">–</span>;
+}
+
+export function fmtDate(d: Date | string | null | undefined): ReactNode {
+  if (!d) return mutedDash();
   return new Date(d).toLocaleDateString();
 }
 
-export function fmtDateTime(d: Date | string | null | undefined) {
-  if (!d) return "—";
+export function fmtDateTime(d: Date | string | null | undefined): ReactNode {
+  if (!d) return mutedDash();
   return new Date(d).toLocaleString();
 }
 
-export function fmtMoney(v: number | null | undefined) {
-  if (v == null) return "—";
+export function fmtMoney(v: number | null | undefined): ReactNode {
+  if (v == null) return mutedDash();
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
@@ -30,6 +42,7 @@ export const PAYMENT_STATE_COLORS: Record<string, string> = {
 export const DELIVERY_STATUS_COLORS: Record<string, string> = {
   pending: "badge-gray",
   ordered: "badge-blue",
+  backordered: "badge-orange",
   in_transit_to_hss: "badge-yellow",
   in_transit_to_client: "badge-blue",
   arrived_complete: "badge-green",

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { safeAction, type ActionResult } from "@/lib/actionResult";
 
 async function log(linkedId: string, action: string, detail: string) {
   await prisma.activityLog.create({
@@ -9,9 +10,9 @@ async function log(linkedId: string, action: string, detail: string) {
   });
 }
 
-export async function createTask(formData: FormData) {
+export async function createTask(formData: FormData): Promise<ActionResult> {
   const title = String(formData.get("title") ?? "").trim();
-  if (!title) return;
+  if (!title) return { ok: false, message: "Enter a title for the task." };
   const assigneeId = String(formData.get("assigneeId") ?? "") || null;
   const dueDateRaw = String(formData.get("dueDate") ?? "");
   const priority = String(formData.get("priority") ?? "medium");
@@ -19,39 +20,55 @@ export async function createTask(formData: FormData) {
   const linkedType = String(formData.get("linkedType") ?? "") || null;
   const linkedId = String(formData.get("linkedId") ?? "") || null;
 
-  const task = await prisma.task.create({
-    data: {
-      title,
-      assigneeId,
-      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
-      priority,
-      type,
-      linkedType,
-      linkedId,
-    },
-  });
-  await log(task.id, "task_created", `Task "${title}" created`);
-  revalidatePath("/tasks");
-  revalidatePath("/dashboard");
+  return safeAction(async () => {
+    const task = await prisma.task.create({
+      data: {
+        title,
+        assigneeId,
+        dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+        priority,
+        type,
+        linkedType,
+        linkedId,
+      },
+    });
+    await log(task.id, "task_created", `Task "${title}" created`);
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+  }, "Could not create the task. Please try again.");
 }
 
-export async function setTaskStatus(taskId: string, status: string) {
-  await prisma.task.update({ where: { id: taskId }, data: { status } });
-  await log(taskId, "task_status_set", `Task status set to ${status}`);
-  revalidatePath("/tasks");
-  revalidatePath("/dashboard");
+export async function setTaskStatus(taskId: string, status: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    await prisma.task.update({ where: { id: taskId }, data: { status } });
+    await log(taskId, "task_status_set", `Task status set to ${status}`);
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+  }, "Could not update task status. Please try again.");
 }
 
-export async function setTaskPriority(taskId: string, priority: string) {
-  await prisma.task.update({ where: { id: taskId }, data: { priority } });
-  await log(taskId, "task_priority_set", `Task priority set to ${priority}`);
-  revalidatePath("/tasks");
+export async function setTaskAssignee(taskId: string, assigneeId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeId || null } });
+    await log(taskId, "task_assignee_set", `Assignee set to ${assigneeId || "unassigned"}`);
+    revalidatePath("/tasks");
+  }, "Could not update the assignee. Please try again.");
 }
 
-export async function setTaskLink(taskId: string, linkedType: string, linkedId: string) {
-  await prisma.task.update({ where: { id: taskId }, data: { linkedType, linkedId } });
-  await log(taskId, "task_linked", `Task linked to ${linkedType}:${linkedId}`);
-  revalidatePath("/tasks");
+export async function setTaskPriority(taskId: string, priority: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    await prisma.task.update({ where: { id: taskId }, data: { priority } });
+    await log(taskId, "task_priority_set", `Task priority set to ${priority}`);
+    revalidatePath("/tasks");
+  }, "Could not update task priority. Please try again.");
+}
+
+export async function setTaskLink(taskId: string, linkedType: string, linkedId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    await prisma.task.update({ where: { id: taskId }, data: { linkedType, linkedId } });
+    await log(taskId, "task_linked", `Task linked to ${linkedType}:${linkedId}`);
+    revalidatePath("/tasks");
+  }, "Could not link the task. Please try again.");
 }
 
 export async function addTaskComment(
@@ -59,19 +76,21 @@ export async function addTaskComment(
   body: string,
   authorId: string | null,
   authorName: string | null
-) {
+): Promise<ActionResult> {
   const text = body.trim();
-  if (!text) return;
-  await prisma.taskComment.create({
-    data: {
-      taskId,
-      body: text,
-      authorId: authorId || null,
-      authorName: authorId ? null : authorName || "Team",
-    },
-  });
-  await log(taskId, "task_commented", "Comment added");
-  revalidatePath("/tasks");
+  if (!text) return { ok: false, message: "Comment can't be empty." };
+  return safeAction(async () => {
+    await prisma.taskComment.create({
+      data: {
+        taskId,
+        body: text,
+        authorId: authorId || null,
+        authorName: authorId ? null : authorName || "Team",
+      },
+    });
+    await log(taskId, "task_commented", "Comment added");
+    revalidatePath("/tasks");
+  }, "Could not post the comment. Please try again.");
 }
 
 export type TaskCommentData = {

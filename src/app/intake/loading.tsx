@@ -2,15 +2,15 @@
 function PanelSkeleton({ rows = 2 }: { rows?: number }) {
   return (
     <section className="card">
-      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+      <div className="mb-5 flex items-center justify-between">
         <div className="h-3 w-24 rounded bg-hover" />
-        <div className="h-7 w-36 rounded-lg bg-hover" />
+        <div className="h-8 w-36 rounded-[10px] bg-hover" />
       </div>
-      <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {Array.from({ length: rows * 2 }).map((_, i) => (
           <div key={i}>
-            <div className="mb-1.5 h-2.5 w-20 rounded bg-hover" />
-            <div className="h-9 rounded-lg bg-hover" />
+            <div className="mb-2 h-2.5 w-20 rounded bg-hover" />
+            <div className="h-9 rounded-[9px] bg-hover" />
           </div>
         ))}
       </div>
@@ -29,18 +29,18 @@ export default function Loading() {
         <div className="h-8 w-28 rounded-lg bg-hover" />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
           <PanelSkeleton rows={2} />
           <PanelSkeleton rows={1} />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-6">
           <PanelSkeleton rows={2} />
           <PanelSkeleton rows={1} />
         </div>
       </div>
 
-      <div className="card mt-4 flex items-center justify-between gap-3 px-5 py-3.5">
+      <div className="card mt-6 flex items-center justify-between gap-4">
         <div className="h-3 w-56 rounded bg-hover" />
         <div className="h-8 w-40 rounded-lg bg-hover" />
       </div>

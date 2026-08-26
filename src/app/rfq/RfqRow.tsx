@@ -1,11 +1,12 @@
 "use client";
 
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
-import { markLineItemRemoved, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
+import { PendingButton, ActionButton, BadgeSelect, OptimisticSelect } from "@/lib/ui";
+import { markLineItemRemoved, setLineItemAssignee, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
 
 export default function RfqRow({
   item,
+  users,
   parentHref,
   parentLabel,
 }: {
@@ -18,8 +19,10 @@ export default function RfqRow({
     unitCost: number | null;
     unitPrice: number | null;
     rfqStatus: string;
+    assigneeId: string | null;
     assignee: { name: string } | null;
   };
+  users: { id: string; name: string }[];
   parentHref: string | null;
   parentLabel: string;
 }) {
@@ -42,7 +45,7 @@ export default function RfqRow({
             {parentLabel}
           </a>
         ) : (
-          <span className="text-gray">—</span>
+          <span className="empty-value">no parent</span>
         )}
       </td>
       <td>
@@ -67,8 +70,17 @@ export default function RfqRow({
           <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]">Save</PendingButton>
         </form>
       </td>
-      <td className="text-gray-dark">{item.leadTimeDays ?? "—"}</td>
-      <td className="text-gray-dark">{item.assignee?.name ?? "—"}</td>
+      <td className="text-gray-dark">
+        {item.leadTimeDays != null ? item.leadTimeDays : <span className="text-gray/60">–</span>}
+      </td>
+      <td>
+        <OptimisticSelect
+          value={item.assigneeId ?? ""}
+          options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+          action={(next) => setLineItemAssignee(item.id, next)}
+          className="input-klyne px-1.5 py-1 text-xs"
+        />
+      </td>
       <td>
         <div className="flex flex-wrap items-center gap-2">
           <BadgeSelect

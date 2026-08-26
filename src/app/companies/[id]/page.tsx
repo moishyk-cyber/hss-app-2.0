@@ -12,6 +12,7 @@ import {
   Card,
   DetailHeader,
   DetailRow,
+  Empty,
   TypeBadge,
   VerticalLabel,
   fmtDate,
@@ -64,33 +65,45 @@ export default async function CompanyDetailPage({
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1">
           <Card title="Details">
             <DetailRow label="Type" value={<TypeBadge type={company.type} />} />
-            <DetailRow label="Vertical" value={<VerticalLabel vertical={company.vertical} />} />
             <DetailRow
-              label="Priority client"
+              label="Vertical"
+              value={<VerticalLabel vertical={company.vertical} />}
+            />
+            {company.priorityClient ? (
+              <DetailRow
+                label="Priority client"
+                value={<span className="badge badge-red">Priority</span>}
+              />
+            ) : null}
+            <DetailRow
+              label="Deposit"
               value={
-                company.priorityClient ? (
-                  <span className="badge badge-red">Priority</span>
-                ) : (
-                  "No"
-                )
+                company.requiresDeposit
+                  ? `${company.depositPercent}% required`
+                  : "not required — full payment after delivery"
               }
             />
             <DetailRow
               label="Phone"
               value={
                 company.phone
-                  ? `${company.phone}${company.phoneExt ? ` x${company.phoneExt}` : ""}`
+                  ? `${company.phone}${company.phoneExt ? ` ext ${company.phoneExt}` : ""}`
                   : null
               }
+              emptyLabel="no number on file"
             />
             <DetailRow label="Cell phone" value={company.cellPhone} />
-            <DetailRow label="Email" value={company.email} />
+            <DetailRow label="Email" value={company.email} emptyLabel="no email on file" />
             <DetailRow label="Website" value={company.website} />
-            <DetailRow label="Delivery address" value={company.deliveryAddress} />
+            <DetailRow
+              label="Delivery address"
+              value={company.deliveryAddress}
+              emptyLabel="not set"
+            />
             <DetailRow label="Billing address" value={company.billingAddress} />
             <DetailRow label="Zip" value={company.zip} />
             <DetailRow label="Notes" value={company.notes} />
@@ -99,7 +112,7 @@ export default async function CompanyDetailPage({
           </Card>
         </div>
 
-        <div className="space-y-4 lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
           <Card
             title={`Contacts (${company.contacts.length})`}
             action={
@@ -121,21 +134,22 @@ export default async function CompanyDetailPage({
               </div>
             ) : (
               <ul className="divide-y divide-border">
-                {company.contacts.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between py-2.5 text-[13px]">
-                    <div>
+                {company.contacts.map((c) => {
+                  const detail = [c.title, c.email, c.phone].filter(Boolean).join(" · ");
+                  return (
+                    <li key={c.id} className="py-3 text-[13px] first:pt-0 last:pb-0">
                       <Link
                         href={`/contacts/${c.id}/edit`}
                         className="font-medium text-ink transition-colors hover:text-accent"
                       >
-                        {c.firstName} {c.lastName ?? ""}
+                        {[c.firstName, c.lastName].filter(Boolean).join(" ")}
                       </Link>
-                      <div className="text-xs text-gray">
-                        {[c.title, c.email, c.phone].filter(Boolean).join(" · ") || "—"}
+                      <div className="mt-1 text-xs text-gray">
+                        {detail || <span className="empty-value">no contact details yet</span>}
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -157,7 +171,7 @@ export default async function CompanyDetailPage({
                 {company.opportunities.map((o) => (
                   <li
                     key={o.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                    className="flex items-center justify-between gap-4 py-3 text-[13px] first:pt-0 last:pb-0"
                   >
                     <Link
                       href={`/pipeline/${o.id}`}
@@ -165,7 +179,9 @@ export default async function CompanyDetailPage({
                     >
                       {o.title}
                     </Link>
-                    <span className="text-gray-dark">{fmtMoney(o.value)}</span>
+                    <span className="shrink-0 text-gray-dark tabular-nums">
+                      {fmtMoney(o.value) ?? <Empty>no value yet</Empty>}
+                    </span>
                     <span className={`badge ${STAGE_COLORS[o.stage] ?? "badge-gray"}`}>
                       {labelFor(OPPORTUNITY_STAGES, o.stage)}
                     </span>
@@ -186,7 +202,7 @@ export default async function CompanyDetailPage({
                 {company.orders.map((o) => (
                   <li
                     key={o.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                    className="flex items-center justify-between gap-4 py-3 text-[13px] first:pt-0 last:pb-0"
                   >
                     <Link
                       href={`/orders/${o.id}`}
@@ -194,7 +210,9 @@ export default async function CompanyDetailPage({
                     >
                       {o.title}
                     </Link>
-                    <span className="text-gray-dark">{fmtMoney(o.orderValue)}</span>
+                    <span className="shrink-0 text-gray-dark tabular-nums">
+                      {fmtMoney(o.orderValue) ?? <Empty>no value yet</Empty>}
+                    </span>
                     <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>
                       {labelFor(ORDER_STATUSES, o.status)}
                     </span>

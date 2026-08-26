@@ -24,9 +24,19 @@ export const RFQ_STATUSES = [
 export const DELIVERY_STATUSES = [
   { value: "pending", label: "Pending" },
   { value: "ordered", label: "Ordered" },
+  { value: "backordered", label: "Backordered" },
   { value: "in_transit_to_hss", label: "In Transit to HSS" },
   { value: "in_transit_to_client", label: "In Transit to Client" },
   { value: "arrived_complete", label: "Arrived — Complete" },
+] as const;
+
+// PO-level delivery/trucking status — modeled on the client's real delivery
+// tracking spreadsheet (pending -> scheduled -> partial/full delivery).
+export const PO_DELIVERY_STATUSES = [
+  { value: "pending", label: "Pending" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "delivered_partial", label: "Delivered — Partial" },
+  { value: "delivered_full", label: "Delivered — Full" },
 ] as const;
 
 export const ORDER_STATUSES = [
@@ -158,4 +168,11 @@ export const TASK_PRIORITY_COLORS: Record<string, string> = {
   medium: "badge-yellow",
   high: "badge-orange",
   critical: "badge-red",
+};
+
+export const PO_DELIVERY_STATUS_COLORS: Record<string, string> = {
+  pending: "badge-gray",
+  scheduled: "badge-blue",
+  delivered_partial: "badge-orange",
+  delivered_full: "badge-green",
 };

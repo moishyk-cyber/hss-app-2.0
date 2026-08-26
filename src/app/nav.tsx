@@ -21,6 +21,7 @@ const SECTIONS: { label: string | null; items: { href: string; label: string }[]
     items: [
       { href: "/phonebook", label: "Phone Book" },
       { href: "/tasks", label: "Tasks" },
+      { href: "/team", label: "Team" },
     ],
   },
 ];
@@ -37,11 +38,11 @@ export default function Nav() {
     (ALIASES[href] ?? []).some((a) => pathname.startsWith(a));
 
   return (
-    <nav className="flex-1 px-3 py-2 space-y-4">
+    <nav className="flex-1 px-4 py-3 space-y-6">
       <Link
         href="/intake"
         className={
-          "flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors active:scale-[0.99] " +
+          "flex items-center justify-center gap-1.5 rounded-[10px] px-4 py-2.5 text-[13px] font-semibold shadow-[0_1px_2px_rgba(253,0,1,0.15),0_4px_10px_rgba(253,0,1,0.18)] transition-colors active:scale-[0.99] " +
           (isActive("/intake")
             ? "bg-accent text-white"
             : "bg-accent text-white hover:bg-[#d90001]")
@@ -52,7 +53,7 @@ export default function Nav() {
       {SECTIONS.map((section, si) => (
         <div key={si}>
           {section.label && (
-            <div className="px-3 pb-1 font-heading text-[10px] font-semibold uppercase tracking-[0.08em] text-gray">
+            <div className="px-4 pb-2 font-heading text-[10px] font-semibold uppercase tracking-[0.08em] text-gray">
               {section.label}
             </div>
           )}
@@ -62,7 +63,7 @@ export default function Nav() {
                 key={item.href}
                 href={item.href}
                 className={
-                  "block rounded-lg px-3 py-2 text-[13px] font-medium transition-colors " +
+                  "block rounded-[10px] px-4 py-2.5 text-[13px] font-medium transition-colors " +
                   (isActive(item.href)
                     ? "bg-ink text-white"
                     : "text-gray-dark hover:bg-hover hover:text-ink")

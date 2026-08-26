@@ -38,7 +38,7 @@ export default async function OrdersPage({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="page-title">Orders</h1>
         <p className="page-sub">Fulfillment pipeline — payment, POs, delivery.</p>
@@ -73,7 +73,7 @@ export default async function OrdersPage({
           )}
         </div>
       ) : (
-        <div className="card overflow-hidden overflow-x-auto">
+        <div className="card card-flush overflow-hidden overflow-x-auto">
           <table className="table-klyne min-w-[900px]">
             <thead>
               <tr>
@@ -106,7 +106,9 @@ export default async function OrdersPage({
                         {order.title}
                       </Link>
                     </td>
-                    <td className="text-gray-dark">{order.company?.name ?? "—"}</td>
+                    <td className="text-gray-dark">
+                      {order.company?.name ?? <span className="empty-value">no company</span>}
+                    </td>
                     <td>
                       <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
                         {labelFor(ORDER_STATUSES, order.status)}

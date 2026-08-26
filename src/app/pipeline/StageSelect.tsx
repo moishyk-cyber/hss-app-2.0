@@ -17,9 +17,7 @@ export function StageSelect({
       value={stage}
       options={OPPORTUNITY_STAGES}
       colorMap={STAGE_COLORS}
-      action={async (next) => {
-        await changeOpportunityStage(opportunityId, next);
-      }}
+      action={(next) => changeOpportunityStage(opportunityId, next)}
     />
   );
 }

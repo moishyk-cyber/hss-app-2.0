@@ -12,7 +12,7 @@ export default function Loading() {
 
       <div className="mb-5 h-9 w-72 rounded-lg bg-hover" />
 
-      <div className="card overflow-hidden">
+      <div className="card card-flush overflow-hidden">
         <div className="border-b border-border px-4 py-3">
           <div className="h-3 w-full max-w-2xl rounded bg-hover" />
         </div>

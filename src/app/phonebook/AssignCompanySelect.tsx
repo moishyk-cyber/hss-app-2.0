@@ -23,7 +23,7 @@ export function AssignCompanySelect({
       className="input-klyne max-w-xs py-1 text-xs"
       action={async (companyId) => {
         if (!companyId) return;
-        await assignContactCompany(contactId, companyId);
+        return assignContactCompany(contactId, companyId);
       }}
     />
   );

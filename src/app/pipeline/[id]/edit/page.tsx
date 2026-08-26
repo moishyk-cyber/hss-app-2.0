@@ -20,10 +20,12 @@ export const dynamic = "force-dynamic";
 
 export default async function EditOpportunityPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { error }] = await Promise.all([params, searchParams]);
   const [opportunity, companies, contacts, users] = await Promise.all([
     prisma.opportunity.findUnique({ where: { id } }),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -52,7 +54,10 @@ export default async function EditOpportunityPage({
       </Link>
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
-      <form action={updateOpportunity} className="card max-w-4xl space-y-6 p-6">
+      <form action={updateOpportunity} className="card max-w-4xl space-y-8">
+        {error === "save_failed" ? (
+          <div className="banner-warn">Something went wrong while saving. Please try again.</div>
+        ) : null}
         <input type="hidden" name="id" value={opportunity.id} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

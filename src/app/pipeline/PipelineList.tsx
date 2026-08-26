@@ -33,8 +33,8 @@ export function PipelineList({ cards }: { cards: KanbanCard[] }) {
   }
 
   return (
-    <div className="card overflow-hidden">
-      <table className="table-klyne">
+    <div className="card card-flush overflow-hidden overflow-x-auto">
+      <table className="table-klyne min-w-[900px]">
         <thead>
           <tr>
             <th>Deal</th>
@@ -56,19 +56,23 @@ export function PipelineList({ cards }: { cards: KanbanCard[] }) {
                   {card.title}
                 </Link>
               </td>
-              <td className="text-gray-dark">{card.companyName ?? "—"}</td>
+              <td className="text-gray-dark">
+                {card.companyName ?? <span className="empty-value">no company</span>}
+              </td>
               <td>
                 <StageSelect opportunityId={card.id} stage={card.stage} />
               </td>
-              <td className="text-gray-dark">{fmtMoney(card.value)}</td>
-              <td className="text-gray-dark">{card.daysInStage}d</td>
+              <td className="tabular-nums text-gray-dark">
+                {fmtMoney(card.value) ?? <span className="empty-value">no value</span>}
+              </td>
+              <td className="tabular-nums text-gray-dark">{card.daysInStage}d</td>
               <td>
                 {card.followUpLabel ? (
                   <span className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}>
                     {card.followUpLabel}
                   </span>
                 ) : (
-                  <span className="text-gray">—</span>
+                  <span className="empty-value">not scheduled</span>
                 )}
               </td>
             </tr>

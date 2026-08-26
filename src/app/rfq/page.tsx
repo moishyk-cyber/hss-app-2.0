@@ -21,15 +21,18 @@ type RfqLineItem = Prisma.LineItemGetPayload<{
 export default async function RfqPage() {
   const statusValues = RFQ_QUEUE_STATUSES.map((s) => s.value);
 
-  const items: RfqLineItem[] = await prisma.lineItem.findMany({
-    where: { rfqStatus: { in: statusValues as string[] } },
-    include: {
-      opportunity: { select: { id: true, title: true } },
-      order: { select: { id: true, title: true } },
-      assignee: { select: { name: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const [items, users]: [RfqLineItem[], { id: string; name: string }[]] = await Promise.all([
+    prisma.lineItem.findMany({
+      where: { rfqStatus: { in: statusValues as string[] } },
+      include: {
+        opportunity: { select: { id: true, title: true } },
+        order: { select: { id: true, title: true } },
+        assignee: { select: { name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
 
   const counts: Record<string, number> = {};
   for (const s of statusValues) counts[s] = 0;
@@ -66,7 +69,7 @@ export default async function RfqPage() {
       ) : (
         grouped.map((group) => (
           <section key={group.status}>
-            <h2 className="section-label mb-2 flex items-center gap-2">
+            <h2 className="section-label flex items-center gap-2">
               {group.label}
               <span className={`badge ${RFQ_STATUS_COLORS[group.status] ?? "badge-gray"}`}>{group.items.length}</span>
             </h2>
@@ -84,7 +87,7 @@ export default async function RfqPage() {
                 )}
               </div>
             ) : (
-              <div className="card overflow-hidden overflow-x-auto">
+              <div className="card card-flush overflow-hidden overflow-x-auto">
                 <table className="table-klyne min-w-[820px]">
                   <thead>
                     <tr>
@@ -104,9 +107,15 @@ export default async function RfqPage() {
                         : item.opportunity
                         ? `/pipeline/${item.opportunity.id}`
                         : null;
-                      const parentLabel = item.order?.title ?? item.opportunity?.title ?? "—";
+                      const parentLabel = item.order?.title ?? item.opportunity?.title ?? "Unlinked item";
                       return (
-                        <RfqRow key={item.id} item={item} parentHref={parentHref} parentLabel={parentLabel} />
+                        <RfqRow
+                          key={item.id}
+                          item={item}
+                          users={users}
+                          parentHref={parentHref}
+                          parentLabel={parentLabel}
+                        />
                       );
                     })}
                   </tbody>

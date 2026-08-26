@@ -99,21 +99,21 @@ export default async function PipelinePage({
         </div>
       ) : (
         <>
-          <p className="page-sub mb-2">Drag a card between columns to move the deal.</p>
+          <p className="page-sub mb-3">Drag a card between columns to move the deal.</p>
           <KanbanBoard cards={openCards} />
         </>
       )}
 
       {isList ? null : (
-        <details className="card mt-2">
-          <summary className="cursor-pointer px-4 py-3">
-            <span className="section-label">Closed deals</span>
+        <details className="card card-flush mt-8">
+          <summary className="cursor-pointer px-5 py-4">
+            <span className="section-label !mb-0 !inline">Closed deals</span>
             <span className="ml-3 badge badge-green">{won.length} won</span>
             <span className="ml-2 badge badge-gray">{lost.length} lost</span>
           </summary>
           <div className="border-t border-border">
             {won.length + lost.length === 0 ? (
-              <div className="p-4">
+              <div className="p-5">
                 <div className="empty-state">
                   Nothing closed yet. Deals land here once you mark them Won or Lost.
                 </div>
@@ -139,8 +139,12 @@ export default async function PipelinePage({
                           {c.title}
                         </Link>
                       </td>
-                      <td className="text-gray-dark">{c.companyName ?? "—"}</td>
-                      <td className="text-gray-dark">{fmtMoney(c.value)}</td>
+                      <td className="text-gray-dark">
+                        {c.companyName ?? <span className="empty-value">no company</span>}
+                      </td>
+                      <td className="tabular-nums text-gray-dark">
+                        {fmtMoney(c.value) ?? <span className="empty-value">no value</span>}
+                      </td>
                       <td>
                         <StageBadge stage={c.stage} />
                       </td>

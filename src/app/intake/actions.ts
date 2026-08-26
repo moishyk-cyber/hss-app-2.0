@@ -74,7 +74,23 @@ export async function submitIntake(formData: FormData) {
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
-  const result = await prisma.$transaction(async (tx) => {
+  let result;
+  try {
+    result = await runIntakeTransaction();
+  } catch (err) {
+    console.error(err);
+    redirect("/intake?error=save_failed");
+  }
+
+  revalidatePath("/pipeline");
+  revalidatePath("/orders");
+  revalidatePath("/companies");
+  redirect(
+    result.type === "opportunity" ? `/pipeline/${result.id}` : `/orders/${result.id}`
+  );
+
+  async function runIntakeTransaction() {
+    return prisma.$transaction(async (tx) => {
     // --- client -----------------------------------------------------------
     let companyId: string | null = null;
     let companyName = "New client";
@@ -228,13 +244,7 @@ export async function submitIntake(formData: FormData) {
       },
     });
 
-    return { type: "order" as const, id: order.id };
-  });
-
-  revalidatePath("/pipeline");
-  revalidatePath("/orders");
-  revalidatePath("/companies");
-  redirect(
-    result.type === "opportunity" ? `/pipeline/${result.id}` : `/orders/${result.id}`
-  );
+      return { type: "order" as const, id: order.id };
+    });
+  }
 }

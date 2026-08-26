@@ -59,19 +59,33 @@ async function resolveCompanyId(formData: FormData, existing: string | null) {
 
 export async function createContact(formData: FormData) {
   const data = readContactFields(formData);
-  data.companyId = await resolveCompanyId(formData, data.companyId);
+  const back = str(formData, "returnTo");
+
+  let companyId: string | null;
+  try {
+    companyId = await resolveCompanyId(formData, data.companyId);
+  } catch (err) {
+    console.error(err);
+    redirect("/contacts/new?error=save_failed");
+  }
+  data.companyId = companyId;
 
   // Every contact belongs to a business — bounce back to the form if none was picked.
   if (!data.companyId) {
     redirect("/contacts/new?error=company_required");
   }
 
-  const contact = await prisma.contact.create({ data });
-  const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-  await logActivity(contact.id, "contact_created", `Contact "${fullName}" created`);
+  try {
+    const contact = await prisma.contact.create({ data });
+    const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+    await logActivity(contact.id, "contact_created", `Contact "${fullName}" created`);
+  } catch (err) {
+    console.error(err);
+    redirect("/contacts/new?error=save_failed");
+  }
+
   revalidatePath("/contacts");
   revalidatePath("/phonebook");
-  const back = str(formData, "returnTo");
   redirect(back ?? "/phonebook");
 }
 
@@ -79,18 +93,32 @@ export async function updateContact(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing contact id");
   const data = readContactFields(formData);
-  data.companyId = await resolveCompanyId(formData, data.companyId);
+
+  let companyId: string | null;
+  try {
+    companyId = await resolveCompanyId(formData, data.companyId);
+  } catch (err) {
+    console.error(err);
+    redirect(`/contacts/${id}/edit?error=save_failed`);
+  }
+  data.companyId = companyId;
 
   if (!data.companyId) {
     redirect(`/contacts/${id}/edit?error=company_required`);
   }
 
-  const contact = await prisma.contact.update({ where: { id }, data });
-  await logActivity(
-    contact.id,
-    "contact_updated",
-    `Contact "${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}" updated`
-  );
+  try {
+    const contact = await prisma.contact.update({ where: { id }, data });
+    await logActivity(
+      contact.id,
+      "contact_updated",
+      `Contact "${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}" updated`
+    );
+  } catch (err) {
+    console.error(err);
+    redirect(`/contacts/${id}/edit?error=save_failed`);
+  }
+
   revalidatePath("/contacts");
   revalidatePath("/phonebook");
   redirect("/phonebook");

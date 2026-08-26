@@ -21,7 +21,9 @@ export function TypeBadge({ type }: { type: string }) {
   );
 }
 
+/** labelFor() falls back to a bare dash — never let that reach the page (§2). */
 export function VerticalLabel({ vertical }: { vertical: string | null }) {
+  if (!vertical) return <span className="empty-value">not categorised</span>;
   return <>{labelFor(COMPANY_VERTICALS, vertical)}</>;
 }
 
@@ -120,14 +122,22 @@ export function Field({
   required,
   placeholder,
   className,
+  min,
+  max,
+  step,
+  hint,
 }: {
   label: string;
   name: string;
-  defaultValue?: string | null;
+  defaultValue?: string | number | null;
   type?: string;
   required?: boolean;
   placeholder?: string;
   className?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  hint?: string;
 }) {
   return (
     <label className={`block ${className ?? ""}`}>
@@ -138,13 +148,17 @@ export function Field({
       <input
         type={type}
         // Phone-shaped fields get the phone keypad on touch devices.
-        inputMode={type === "tel" ? "tel" : undefined}
+        inputMode={type === "tel" ? "tel" : type === "number" ? "numeric" : undefined}
         name={name}
         required={required}
         placeholder={placeholder}
+        min={min}
+        max={max}
+        step={step}
         defaultValue={defaultValue ?? ""}
         className="input-klyne w-full"
       />
+      {hint ? <span className="mt-1 block text-xs text-gray">{hint}</span> : null}
     </label>
   );
 }
@@ -238,21 +252,43 @@ export function Checkbox({
   );
 }
 
-export function fmtDate(date: Date | null | undefined): string {
-  if (!date) return "—";
+/** Null when there is no date — callers decide how to say "nothing here". */
+export function fmtDate(date: Date | null | undefined): string | null {
+  if (!date) return null;
   return date.toISOString().slice(0, 10);
 }
 
-export function fmtMoney(amount: number | null | undefined): string {
-  if (amount == null) return "—";
+export function fmtMoney(amount: number | null | undefined): string | null {
+  if (amount == null) return null;
   return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-export function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+/** Muted italic stand-in — never a bare dash. See DESIGN_V2.md §2. */
+export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
+  return <span className="empty-value">{children}</span>;
+}
+
+/**
+ * One label/value line in a detail card. An empty value drops the row entirely
+ * unless `emptyLabel` is given, in which case absence is itself information.
+ */
+export function DetailRow({
+  label,
+  value,
+  emptyLabel,
+}: {
+  label: string;
+  value: React.ReactNode;
+  emptyLabel?: string;
+}) {
+  const isEmpty = value === null || value === undefined || value === false || value === "";
+  if (isEmpty && !emptyLabel) return null;
   return (
-    <div className="flex gap-3 border-b border-border py-2 text-[13px] last:border-b-0">
+    <div className="flex gap-4 py-2 text-[13px]">
       <div className="w-40 shrink-0 text-gray-dark">{label}</div>
-      <div className="min-w-0 break-words text-ink">{value || "—"}</div>
+      <div className="min-w-0 break-words text-ink">
+        {isEmpty ? <Empty>{emptyLabel}</Empty> : value}
+      </div>
     </div>
   );
 }
@@ -268,11 +304,11 @@ export function Card({
 }) {
   return (
     <section className="card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
         <h2 className="section-label">{title}</h2>
         {action}
       </div>
-      <div className="p-4">{children}</div>
+      {children}
     </section>
   );
 }

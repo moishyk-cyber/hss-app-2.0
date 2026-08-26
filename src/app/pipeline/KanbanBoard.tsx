@@ -21,8 +21,8 @@ export type KanbanCard = {
 const CLOSED_STAGES = ["won", "lost"];
 const DRAG_MIME = "text/plain";
 
-function money(amount: number | null): string {
-  if (amount == null) return "—";
+function money(amount: number | null): string | null {
+  if (amount == null) return null;
   return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
@@ -79,15 +79,17 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               isDropTarget ? "bg-accent-soft ring-2 ring-accent" : ""
             }`}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
-              <h2 className="section-label">{stage.label}</h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="section-label !mb-0">{stage.label}</h2>
               <div className="flex items-center gap-2">
-                {total > 0 ? <span className="text-xs text-gray">{money(total)}</span> : null}
+                {total > 0 ? (
+                  <span className="text-xs tabular-nums text-gray">{money(total)}</span>
+                ) : null}
                 <span className="badge badge-gray">{columnCards.length}</span>
               </div>
             </div>
 
-            <div className="flex-1 space-y-2 p-3">
+            <div className="flex-1 space-y-3">
               {columnCards.map((card) => (
                 <article
                   key={card.id}
@@ -106,28 +108,30 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                     setDraggingId(null);
                     setDragOverStage(null);
                   }}
-                  className={`cursor-grab rounded-[10px] border border-border bg-surface p-3 transition-shadow active:cursor-grabbing hover:shadow-[0_2px_8px_rgba(28,33,32,0.08)] ${
+                  className={`card-sunken card-interactive cursor-grab active:cursor-grabbing ${
                     draggingId === card.id ? "opacity-50" : ""
                   }`}
                 >
                   <Link
                     href={`/pipeline/${card.id}`}
                     draggable={false}
-                    className="block text-[13px] font-medium text-ink transition-colors hover:text-accent"
+                    className="block text-[13px] font-medium leading-snug text-ink transition-colors hover:text-accent"
                   >
                     {card.title}
                   </Link>
-                  <div className="mt-1 truncate text-xs text-gray">
-                    {card.companyName ?? "No company"}
+                  <div className="mt-1.5 truncate text-xs text-gray">
+                    {card.companyName ?? <span className="empty-value">no company</span>}
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="font-medium text-ink">{money(card.value)}</span>
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="font-medium tabular-nums text-ink">
+                      {money(card.value) ?? <span className="empty-value">no value</span>}
+                    </span>
                     <span className="text-gray">{card.daysInStage}d in stage</span>
                   </div>
 
                   {card.followUpLabel ? (
-                    <div className="mt-2">
+                    <div className="mt-3">
                       <span
                         className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}
                       >
@@ -138,7 +142,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   ) : null}
 
                   {/* Keyboard/no-drag alternative — moves the card optimistically too. */}
-                  <div className="mt-2.5">
+                  <div className="mt-3">
                     <BadgeSelect
                       value={card.stage}
                       options={OPPORTUNITY_STAGES}
@@ -152,7 +156,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               ))}
 
               {columnCards.length === 0 ? (
-                <p className="px-1 py-8 text-center text-xs leading-relaxed text-gray">
+                <p className="px-1 py-10 text-center text-xs leading-relaxed text-gray">
                   {isDropTarget ? (
                     <span className="font-medium text-accent">Drop to move here</span>
                   ) : stageIndex === 0 ? (

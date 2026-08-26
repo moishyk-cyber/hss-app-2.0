@@ -16,13 +16,19 @@ type Payment = {
 
 export default function PaymentsSection({ orderId, payments }: { orderId: string; payments: Payment[] }) {
   const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   async function handleAddPayment(formData: FormData) {
     const type = String(formData.get("type") ?? "deposit");
     const amt = String(formData.get("amount") ?? "");
     if (!amt) return;
-    await addPayment(orderId, type, parseFloat(amt));
-    setAmount("");
+    setError(null);
+    const result = await addPayment(orderId, type, parseFloat(amt));
+    if (result.ok) {
+      setAmount("");
+    } else {
+      setError(result.message);
+    }
   }
 
   return (
@@ -52,7 +58,9 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
                   <td>
                     <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
                   </td>
-                  <td className="text-gray">{p.quickbooksRef ?? "—"}</td>
+                  <td className="text-gray">
+                    {p.quickbooksRef ?? <span className="empty-value">not synced</span>}
+                  </td>
                   <td className="text-gray">{fmtDate(p.date)}</td>
                   <td>
                     <div className="flex gap-2">
@@ -81,7 +89,9 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
         </div>
       )}
 
-      <form action={handleAddPayment} className="flex items-end gap-2 rounded-lg border border-border bg-panel p-3">
+      {error && <div className="banner-warn">{error}</div>}
+
+      <form action={handleAddPayment} className="card-sunken flex items-end gap-2">
         <label>
           <span className="field-label">Type</span>
           <select name="type" defaultValue="deposit" className="input-klyne">

@@ -141,7 +141,7 @@ export default async function TasksPage({
         })}
       </div>
 
-      <TaskListClient tasks={rows} visibleStatuses={visibleStatuses} />
+      <TaskListClient tasks={rows} visibleStatuses={visibleStatuses} users={users} />
 
       <CreateTaskPanel users={users} />
     </div>

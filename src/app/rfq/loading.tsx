@@ -15,7 +15,7 @@ export default function RfqLoading() {
       {[0, 1, 2, 3].map((section) => (
         <div key={section} className="space-y-2">
           <div className="h-4 w-40 animate-pulse rounded bg-hover" />
-          <div className="card overflow-hidden p-4">
+          <div className="card overflow-hidden">
             <div className="space-y-3">
               {[0, 1, 2].map((row) => (
                 <div key={row} className="h-8 w-full animate-pulse rounded bg-hover" />

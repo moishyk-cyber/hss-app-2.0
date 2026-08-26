@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { fmtDate } from "../utils";
 import { UrgencyStatusControls, QbInvoiceEdit } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
 import LineItemsSection from "./LineItemsSection";
@@ -18,7 +17,7 @@ type Phase = (typeof PHASE_ORDER)[number];
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [order, vendors] = await Promise.all([
+  const [order, vendors, users] = await Promise.all([
     prisma.order.findUnique({
       where: { id },
       include: {
@@ -26,10 +25,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         contact: true,
         owner: true,
         payments: true,
-        lineItems: { orderBy: { createdAt: "asc" } },
+        lineItems: { include: { assignee: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
         purchaseOrders: {
           include: {
-            supplier: { select: { name: true } },
+            supplier: { select: { name: true, deliveryAddress: true } },
             lineItems: { select: { id: true, name: true, qty: true } },
           },
           orderBy: { createdAt: "asc" },
@@ -41,6 +40,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   if (!order) notFound();
@@ -142,33 +142,29 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       ? "lineItems"
       : null;
 
-  function sectionClass(name: typeof accentTarget) {
-    return accentTarget === name ? "card border-l-4 p-4" : "card p-4";
-  }
-  function sectionStyle(name: typeof accentTarget) {
-    return accentTarget === name ? { borderLeftColor: "var(--accent)" } : undefined;
+  function sectionStyle(name: typeof accentTarget): React.CSSProperties | undefined {
+    // Inline style, not the border-l-4 utility: .card's own border shorthand
+    // is unlayered custom CSS and beats a layered Tailwind utility for the
+    // same longhand (border-left-width), so a utility class here would be a
+    // silent no-op. Width AND color both need to be set inline to win.
+    return accentTarget === name ? { borderLeftWidth: 4, borderLeftColor: "var(--accent)" } : undefined;
   }
 
   const paymentsSection = (
-    <section key="payments" id="payments" className={sectionClass("payments")} style={sectionStyle("payments")}>
-      <h2 className="section-label mb-3">Payments</h2>
+    <section key="payments" id="payments" className="card" style={sectionStyle("payments")}>
+      <h2 className="section-label">Payments</h2>
       <PaymentsSection orderId={order.id} payments={order.payments} />
     </section>
   );
   const lineItemsSection = (
-    <section key="line-items" className={sectionClass("lineItems")} style={sectionStyle("lineItems")}>
-      <h2 className="section-label mb-3">Line Items</h2>
-      <LineItemsSection items={order.lineItems} />
+    <section key="line-items" className="card" style={sectionStyle("lineItems")}>
+      <h2 className="section-label">Line Items</h2>
+      <LineItemsSection items={order.lineItems} users={users} />
     </section>
   );
   const purchaseOrdersSection = (
-    <section
-      key="purchase-orders"
-      id="purchase-orders"
-      className={sectionClass("purchaseOrders")}
-      style={sectionStyle("purchaseOrders")}
-    >
-      <h2 className="section-label mb-3">Purchase Orders</h2>
+    <section key="purchase-orders" id="purchase-orders" className="card" style={sectionStyle("purchaseOrders")}>
+      <h2 className="section-label">Purchase Orders</h2>
       <PurchaseOrdersSection
         orderId={order.id}
         purchaseOrders={order.purchaseOrders}
@@ -186,14 +182,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       : [lineItemsSection, purchaseOrdersSection, paymentsSection];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <Link href="/orders" className="text-xs text-blue transition-colors hover:underline">
           ← Back to Orders
         </Link>
       </div>
 
-      <div className="card p-4">
+      <div className="card">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="page-title">{order.title}</h1>
@@ -203,10 +199,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                   {order.company.name}
                 </Link>
               ) : (
-                "—"
+                <span className="empty-value">no company</span>
               )}
               {order.contact && <span> · {order.contact.firstName} {order.contact.lastName ?? ""}</span>}
-              {order.owner && <span> · Owner: {order.owner.name}</span>}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="badge badge-gray capitalize">{order.orderType}</span>
@@ -220,17 +215,25 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          <UrgencyStatusControls orderId={order.id} urgency={order.urgency} status={order.status} />
+          <UrgencyStatusControls
+            orderId={order.id}
+            urgency={order.urgency}
+            status={order.status}
+            ownerId={order.ownerId}
+            users={users}
+          />
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm md:grid-cols-4">
           <div>
             <div className="field-label">Job ID</div>
-            <div className="text-ink">{order.jobId ?? "—"}</div>
+            <div className="text-ink">{order.jobId || <span className="empty-value">not set</span>}</div>
           </div>
           <div>
             <div className="field-label">Client PO #</div>
-            <div className="text-ink">{order.clientPoNumber ?? "—"}</div>
+            <div className="text-ink">
+              {order.clientPoNumber || <span className="empty-value">not set</span>}
+            </div>
           </div>
           <div>
             <div className="field-label">QuickBooks Invoice #</div>
@@ -238,11 +241,19 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           </div>
           <div>
             <div className="field-label">Needed By</div>
-            <div className="text-ink">{fmtDate(order.neededByDate)}</div>
+            <div className="text-ink">
+              {order.neededByDate ? (
+                new Date(order.neededByDate).toLocaleDateString()
+              ) : (
+                <span className="empty-value">not set</span>
+              )}
+            </div>
           </div>
           <div className="col-span-2 md:col-span-4">
             <div className="field-label">Delivery Address</div>
-            <div className="text-ink">{order.deliveryAddress ?? "—"}</div>
+            <div className="text-ink">
+              {order.deliveryAddress || <span className="empty-value">not set</span>}
+            </div>
           </div>
         </div>
       </div>

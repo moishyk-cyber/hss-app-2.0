@@ -41,7 +41,7 @@ export default function TaskLinkCell({
             {link.label}
           </a>
         ) : (
-          <span className="text-gray">—</span>
+          <span className="empty-value">no link</span>
         )}
         <button
           type="button"

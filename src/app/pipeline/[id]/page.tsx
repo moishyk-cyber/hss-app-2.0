@@ -44,22 +44,42 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const opportunity = await prisma.opportunity.findUnique({
-    where: { id },
-    include: {
-      company: true,
-      primaryContact: true,
-      salesperson: true,
-      lineItems: true,
-      orders: { select: { id: true, title: true, status: true } },
-    },
-  });
+  const [opportunity, users] = await Promise.all([
+    prisma.opportunity.findUnique({
+      where: { id },
+      include: {
+        company: true,
+        primaryContact: true,
+        salesperson: true,
+        lineItems: true,
+        orders: { select: { id: true, title: true, status: true } },
+      },
+    }),
+    prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
   if (!opportunity) notFound();
 
   const stage = opportunity.stage;
   const closed = stage === "won" || stage === "lost";
   const isProject = opportunity.orderType === "project";
   const linkedOrder = opportunity.orders[0] ?? null;
+
+  // Deposit terms come from the account (mirrors markOpportunityWon). A project for an
+  // account that takes no deposit stages nothing on win — payment follows delivery.
+  const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
+  const depositPercent = opportunity.company?.depositPercent ?? 30;
+  const winPayment = isProject
+    ? requiresDeposit
+      ? {
+          label: `${depositPercent}% deposit`,
+          amount: Math.round(((opportunity.value ?? 0) * depositPercent) / 100),
+        }
+      : null
+    : { label: "full payment", amount: Math.round(opportunity.value ?? 0) };
 
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
@@ -150,10 +170,10 @@ export default async function OpportunityDetailPage({
         }
       />
 
-      <div className="card mb-4 px-5 py-4">
+      <div className="card mb-8">
         <FlowStepper steps={steps} />
         {closed ? (
-          <p className="mt-3 border-t border-border pt-3 text-center text-xs text-gray-dark">
+          <p className="mt-4 border-t border-border pt-4 text-center text-xs text-gray-dark">
             {stage === "won" ? (
               linkedOrder ? (
                 <>
@@ -179,15 +199,21 @@ export default async function OpportunityDetailPage({
         <div className="banner-warn mb-4">
           A lost reason is required before a deal can be marked Lost.
         </div>
+      ) : error === "save_failed" ? (
+        <div className="banner-warn mb-4">Something went wrong while saving. Please try again.</div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-1">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-1">
           <Card title="Deal">
             <DetailRow label="Stage" value={<StageBadge stage={opportunity.stage} />} />
             <DetailRow label="Order type" value={labelFor(ORDER_TYPES, opportunity.orderType)} />
             <DetailRow label="Needs pricing" value={opportunity.needsPricing ? "Yes" : "No"} />
-            <DetailRow label="Value" value={fmtMoney(opportunity.value)} />
+            <DetailRow
+              label="Value"
+              value={fmtMoney(opportunity.value)}
+              emptyLabel="not quoted yet"
+            />
             <DetailRow label="Budget" value={fmtMoney(opportunity.budget)} />
             <DetailRow
               label="Company"
@@ -212,10 +238,18 @@ export default async function OpportunityDetailPage({
                   : null
               }
             />
-            <DetailRow label="Salesperson" value={opportunity.salesperson?.name ?? null} />
+            <DetailRow
+              label="Salesperson"
+              value={opportunity.salesperson?.name ?? null}
+              emptyLabel="unassigned"
+            />
             <DetailRow label="Needed by" value={fmtDate(opportunity.neededByDate)} />
             <DetailRow label="Est./order due" value={fmtDate(opportunity.estDueDate)} />
-            <DetailRow label="Next follow-up" value={fmtDate(opportunity.nextFollowUp)} />
+            <DetailRow
+              label="Next follow-up"
+              value={fmtDate(opportunity.nextFollowUp)}
+              emptyLabel={closed ? undefined : "not scheduled"}
+            />
             <DetailRow label="Submitted via" value={opportunity.submittedVia} />
             <DetailRow label="Created" value={fmtDate(opportunity.createdAt)} />
             {opportunity.lostReason ? (
@@ -234,7 +268,9 @@ export default async function OpportunityDetailPage({
             />
             <DetailRow
               label="Delivery type"
-              value={labelFor(DELIVERY_TYPES, opportunity.deliveryType)}
+              value={
+                opportunity.deliveryType ? labelFor(DELIVERY_TYPES, opportunity.deliveryType) : null
+              }
             />
             <DetailRow label="Opening size" value={opportunity.openingSize} />
             <DetailRow
@@ -252,14 +288,14 @@ export default async function OpportunityDetailPage({
           </Card>
         </div>
 
-        <div className="space-y-4 lg:col-span-2">
-          <section className="card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="section-label">Line items</h2>
+        <div className="space-y-6 lg:col-span-2">
+          <section className="card card-flush overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h2 className="section-label !mb-0">Line items</h2>
               <span className="badge badge-gray">{opportunity.lineItems.length}</span>
             </div>
             {opportunity.lineItems.length === 0 ? (
-              <div className="p-4">
+              <div className="p-5">
                 <div className="empty-state">
                   No line items yet. Items arrive from Intake, or add them on the{" "}
                   <Link
@@ -280,13 +316,14 @@ export default async function OpportunityDetailPage({
                       <th>Qty</th>
                       <th>Cost</th>
                       <th>Price</th>
+                      <th>Assignee</th>
                       <th>RFQ status</th>
                       <th>Delivery</th>
                     </tr>
                   </thead>
                   <tbody>
                     {opportunity.lineItems.map((li) => (
-                      <LineItemRow key={li.id} item={li} />
+                      <LineItemRow key={li.id} item={li} users={users} />
                     ))}
                   </tbody>
                 </table>
@@ -321,16 +358,19 @@ export default async function OpportunityDetailPage({
                 <form action={markOpportunityWon}>
                   <input type="hidden" name="id" value={opportunity.id} />
                   <p className="mb-3 text-[13px] text-gray-dark">
-                    Creates an order, carries every non-removed line item across, and stages a{" "}
-                    {isProject ? "30% deposit" : "full payment"} of{" "}
-                    <span className="font-medium text-ink">
-                      {fmtMoney(
-                        Math.round(
-                          isProject ? (opportunity.value ?? 0) * 0.3 : opportunity.value ?? 0
-                        )
-                      )}
-                    </span>
-                    .
+                    {winPayment ? (
+                      <>
+                        Creates an order, carries every non-removed line item across, and stages a{" "}
+                        {winPayment.label} of{" "}
+                        <span className="font-medium text-ink">{fmtMoney(winPayment.amount)}</span>.
+                      </>
+                    ) : (
+                      <>
+                        Creates an order and carries every non-removed line item across. No deposit
+                        is required for this account — full payment will be collected after
+                        delivery.
+                      </>
+                    )}
                   </p>
                   {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
                   <PendingButton

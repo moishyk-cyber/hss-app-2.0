@@ -8,10 +8,12 @@ export const dynamic = "force-dynamic";
 
 export default async function EditCompanyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { error }] = await Promise.all([params, searchParams]);
   const company = await prisma.company.findUnique({ where: { id } });
   if (!company) notFound();
 
@@ -24,6 +26,7 @@ export default async function EditCompanyPage({
         company={company}
         submitLabel="Save changes"
         cancelHref={`/companies/${company.id}`}
+        error={error}
       />
     </div>
   );
