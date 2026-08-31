@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/log";
+import { recomputeOrderStatus } from "@/lib/flow";
+import { findCompanyByNormalizedName } from "../companies/nameMatch";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -74,6 +77,20 @@ export async function submitIntake(formData: FormData) {
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
+  // Duplicate-business guard, BEFORE the transaction: redirect() throws, and a throw
+  // inside runIntakeTransaction would be caught below and reported as save_failed.
+  // Matching is on the normalized name across ALL company types — the duplicate is as
+  // likely to be filed as a lost_lead or a supplier as it is a customer.
+  const proposedCompanyName = clientMode === "new" ? str(formData, "newCompanyName") : null;
+  if (proposedCompanyName) {
+    const existing = await findCompanyByNormalizedName(proposedCompanyName);
+    if (existing) {
+      redirect(
+        `/intake?error=duplicate_company&company=${encodeURIComponent(existing.name)}`
+      );
+    }
+  }
+
   let result;
   try {
     result = await runIntakeTransaction();
@@ -81,6 +98,21 @@ export async function submitIntake(formData: FormData) {
     console.error(err);
     redirect("/intake?error=save_failed");
   }
+
+  // Logged after the commit: logActivity uses the global prisma client (so it can
+  // attribute to the signed-in identity) and never throws, so it cannot roll the
+  // intake back or fail it.
+  await logActivity(
+    result.type,
+    result.id,
+    "intake_submitted",
+    result.type === "opportunity"
+      ? `Intake form created opportunity "${result.title}" with ${items.length} item(s) needing pricing`
+      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s)`
+  );
+
+  // Branch B skips the pipeline, so nothing else ever derives this order's status.
+  if (result.type === "order") await recomputeOrderStatus(result.id);
 
   revalidatePath("/pipeline");
   revalidatePath("/orders");
@@ -158,7 +190,9 @@ export async function submitIntake(formData: FormData) {
           salespersonId: str(formData, "salespersonId"),
           stage: "new",
           orderType,
-          needsPricing: true,
+          // Carry the form's real answer. Hard-coding true told the RFQ queue every
+          // deal needed quoting, including ones the salesperson had already priced.
+          needsPricing,
           neededByDate,
           deliveryAddress,
           locationName: str(formData, "locationName") ?? str(formData, "newCompanyLocationName"),
@@ -195,17 +229,7 @@ export async function submitIntake(formData: FormData) {
         },
       });
 
-      await tx.activityLog.create({
-        data: {
-          userName: "System",
-          linkedType: "opportunity",
-          linkedId: opportunity.id,
-          action: "intake_submitted",
-          detail: `Intake form created opportunity "${title}" with ${items.length} item(s) needing pricing`,
-        },
-      });
-
-      return { type: "opportunity" as const, id: opportunity.id };
+      return { type: "opportunity" as const, id: opportunity.id, title };
     }
 
     const order = await tx.order.create({
@@ -234,17 +258,7 @@ export async function submitIntake(formData: FormData) {
       data: { payload, processed: true, resultType: "order", resultId: order.id },
     });
 
-    await tx.activityLog.create({
-      data: {
-        userName: "System",
-        linkedType: "order",
-        linkedId: order.id,
-        action: "intake_submitted",
-        detail: `Intake form created order "${title}" with ${items.length} pre-priced item(s)`,
-      },
-    });
-
-      return { type: "order" as const, id: order.id };
+      return { type: "order" as const, id: order.id, title };
     });
   }
 }

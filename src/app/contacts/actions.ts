@@ -3,18 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/log";
+import { isValidValue } from "@/lib/constants";
+import { findCompanyByNormalizedName } from "../companies/nameMatch";
+import { CONTACT_STATUSES } from "./_ui";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return trimmed === "" ? null : trimmed;
-}
-
-async function logActivity(linkedId: string, action: string, detail: string) {
-  await prisma.activityLog.create({
-    data: { userName: "System", linkedType: "contact", linkedId, action, detail },
-  });
 }
 
 function readContactFields(formData: FormData) {
@@ -35,24 +33,30 @@ function readContactFields(formData: FormData) {
 /**
  * The business may not exist yet — the form's combobox lets the user create one
  * inline, which arrives as `newCompanyName`. Create it, then attach the contact.
+ *
+ * If a business with that name (normalized) is already on file we LINK to it rather
+ * than creating a duplicate. Linking is the right call here: the user typed the name
+ * specifically to attach this person to that business, so the existing record is
+ * exactly what they meant — unlike intake, where a match means the whole deal is
+ * about to be filed under a second copy of the client.
  */
 async function resolveCompanyId(formData: FormData, existing: string | null) {
   if (existing) return existing;
   const newName = str(formData, "newCompanyName");
   if (!newName) return null;
 
+  const match = await findCompanyByNormalizedName(newName);
+  if (match) return match.id;
+
   const company = await prisma.company.create({
     data: { name: newName, type: "customer" },
   });
-  await prisma.activityLog.create({
-    data: {
-      userName: "System",
-      linkedType: "company",
-      linkedId: company.id,
-      action: "company_created",
-      detail: `Business "${company.name}" created while adding a contact`,
-    },
-  });
+  await logActivity(
+    "company",
+    company.id,
+    "company_created",
+    `Business "${company.name}" created while adding a contact`
+  );
   revalidatePath("/companies");
   return company.id;
 }
@@ -60,6 +64,12 @@ async function resolveCompanyId(formData: FormData, existing: string | null) {
 export async function createContact(formData: FormData) {
   const data = readContactFields(formData);
   const back = str(formData, "returnTo");
+
+  // Title stays free text on purpose (a fixed list hid people's real jobs); status
+  // is a real enum and must not be persisted as something the badges can't render.
+  if (!isValidValue(CONTACT_STATUSES, data.status)) {
+    redirect("/contacts/new?error=invalid_value");
+  }
 
   let companyId: string | null;
   try {
@@ -78,7 +88,7 @@ export async function createContact(formData: FormData) {
   try {
     const contact = await prisma.contact.create({ data });
     const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-    await logActivity(contact.id, "contact_created", `Contact "${fullName}" created`);
+    await logActivity("contact", contact.id, "contact_created", `Contact "${fullName}" created`);
   } catch (err) {
     console.error(err);
     redirect("/contacts/new?error=save_failed");
@@ -93,6 +103,10 @@ export async function updateContact(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing contact id");
   const data = readContactFields(formData);
+
+  if (!isValidValue(CONTACT_STATUSES, data.status)) {
+    redirect(`/contacts/${id}/edit?error=invalid_value`);
+  }
 
   let companyId: string | null;
   try {
@@ -110,6 +124,7 @@ export async function updateContact(formData: FormData) {
   try {
     const contact = await prisma.contact.update({ where: { id }, data });
     await logActivity(
+      "contact",
       contact.id,
       "contact_updated",
       `Contact "${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}" updated`

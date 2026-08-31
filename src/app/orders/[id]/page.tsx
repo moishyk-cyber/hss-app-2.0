@@ -5,9 +5,10 @@ import { UrgencyStatusControls, QbInvoiceEdit } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
 import LineItemsSection from "./LineItemsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
-import { FlowStepper, type FlowStep } from "@/lib/flow";
+import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
+import { evaluatePaymentGate, canCompleteOrder } from "@/lib/flow";
 import { ActionButton } from "@/lib/ui";
-import { acknowledgeAllSentPos, setOrderStatus } from "../actions";
+import { acknowledgeAllSentPos, markOrderComplete } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     prisma.order.findUnique({
       where: { id },
       include: {
-        company: true,
+        company: { select: { id: true, name: true, requiresDeposit: true, depositPercent: true } },
         contact: true,
         owner: true,
         payments: true,
@@ -45,15 +46,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   if (!order) notFound();
 
-  const hasPaidPayment = order.payments.some((p) => p.status === "paid");
+  const gate = evaluatePaymentGate(order);
 
   const unassignedLineItems = order.lineItems
     .filter((li) => !li.purchaseOrderId && li.rfqStatus !== "removed")
     .map((li) => ({ id: li.id, name: li.name, qty: li.qty }));
 
-  const activeLineItems = order.lineItems.filter((li) => li.rfqStatus !== "removed");
   const allPosReceived = order.purchaseOrders.length > 0 && order.purchaseOrders.every((po) => po.status === "received");
-  const allItemsArrived = activeLineItems.length > 0 && activeLineItems.every((li) => li.deliveryStatus === "arrived_complete");
 
   // ---- Flow phase derivation (docs/UX_FLOW.md §3B/§3G) ----
   const poStatuses = order.purchaseOrders.map((po) => po.status);
@@ -61,9 +60,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const anyDraft = poStatuses.includes("draft");
   const anySent = poStatuses.includes("sent");
 
+  // "complete" must win outright — a completed order renders as Complete even if,
+  // say, gate math would otherwise say "payment" (e.g. a since-refunded payment).
   let phase: Phase;
-  if (!hasPaidPayment) phase = "payment";
-  else if (order.status === "complete") phase = "complete";
+  if (order.status === "complete") phase = "complete";
+  else if (!gate.open) phase = "payment";
   else if (unassignedLineItems.length > 0 || anyDraft || anySent) phase = "pos";
   else if (hasAnyPo && !allPosReceived) phase = "in_transit";
   else phase = "delivery";
@@ -103,30 +104,29 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   // ---- Header pattern (spec §H): ONE contextual primary action ----
   let primaryAction: React.ReactNode = null;
-  if (!hasPaidPayment) {
+  if (order.status !== "complete" && !gate.open) {
     primaryAction = (
       <a href="#payments" className="btn btn-primary active:scale-[0.99]">
         Record payment
       </a>
     );
-  } else if (unassignedLineItems.length > 0) {
+  } else if (order.status !== "complete" && unassignedLineItems.length > 0) {
     primaryAction = (
       <a href="#purchase-orders" className="btn btn-primary active:scale-[0.99]">
         Create POs
       </a>
     );
-  } else if (anySent) {
+  } else if (order.status !== "complete" && anySent) {
     primaryAction = (
       <ActionButton action={acknowledgeAllSentPos.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
         Mark acknowledged
       </ActionButton>
     );
-  } else if (allPosReceived && allItemsArrived && order.status !== "complete") {
+  } else if (order.status !== "complete" && canCompleteOrder(order)) {
+    // canCompleteOrder is vacuously true when there are no POs at all (a direct
+    // intake order with no purchasing leg) — don't gate this on purchaseOrders.length.
     primaryAction = (
-      <ActionButton
-        action={setOrderStatus.bind(null, order.id, "complete")}
-        className="btn btn-primary active:scale-[0.99]"
-      >
+      <ActionButton action={markOrderComplete.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
         Mark complete
       </ActionButton>
     );
@@ -159,13 +159,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const paymentsSection = (
     <section key="payments" id="payments" className="card" style={sectionStyle("payments")}>
       <h2 className="section-label">Payments</h2>
-      <PaymentsSection orderId={order.id} payments={order.payments} />
+      <PaymentsSection orderId={order.id} payments={order.payments} gate={gate} />
     </section>
   );
   const lineItemsSection = (
     <section key="line-items" className="card" style={sectionStyle("lineItems")}>
       <h2 className="section-label">Line Items</h2>
-      <LineItemsSection items={order.lineItems} users={users} />
+      <LineItemsSection orderId={order.id} items={order.lineItems} users={users} />
     </section>
   );
   const purchaseOrdersSection = (
@@ -176,7 +176,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         purchaseOrders={order.purchaseOrders}
         unassignedLineItems={unassignedLineItems}
         vendors={vendors}
-        hasPaidPayment={hasPaidPayment}
+        gate={gate}
       />
     </section>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { USER_ROLES } from "@/lib/constants";
 import { PendingButton } from "@/lib/ui";
 import { createUser } from "./actions";
 
@@ -39,7 +40,13 @@ export function NewUserForm() {
       </div>
       <div className="min-w-[140px]">
         <span className="field-label">Role</span>
-        <input name="role" list="team-role-suggestions" defaultValue="sales" className="input-klyne w-full" />
+        <select name="role" defaultValue="sales" className="input-klyne w-full">
+          {USER_ROLES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="flex gap-2">
         <PendingButton className="btn btn-primary" pendingText="Adding…">

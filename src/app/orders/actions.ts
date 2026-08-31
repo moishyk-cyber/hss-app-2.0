@@ -4,17 +4,52 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
+import { logActivity } from "@/lib/log";
+import {
+  evaluatePaymentGate,
+  recomputeOrderStatus,
+  deriveOrderStatus,
+  canCompleteOrder,
+  FLOW_ORDER_INCLUDE,
+} from "@/lib/flow";
+import { isValidValue, ORDER_URGENCIES, DELIVERY_STATUSES, PO_DELIVERY_STATUSES } from "@/lib/constants";
 
 async function log(linkedId: string, action: string, detail: string) {
-  await prisma.activityLog.create({
-    data: { userName: "System", linkedType: "order", linkedId, action, detail },
-  });
+  await logActivity("order", linkedId, action, detail);
 }
 
 function revalidateOrder(orderId: string) {
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
   revalidatePath("/dashboard");
+}
+
+/** Add a line item to an existing order (the client called back and added something). */
+export async function addOrderLineItem(
+  orderId: string,
+  name: string,
+  qty: number,
+  description: string
+): Promise<ActionResult> {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, message: "Give the item a name." };
+  const safeQty = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+  return safeAction(async () => {
+    const item = await prisma.lineItem.create({
+      data: {
+        orderId,
+        name: trimmed,
+        description: description.trim() || null,
+        qty: safeQty,
+        // Late-added items still need a price — they join the RFQ queue.
+        rfqStatus: "needs_pricing",
+      },
+    });
+    await log(orderId, "item_added", `"${item.name}" added to the order (qty ${safeQty}) — needs pricing`);
+    await recomputeOrderStatus(orderId);
+    revalidateOrder(orderId);
+    revalidatePath("/rfq");
+  }, "Could not add the item. Please try again.");
 }
 
 export async function setOrderOwner(orderId: string, ownerId: string): Promise<ActionResult> {
@@ -39,6 +74,9 @@ export async function setLineItemAssignee(lineItemId: string, assigneeId: string
 }
 
 export async function setOrderUrgency(orderId: string, urgency: string): Promise<ActionResult> {
+  if (!isValidValue(ORDER_URGENCIES, urgency)) {
+    return { ok: false, message: "Not a valid urgency." };
+  }
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { urgency } });
     await log(orderId, "order_urgency_set", `Urgency set to ${urgency}`);
@@ -46,12 +84,81 @@ export async function setOrderUrgency(orderId: string, urgency: string): Promise
   }, "Could not update urgency. Please try again.");
 }
 
-export async function setOrderStatus(orderId: string, status: string): Promise<ActionResult> {
+/**
+ * Explicit "Mark stuck" — a manual override the derived-status recompute never
+ * clears (see MANUAL_STATUSES in @/lib/flow).
+ */
+export async function markOrderStuck(orderId: string): Promise<ActionResult> {
   return safeAction(async () => {
-    await prisma.order.update({ where: { id: orderId }, data: { status } });
-    await log(orderId, "order_status_set", `Status set to ${status}`);
+    await prisma.order.update({ where: { id: orderId }, data: { status: "stuck" } });
+    await log(orderId, "order_marked_stuck", "Order marked stuck");
     revalidateOrder(orderId);
-  }, "Could not update status. Please try again.");
+  }, "Could not mark the order stuck. Please try again.");
+}
+
+/**
+ * Leaves "stuck": derives the true status from payments/POs/items right now.
+ * Can't just call recomputeOrderStatus() here — it intentionally no-ops on
+ * "stuck"/"complete" so routine mutations never silently clear a manual flag.
+ * This action IS that explicit override, so it re-derives directly instead.
+ */
+export async function unstickOrder(orderId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    if (!order) throw new Error("Order not found");
+    const derived = deriveOrderStatus(order);
+    await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
+    await log(orderId, "order_unstuck", `Order unstuck — status set to ${derived}`);
+    revalidateOrder(orderId);
+  }, "Could not unstick the order. Please try again.");
+}
+
+/** Header primary action once the payment gate is open and everything has landed. */
+export async function markOrderComplete(orderId: string): Promise<ActionResult> {
+  try {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    if (!order) return { ok: false, message: "Order not found" };
+
+    if (!canCompleteOrder(order)) {
+      const gate = evaluatePaymentGate(order);
+      if (!gate.open) {
+        return { ok: false, message: gate.reason };
+      }
+      const items = order.lineItems.filter((i) => i.rfqStatus !== "removed");
+      const itemsPending = items.filter((i) => i.deliveryStatus !== "arrived_complete").length;
+      const posPending = order.purchaseOrders.filter(
+        (p) => p.status !== "received" && p.deliveryStatus !== "delivered_full"
+      ).length;
+      const parts: string[] = [];
+      if (posPending > 0) parts.push(`${posPending} purchase order${posPending > 1 ? "s" : ""} not yet received`);
+      if (itemsPending > 0) parts.push(`${itemsPending} item${itemsPending > 1 ? "s" : ""} not yet arrived`);
+      return {
+        ok: false,
+        message: parts.length > 0 ? `Cannot complete: ${parts.join(", ")}.` : "Order is not ready to be marked complete.",
+      };
+    }
+
+    await prisma.order.update({ where: { id: orderId }, data: { status: "complete" } });
+    await log(orderId, "order_completed", "Order marked complete");
+    revalidateOrder(orderId);
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: "Could not mark the order complete. Please try again." };
+  }
+}
+
+/** From "complete", re-derives the true in-flight status (payments/POs/items may have moved on since). */
+export async function reopenOrder(orderId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    if (!order) throw new Error("Order not found");
+    if (order.status !== "complete") return;
+    const derived = deriveOrderStatus(order);
+    await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
+    await log(orderId, "order_reopened", `Order reopened — status set to ${derived}`);
+    revalidateOrder(orderId);
+  }, "Could not reopen the order. Please try again.");
 }
 
 export async function updateOrderQbInvoice(
@@ -78,6 +185,7 @@ export async function addPayment(orderId: string, type: string, amount: number):
   return safeAction(async () => {
     await prisma.payment.create({ data: { orderId, type, amount, status: "pending" } });
     await log(orderId, "payment_added", `Payment added: ${type} $${amount}`);
+    await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not record the payment. Please try again.");
 }
@@ -89,6 +197,7 @@ export async function markPaymentInvoiced(paymentId: string): Promise<ActionResu
       data: { status: "invoiced" },
     });
     await log(payment.orderId, "payment_invoiced", `Payment (${payment.type}) marked invoiced`);
+    await recomputeOrderStatus(payment.orderId);
     revalidateOrder(payment.orderId);
   }, "Could not mark the payment invoiced. Please try again.");
 }
@@ -100,6 +209,7 @@ export async function markPaymentPaid(paymentId: string): Promise<ActionResult> 
       data: { status: "paid", date: new Date() },
     });
     await log(payment.orderId, "payment_paid", `Payment (${payment.type}) marked paid`);
+    await recomputeOrderStatus(payment.orderId);
     revalidateOrder(payment.orderId);
   }, "Could not mark the payment paid. Please try again.");
 }
@@ -108,6 +218,9 @@ export async function setLineItemDeliveryStatus(
   lineItemId: string,
   deliveryStatus: string
 ): Promise<ActionResult> {
+  if (!isValidValue(DELIVERY_STATUSES, deliveryStatus)) {
+    return { ok: false, message: "Not a valid delivery status." };
+  }
   return safeAction(async () => {
     const item = await prisma.lineItem.findUnique({ where: { id: lineItemId } });
     if (!item) throw new Error("Line item not found");
@@ -118,6 +231,7 @@ export async function setLineItemDeliveryStatus(
     await prisma.lineItem.update({ where: { id: lineItemId }, data });
     if (item.orderId) {
       await log(item.orderId, "line_item_delivery_status_set", `${item.name} delivery status set to ${deliveryStatus}`);
+      await recomputeOrderStatus(item.orderId);
       revalidateOrder(item.orderId);
     }
   }, "Could not update delivery status. Please try again.");
@@ -189,6 +303,7 @@ export async function createPurchaseOrder(
       data: { purchaseOrderId: po.id },
     });
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${supplier?.name ?? "vendor"} (${lineItemIds.length} item(s))`);
+    await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not create the purchase order. Please try again.");
 }
@@ -203,6 +318,7 @@ export async function acknowledgeAllSentPos(orderId: string): Promise<ActionResu
     if (result.count > 0) {
       await log(orderId, "po_status_advanced", `${result.count} PO(s) advanced to acknowledged`);
     }
+    await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not acknowledge the purchase orders. Please try again.");
 }
@@ -211,19 +327,26 @@ const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
 
 export async function advancePoStatus(poId: string): Promise<ActionResult> {
   try {
-    const po = await prisma.purchaseOrder.findUnique({ where: { id: poId }, include: { order: { include: { payments: true } } } });
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        order: {
+          include: {
+            payments: true,
+            company: { select: { requiresDeposit: true, depositPercent: true } },
+          },
+        },
+      },
+    });
     if (!po) return { ok: false, message: "PO not found" };
     const idx = PO_ORDER.indexOf(po.status);
     if (idx < 0 || idx >= PO_ORDER.length - 1) return { ok: false, message: "Already at final status" };
     const next = PO_ORDER[idx + 1];
 
     if (po.status === "draft" && next === "sent") {
-      const hasPaid = po.order.payments.some((p) => p.status === "paid");
-      if (!hasPaid) {
-        return {
-          ok: false,
-          message: "Payment gate: deposit/full payment required before POs are sent",
-        };
+      const gate = evaluatePaymentGate(po.order);
+      if (!gate.open) {
+        return { ok: false, message: gate.reason };
       }
     }
 
@@ -233,6 +356,7 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
 
     await prisma.purchaseOrder.update({ where: { id: poId }, data });
     await log(po.orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to ${next}`);
+    await recomputeOrderStatus(po.orderId);
     revalidateOrder(po.orderId);
     return { ok: true };
   } catch (err) {
@@ -263,9 +387,13 @@ export async function updatePoTracking(
 
 /** PO-level delivery/trucking status pill (pending | scheduled | delivered_partial | delivered_full). */
 export async function setPoDeliveryStatus(poId: string, deliveryStatus: string): Promise<ActionResult> {
+  if (!isValidValue(PO_DELIVERY_STATUSES, deliveryStatus)) {
+    return { ok: false, message: "Not a valid delivery status." };
+  }
   return safeAction(async () => {
     const po = await prisma.purchaseOrder.update({ where: { id: poId }, data: { deliveryStatus } });
     await log(po.orderId, "po_delivery_status_set", `PO ${po.poNumber ?? po.id} delivery status set to ${deliveryStatus}`);
+    await recomputeOrderStatus(po.orderId);
     revalidateOrder(po.orderId);
   }, "Could not update delivery status. Please try again.");
 }

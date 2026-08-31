@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { USER_ROLES } from "@/lib/constants";
 import { UserRow } from "./UserRow";
 import { NewUserForm } from "./NewUserForm";
 
@@ -23,14 +22,6 @@ export default async function TeamPage() {
         </div>
         <NewUserForm />
       </div>
-
-      <datalist id="team-role-suggestions">
-        {USER_ROLES.map((r) => (
-          <option key={r.value} value={r.value}>
-            {r.label}
-          </option>
-        ))}
-      </datalist>
 
       {users.length === 0 ? (
         <div className="empty-state">No teammates yet — add the first one above.</div>

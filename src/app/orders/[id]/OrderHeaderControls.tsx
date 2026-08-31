@@ -1,9 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, PendingButton } from "@/lib/ui";
-import { setOrderOwner, setOrderStatus, setOrderUrgency, updateOrderQbInvoice } from "../actions";
+import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
+import { BadgeSelect, OptimisticSelect, PendingButton, ActionButton } from "@/lib/ui";
+import {
+  markOrderStuck,
+  reopenOrder,
+  setOrderOwner,
+  setOrderUrgency,
+  unstickOrder,
+  updateOrderQbInvoice,
+} from "../actions";
 
 export function UrgencyStatusControls({
   orderId,
@@ -18,6 +25,8 @@ export function UrgencyStatusControls({
   ownerId: string | null;
   users: { id: string; name: string }[];
 }) {
+  const isStuck = status === "stuck";
+  const isComplete = status === "complete";
   return (
     <div className="flex flex-wrap items-center gap-4">
       <label className="flex items-center gap-2">
@@ -35,12 +44,17 @@ export function UrgencyStatusControls({
         <span className="field-label" style={{ marginBottom: 0 }}>
           Status
         </span>
-        <BadgeSelect
-          value={status}
-          options={ORDER_STATUSES}
-          action={(next) => setOrderStatus(orderId, next)}
-          colorMap={ORDER_STATUS_COLORS}
-        />
+        {/* Status is derived from payments/POs/items (see @/lib/flow) — no longer a
+            manual dropdown. The only manual overrides are the stuck toggle below. */}
+        <span className={`badge ${ORDER_STATUS_COLORS[status] ?? "badge-gray"}`}>
+          {labelFor(ORDER_STATUSES, status)}
+        </span>
+        <ActionButton
+          action={() => (isComplete ? reopenOrder(orderId) : isStuck ? unstickOrder(orderId) : markOrderStuck(orderId))}
+          className="btn btn-sm active:scale-[0.99]"
+        >
+          {isComplete ? "Reopen" : isStuck ? "Unstick" : "Mark stuck"}
+        </ActionButton>
       </label>
       <label className="flex items-center gap-2">
         <span className="field-label" style={{ marginBottom: 0 }}>

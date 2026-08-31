@@ -3,11 +3,11 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
+import { logActivity } from "@/lib/log";
+import { isValidValue, TASK_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
 
 async function log(linkedId: string, action: string, detail: string) {
-  await prisma.activityLog.create({
-    data: { userName: "System", linkedType: "task", linkedId, action, detail },
-  });
+  await logActivity("task", linkedId, action, detail);
 }
 
 export async function createTask(formData: FormData): Promise<ActionResult> {
@@ -19,6 +19,7 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
   const type = String(formData.get("type") ?? "internal");
   const linkedType = String(formData.get("linkedType") ?? "") || null;
   const linkedId = String(formData.get("linkedId") ?? "") || null;
+  if (!isValidValue(TASK_PRIORITIES, priority)) return { ok: false, message: "Not a valid priority." };
 
   return safeAction(async () => {
     const task = await prisma.task.create({
@@ -39,6 +40,9 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
 }
 
 export async function setTaskStatus(taskId: string, status: string): Promise<ActionResult> {
+  if (!isValidValue(TASK_STATUSES, status)) {
+    return { ok: false, message: "Not a valid status." };
+  }
   return safeAction(async () => {
     await prisma.task.update({ where: { id: taskId }, data: { status } });
     await log(taskId, "task_status_set", `Task status set to ${status}`);
@@ -56,6 +60,9 @@ export async function setTaskAssignee(taskId: string, assigneeId: string): Promi
 }
 
 export async function setTaskPriority(taskId: string, priority: string): Promise<ActionResult> {
+  if (!isValidValue(TASK_PRIORITIES, priority)) {
+    return { ok: false, message: "Not a valid priority." };
+  }
   return safeAction(async () => {
     await prisma.task.update({ where: { id: taskId }, data: { priority } });
     await log(taskId, "task_priority_set", `Task priority set to ${priority}`);
@@ -71,21 +78,26 @@ export async function setTaskLink(taskId: string, linkedType: string, linkedId: 
   }, "Could not link the task. Please try again.");
 }
 
+/** Resolves the poster's real name server-side from authorId — the client no longer supplies it. */
 export async function addTaskComment(
   taskId: string,
   body: string,
-  authorId: string | null,
-  authorName: string | null
+  authorId: string | null
 ): Promise<ActionResult> {
   const text = body.trim();
   if (!text) return { ok: false, message: "Comment can't be empty." };
   return safeAction(async () => {
+    let resolvedName = "Team";
+    if (authorId) {
+      const user = await prisma.user.findUnique({ where: { id: authorId }, select: { name: true } });
+      resolvedName = user?.name ?? "Team";
+    }
     await prisma.taskComment.create({
       data: {
         taskId,
         body: text,
         authorId: authorId || null,
-        authorName: authorId ? null : authorName || "Team",
+        authorName: resolvedName,
       },
     });
     await log(taskId, "task_commented", "Comment added");

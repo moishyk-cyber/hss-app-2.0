@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { OPPORTUNITY_STAGES, ORDER_STATUSES, labelFor } from "@/lib/constants";
-import { RFQ_QUEUE_STATUSES } from "../rfq/queue-statuses";
+import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
 import { HorizontalBarChart } from "./charts/HorizontalBarChart";
 import { VerticalBarChart } from "./charts/VerticalBarChart";
 import { GroupedBarChart } from "./charts/GroupedBarChart";
 import { buildWeeklyCounts, buildMonthlyBuckets, buildMonthlyMix } from "./charts/buckets";
 import { fmtMoney, fmtCompactMoney, fmtCount } from "./charts/colors";
+import { QueueCard, type QueueRow } from "./QueueCard";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,11 @@ const RANGE_CONFIG: Record<RangeKey, { days: number; weeks: number; months: numb
   "90d": { days: 90, weeks: 13, months: 6, label: "90 Days" },
   "12m": { days: 365, weeks: 26, months: 12, label: "12 Months" },
 };
+
+/** Days between two dates, floored — used for every "N days ago / waiting" queue label. */
+function daysBetween(a: Date, b: Date): number {
+  return Math.floor((a.getTime() - b.getTime()) / 86_400_000);
+}
 
 function StatTile({
   label,
@@ -51,17 +57,26 @@ export default async function DashboardPage({
 
   const now = new Date();
   const rangeStart = new Date(now.getTime() - cfg.days * 24 * 60 * 60 * 1000);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [
     urgentOrders,
     opportunityStageGroups,
     wonOpportunities,
     orderStatusGroups,
-    needsPricingItems,
+    needsPricingItemsRaw,
     rfqStageGroups,
     intakeOpportunities,
     standaloneOrders,
     mixOrders,
+    followUpOpportunities,
+    overdueTasks,
+    ordersAwaitingPayment,
+    posInFlight,
+    poDeliveriesThisWeek,
+    ordersDueThisWeek,
   ] = await Promise.all([
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
@@ -89,7 +104,8 @@ export default async function DashboardPage({
     }),
     prisma.lineItem.findMany({
       where: { rfqStatus: "needs_pricing" },
-      select: { createdAt: true },
+      select: { id: true, name: true, createdAt: true, orderId: true, opportunity: { select: { stage: true } } },
+      orderBy: { createdAt: "asc" },
     }),
     prisma.lineItem.groupBy({
       by: ["rfqStatus"],
@@ -107,6 +123,69 @@ export default async function DashboardPage({
     prisma.order.findMany({
       where: { createdAt: { gte: rangeStart } },
       select: { orderType: true, createdAt: true },
+    }),
+    // ---- Queue 2: follow-ups due (opportunities) ----
+    prisma.opportunity.findMany({
+      where: { stage: { notIn: ["won", "lost"] }, nextFollowUp: { lte: endOfToday } },
+      select: { id: true, title: true, nextFollowUp: true },
+      orderBy: { nextFollowUp: "asc" },
+    }),
+    // ---- Queue 2: follow-ups due (overdue tasks) ----
+    prisma.task.findMany({
+      where: { dueDate: { lt: startOfToday }, status: { not: "done" } },
+      select: { id: true, title: true, dueDate: true },
+      orderBy: { dueDate: "asc" },
+    }),
+    // ---- Queue 4: orders awaiting payment (also feeds the stat tile) ----
+    prisma.order.findMany({
+      where: {
+        OR: [{ status: "awaiting_payment" }, { status: "new", payments: { some: { status: { not: "paid" } } } }],
+      },
+      select: {
+        id: true,
+        title: true,
+        orderType: true,
+        orderValue: true,
+        createdAt: true,
+        payments: { select: { amount: true, status: true, type: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+    // ---- Queue 5: POs awaiting acknowledgment / in transit ----
+    prisma.purchaseOrder.findMany({
+      where: { status: { in: ["sent", "shipped"] } },
+      select: {
+        id: true,
+        poNumber: true,
+        status: true,
+        sentDate: true,
+        orderId: true,
+        order: { select: { title: true } },
+        supplier: { select: { name: true } },
+      },
+      orderBy: { sentDate: "asc" },
+    }),
+    // ---- Queue 6: deliveries this week (POs) ----
+    prisma.purchaseOrder.findMany({
+      where: {
+        OR: [
+          { scheduledDeliveryDate: { gte: now, lte: in7Days } },
+          { expectedDelivery: { gte: now, lte: in7Days } },
+        ],
+      },
+      select: {
+        id: true,
+        poNumber: true,
+        orderId: true,
+        scheduledDeliveryDate: true,
+        expectedDelivery: true,
+        order: { select: { title: true } },
+      },
+    }),
+    // ---- Queue 6: deliveries this week (orders by neededByDate) ----
+    prisma.order.findMany({
+      where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+      select: { id: true, title: true, neededByDate: true },
     }),
   ]);
 
@@ -129,7 +208,6 @@ export default async function DashboardPage({
   const openOrdersCount = orderStatusGroups
     .filter((g) => g.status !== "complete")
     .reduce((sum, g) => sum + g._count._all, 0);
-  const awaitingPaymentValue = orderStatusGroups.find((g) => g.status === "awaiting_payment")?._sum.orderValue ?? 0;
 
   // ---- Chart (a): pipeline value by stage — current snapshot, not range-bound ----
   const stageChartData = OPEN_STAGES.map((stage) => {
@@ -167,17 +245,81 @@ export default async function DashboardPage({
     "project"
   );
 
-  // ---- RFQ health ----
+  // ---- Queue 3 / RFQ health: items needing pricing, minus dead deals (same rule as /rfq) ----
+  const pricingItems = needsPricingItemsRaw.filter((i) => !isDeadDealItem(i));
   const avgDaysWaiting =
-    needsPricingItems.length > 0
-      ? Math.round(
-          needsPricingItems.reduce((sum, i) => sum + (now.getTime() - i.createdAt.getTime()) / 86400000, 0) /
-            needsPricingItems.length
-        )
+    pricingItems.length > 0
+      ? Math.round(pricingItems.reduce((sum, i) => sum + daysBetween(now, i.createdAt), 0) / pricingItems.length)
       : 0;
   const rfqCounts: Record<string, number> = {};
   for (const s of RFQ_QUEUE_STATUSES) rfqCounts[s.value] = 0;
   for (const g of rfqStageGroups) rfqCounts[g.rfqStatus] = g._count._all;
+
+  // ---- Queue 2: follow-ups due + overdue tasks, oldest first ----
+  type FollowUpRow = { href: string; label: string; date: Date; overdue: boolean; kind: "Opportunity" | "Task" };
+  const followUpRows: FollowUpRow[] = [
+    ...followUpOpportunities.map((o) => ({
+      href: `/pipeline/${o.id}`,
+      label: o.title,
+      date: o.nextFollowUp as Date,
+      overdue: (o.nextFollowUp as Date) < startOfToday,
+      kind: "Opportunity" as const,
+    })),
+    ...overdueTasks.map((t) => ({
+      href: "/tasks",
+      label: t.title,
+      date: t.dueDate as Date,
+      overdue: true,
+      kind: "Task" as const,
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // ---- Queue 4: orders awaiting payment (amount due + type), also drives the stat tile ----
+  const awaitingPaymentRows = ordersAwaitingPayment.map((o) => {
+    const nonPaid = o.payments.filter((p) => p.status !== "paid");
+    const amountDue = nonPaid.length > 0 ? nonPaid.reduce((sum, p) => sum + p.amount, 0) : o.orderValue ?? 0;
+    const paymentType = nonPaid[0]?.type ?? (o.orderType === "project" ? "deposit" : "full");
+    return { id: o.id, title: o.title, amountDue, paymentType };
+  });
+  const awaitingPaymentValue = awaitingPaymentRows.reduce((sum, r) => sum + r.amountDue, 0);
+
+  // ---- Queue 5: POs awaiting acknowledgment (sent) / in transit (shipped) ----
+  const poQueueRows: QueueRow[] = posInFlight.slice(0, 5).map((po) => {
+    const sentDaysAgo = po.status === "sent" && po.sentDate ? daysBetween(now, po.sentDate) : null;
+    return {
+      href: `/orders/${po.orderId}#purchase-orders`,
+      primary: `${po.poNumber ?? "PO"} — ${po.order.title}`,
+      secondary: po.supplier?.name ?? "No vendor",
+      meta:
+        po.status === "sent" ? (
+          <span className={sentDaysAgo != null && sentDaysAgo > 5 ? "badge badge-orange" : "badge badge-blue"}>
+            {sentDaysAgo != null ? `sent ${sentDaysAgo}d ago` : "sent"}
+          </span>
+        ) : (
+          <span className="badge badge-blue">shipped</span>
+        ),
+    };
+  });
+
+  // ---- Queue 6: deliveries this week (POs + orders by neededByDate) ----
+  type DeliveryRow = { href: string; label: string; date: Date; meta: string };
+  const deliveryRows: DeliveryRow[] = [
+    ...poDeliveriesThisWeek.map((po) => {
+      const date = (po.scheduledDeliveryDate ?? po.expectedDelivery) as Date;
+      return {
+        href: `/orders/${po.orderId}#purchase-orders`,
+        label: `${po.poNumber ?? "PO"} — ${po.order.title}`,
+        date,
+        meta: po.scheduledDeliveryDate ? "scheduled" : "expected",
+      };
+    }),
+    ...ordersDueThisWeek.map((o) => ({
+      href: `/orders/${o.id}`,
+      label: o.title,
+      date: o.neededByDate as Date,
+      meta: "needed by",
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   return (
     <div className="space-y-8">
@@ -231,8 +373,120 @@ export default async function DashboardPage({
           sub={`${openOrdersCount} open`}
           accent="var(--primary)"
         />
-        <StatTile label="Awaiting Payment" value={fmtMoney(awaitingPaymentValue)} accent="var(--accent)" />
-        <StatTile label="Items Needing Pricing" value={fmtCount(needsPricingItems.length)} accent="var(--primary)" />
+        <StatTile
+          label="Awaiting Payment"
+          value={fmtMoney(awaitingPaymentValue)}
+          sub={`${awaitingPaymentRows.length} order${awaitingPaymentRows.length === 1 ? "" : "s"}`}
+          accent="var(--accent)"
+        />
+        <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} accent="var(--primary)" />
+      </div>
+
+      {/* Queue 2: Follow-ups due — opportunities + overdue tasks share one card, but each
+          record type keeps its own "View all" (opportunities have no combined view). */}
+      <div className="card">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="section-label flex items-center gap-2">
+            Follow-ups Due
+            <span className="badge badge-gray">{followUpRows.length}</span>
+          </h3>
+          {followUpRows.length > 0 && (
+            <div className="flex shrink-0 gap-3 text-xs font-medium">
+              <Link href="/pipeline" className="text-blue transition-colors hover:underline">
+                Pipeline →
+              </Link>
+              <Link href="/tasks" className="text-blue transition-colors hover:underline">
+                Tasks →
+              </Link>
+            </div>
+          )}
+        </div>
+        {followUpRows.length === 0 ? (
+          <div className="empty-state mt-2">
+            Nothing due. Follow-ups come from an opportunity&apos;s next-follow-up date and task due dates.
+          </div>
+        ) : (
+          <ul className="mt-2 divide-y divide-border">
+            {followUpRows.slice(0, 5).map((row, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <Link href={row.href} className="min-w-0 flex-1 truncate text-blue transition-colors hover:underline">
+                  {row.label}
+                </Link>
+                <span className="shrink-0 text-xs text-gray-dark">{row.kind}</span>
+                {row.overdue ? (
+                  <span className="badge badge-orange shrink-0">Overdue</span>
+                ) : (
+                  <span className="shrink-0 text-xs text-gray-dark">{row.date.toLocaleDateString()}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        {/* Queue 3: Items needing pricing */}
+        <QueueCard
+          title="Items Needing Pricing"
+          count={pricingItems.length}
+          viewAllHref="/rfq"
+          rows={pricingItems.slice(0, 5).map(
+            (item): QueueRow => {
+              const wait = daysBetween(now, item.createdAt);
+              return {
+                href: `/rfq#li-${item.id}`,
+                primary: item.name,
+                meta: <span className={wait > 7 ? "font-medium text-orange" : "text-gray-dark"}>{wait}d waiting</span>,
+              };
+            }
+          )}
+          emptyText={
+            <>
+              Nothing needs pricing. Items land here from Intake when they need a price.
+            </>
+          }
+        />
+
+        {/* Queue 4: Orders awaiting payment */}
+        <QueueCard
+          title="Orders Awaiting Payment"
+          count={awaitingPaymentRows.length}
+          viewAllHref="/orders?status=awaiting_payment"
+          rows={awaitingPaymentRows.slice(0, 5).map(
+            (o): QueueRow => ({
+              href: `/orders/${o.id}#payments`,
+              primary: o.title,
+              secondary: o.paymentType,
+              meta: fmtMoney(o.amountDue),
+            })
+          )}
+          emptyText="Nothing awaiting payment. Orders land here once a deposit or full payment is due but not yet paid."
+        />
+
+        {/* Queue 5: POs awaiting acknowledgment / in transit */}
+        <QueueCard
+          title="POs Awaiting Acknowledgment / In Transit"
+          count={posInFlight.length}
+          viewAllHref="/orders"
+          rows={poQueueRows}
+          emptyText="No POs in flight. They'll show up here once one is sent to a vendor."
+        />
+
+        {/* Queue 6: Deliveries this week */}
+        <QueueCard
+          title="Deliveries This Week"
+          count={deliveryRows.length}
+          viewAllHref="/orders?due=week"
+          rows={deliveryRows.slice(0, 5).map(
+            (row): QueueRow => ({
+              href: row.href,
+              primary: row.label,
+              secondary: row.meta,
+              meta: row.date.toLocaleDateString(),
+            })
+          )}
+          emptyText="Nothing scheduled to arrive this week."
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">

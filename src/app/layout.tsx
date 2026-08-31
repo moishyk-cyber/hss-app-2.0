@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Archivo, Inter } from "next/font/google";
 import Link from "next/link";
 import Nav from "./nav";
+import WhoAmI from "./who-am-i";
+import { prisma } from "@/lib/prisma";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -21,7 +23,12 @@ export const metadata: Metadata = {
   description: "CRM, Order & Purchasing Management",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const users = await prisma.user.findMany({
+    where: { active: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
   return (
     <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">
@@ -45,6 +52,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </Link>
             </div>
             <Nav />
+            <WhoAmI users={users} />
             <div className="px-6 py-5 text-[11px] text-gray">
               Built by Klyne &amp; Co.
             </div>

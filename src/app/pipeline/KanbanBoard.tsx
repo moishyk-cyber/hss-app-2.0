@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
-import { OPPORTUNITY_STAGES, STAGE_COLORS } from "@/lib/constants";
+import { STAGE_COLORS } from "@/lib/constants";
+import type { ActionResult } from "@/lib/actionResult";
 import { BadgeSelect } from "@/lib/ui";
 import { changeOpportunityStage } from "./actions";
+import { CLOSED_STAGES, OPEN_STAGES, stageOptions } from "./_ui";
 
 export type KanbanCard = {
   id: string;
@@ -18,8 +20,11 @@ export type KanbanCard = {
   followUpOverdue: boolean;
 };
 
-const CLOSED_STAGES = ["won", "lost"];
 const DRAG_MIME = "text/plain";
+
+/** Mirrors the server-side rejection in changeOpportunityStage. */
+const CLOSED_STAGE_MESSAGE =
+  "Use Mark Won / Mark Lost on the deal page — they create the order and payment.";
 
 function money(amount: number | null): string | null {
   if (amount == null) return null;
@@ -37,16 +42,30 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
-  function move(id: string, stage: string) {
+  /**
+   * Must be called from inside a transition (applyMove is an optimistic update).
+   * Returns the action's result so the picker can surface a rejection inline.
+   */
+  async function move(id: string, stage: string): Promise<ActionResult | void> {
     const card = optimisticCards.find((c) => c.id === id);
     if (!card || card.stage === stage) return;
+    // Won/Lost have no column to drop into, but a picker could still offer them on
+    // an already-closed card — never let either reach the plain stage write.
+    if (CLOSED_STAGES.includes(stage)) return { ok: false, message: CLOSED_STAGE_MESSAGE };
+    applyMove({ id, stage });
+    return changeOpportunityStage(id, stage);
+  }
+
+  /** Drop handler — outside React's event transition, so it opens its own. */
+  function moveByDrag(id: string, stage: string) {
     startTransition(async () => {
-      applyMove({ id, stage });
-      await changeOpportunityStage(id, stage);
+      await move(id, stage);
     });
   }
 
-  const openStages = OPPORTUNITY_STAGES.filter((s) => !CLOSED_STAGES.includes(s.value));
+  // Only open stages get a column: there is no Won/Lost column to drag into, because
+  // closing a deal has to run Mark Won / Mark Lost and their side effects.
+  const openStages = OPEN_STAGES;
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-4">
@@ -73,7 +92,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               const id = e.dataTransfer.getData(DRAG_MIME);
               setDragOverStage(null);
               setDraggingId(null);
-              if (id) move(id, stage.value);
+              if (id) moveByDrag(id, stage.value);
             }}
             className={`card flex w-72 shrink-0 flex-col transition-colors ${
               isDropTarget ? "bg-hover ring-2 ring-primary" : ""
@@ -145,11 +164,9 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   <div className="mt-3">
                     <BadgeSelect
                       value={card.stage}
-                      options={OPPORTUNITY_STAGES}
+                      options={stageOptions(card.stage)}
                       colorMap={STAGE_COLORS}
-                      action={async (next) => {
-                        move(card.id, next);
-                      }}
+                      action={(next) => move(card.id, next)}
                     />
                   </div>
                 </article>

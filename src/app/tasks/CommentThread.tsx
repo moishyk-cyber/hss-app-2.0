@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { readStoredUserId } from "@/lib/identityClient";
 import { PendingButton, Spinner } from "@/lib/ui";
 import { addTaskComment, getTaskComments } from "./actions";
 import type { TaskCommentData } from "./actions";
@@ -24,8 +25,8 @@ export default function CommentThread({ taskId }: { taskId: string }) {
   async function handleAdd(formData: FormData) {
     const body = String(formData.get("body") ?? "");
     if (!body.trim()) return;
-    const authorId = typeof window !== "undefined" ? window.localStorage.getItem("hss.salespersonId") : null;
-    await addTaskComment(taskId, body, authorId, "Team");
+    const authorId = readStoredUserId();
+    await addTaskComment(taskId, body, authorId);
     const fresh = await getTaskComments(taskId);
     setComments(fresh);
   }

@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/log";
+import { COMPANY_TYPES, COMPANY_VERTICALS, isValidValue } from "@/lib/constants";
+import { findCompanyByNormalizedName } from "./nameMatch";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -22,17 +25,6 @@ function percent(formData: FormData, key: string, fallback: number): number {
   const parsed = Number.parseInt(raw.replace(/[^0-9-]/g, ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(100, Math.max(0, parsed));
-}
-
-async function logActivity(
-  linkedId: string,
-  action: string,
-  detail: string,
-  linkedType = "company"
-) {
-  await prisma.activityLog.create({
-    data: { userName: "System", linkedType, linkedId, action, detail },
-  });
 }
 
 function readCompanyFields(formData: FormData) {
@@ -56,12 +48,35 @@ function readCompanyFields(formData: FormData) {
   };
 }
 
+/** True when type/vertical hold values this app actually recognises. */
+function companyEnumsValid(data: ReturnType<typeof readCompanyFields>): boolean {
+  if (!isValidValue(COMPANY_TYPES, data.type)) return false;
+  if (data.vertical && !isValidValue(COMPANY_VERTICALS, data.vertical)) return false;
+  return true;
+}
+
 export async function createCompany(formData: FormData) {
   const data = readCompanyFields(formData);
+  if (!companyEnumsValid(data)) redirect("/companies/new?error=invalid_value");
+
+  // Same guard as intake: one kitchen, one record. Checked across all types, since a
+  // duplicate is as likely to be filed as a supplier or a lost lead as a customer.
+  const existing = await findCompanyByNormalizedName(data.name);
+  if (existing) {
+    redirect(
+      `/companies/new?error=duplicate_company&company=${encodeURIComponent(existing.name)}`
+    );
+  }
+
   let company;
   try {
     company = await prisma.company.create({ data });
-    await logActivity(company.id, "company_created", `Company "${company.name}" created`);
+    await logActivity(
+      "company",
+      company.id,
+      "company_created",
+      `Company "${company.name}" created`
+    );
   } catch (err) {
     console.error(err);
     redirect("/companies/new?error=save_failed");
@@ -74,9 +89,16 @@ export async function updateCompany(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing company id");
   const data = readCompanyFields(formData);
+  if (!companyEnumsValid(data)) redirect(`/companies/${id}/edit?error=invalid_value`);
+
   try {
     const company = await prisma.company.update({ where: { id }, data });
-    await logActivity(company.id, "company_updated", `Company "${company.name}" updated`);
+    await logActivity(
+      "company",
+      company.id,
+      "company_updated",
+      `Company "${company.name}" updated`
+    );
   } catch (err) {
     console.error(err);
     redirect(`/companies/${id}/edit?error=save_failed`);

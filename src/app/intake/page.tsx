@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic";
 export default async function IntakePage({
   searchParams,
 }: {
-  searchParams: Promise<{ companyId?: string; error?: string }>;
+  searchParams: Promise<{ companyId?: string; error?: string; company?: string }>;
 }) {
-  const { companyId, error } = await searchParams;
+  const { companyId, error, company } = await searchParams;
 
   const [companies, salespeople] = await Promise.all([
     prisma.company.findMany({
@@ -56,6 +56,7 @@ export default async function IntakePage({
         salespeople={salespeople}
         initialCompanyId={preselected?.id}
         error={error}
+        duplicateCompany={company}
       />
     </div>
   );

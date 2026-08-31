@@ -25,6 +25,26 @@ export const DESIGN_STATUSES = [
   { value: "rendering_approved", label: "Rendering approved" },
 ] as const;
 
+/**
+ * Won and Lost are NOT reachable from a stage dropdown — they are side-effectful
+ * closes (order + payment / lost reason) that only Mark Won / Mark Lost perform.
+ * changeOpportunityStage rejects them server-side; these keep them off the menus.
+ */
+export const CLOSED_STAGES: readonly string[] = ["won", "lost"];
+
+export const OPEN_STAGES = OPPORTUNITY_STAGES.filter((s) => !CLOSED_STAGES.includes(s.value));
+
+/**
+ * Options for a stage picker: the open stages, plus the record's own stage when it
+ * is already closed, so the pill still shows "Won"/"Lost" instead of a raw value.
+ */
+export function stageOptions(current: string): { value: string; label: string }[] {
+  const open = OPEN_STAGES.map((s) => ({ value: s.value as string, label: s.label as string }));
+  if (!CLOSED_STAGES.includes(current)) return open;
+  const closed = OPPORTUNITY_STAGES.find((s) => s.value === current);
+  return closed ? [...open, { value: closed.value as string, label: closed.label as string }] : open;
+}
+
 export function StageBadge({ stage }: { stage: string }) {
   return (
     <span className={`badge ${STAGE_COLORS[stage] ?? "badge-gray"}`}>

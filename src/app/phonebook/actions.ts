@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/log";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 
 /**
@@ -21,15 +22,12 @@ export async function assignContactCompany(contactId: string, companyId: string)
     await prisma.contact.update({ where: { id: contactId }, data: { companyId: company.id } });
 
     const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
-    await prisma.activityLog.create({
-      data: {
-        userName: "System",
-        linkedType: "contact",
-        linkedId: contact.id,
-        action: "contact_assigned",
-        detail: `Contact "${fullName}" assigned to business "${company.name}"`,
-      },
-    });
+    await logActivity(
+      "contact",
+      contact.id,
+      "contact_assigned",
+      `Contact "${fullName}" assigned to business "${company.name}"`
+    );
 
     revalidatePath("/phonebook");
     revalidatePath("/contacts");

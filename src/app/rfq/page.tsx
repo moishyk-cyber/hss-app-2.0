@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { labelFor, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { RFQ_QUEUE_STATUSES } from "./queue-statuses";
+import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "./queue-statuses";
 import RfqRow from "./RfqRow";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ const NEEDS_PRICING_EMPTY =
 
 type RfqLineItem = Prisma.LineItemGetPayload<{
   include: {
-    opportunity: { select: { id: true; title: true } };
+    opportunity: { select: { id: true; title: true; stage: true } };
     order: { select: { id: true; title: true } };
     assignee: { select: { name: true } };
   };
@@ -21,11 +21,11 @@ type RfqLineItem = Prisma.LineItemGetPayload<{
 export default async function RfqPage() {
   const statusValues = RFQ_QUEUE_STATUSES.map((s) => s.value);
 
-  const [items, users]: [RfqLineItem[], { id: string; name: string }[]] = await Promise.all([
+  const [rawItems, users]: [RfqLineItem[], { id: string; name: string }[]] = await Promise.all([
     prisma.lineItem.findMany({
       where: { rfqStatus: { in: statusValues as string[] } },
       include: {
-        opportunity: { select: { id: true, title: true } },
+        opportunity: { select: { id: true, title: true, stage: true } },
         order: { select: { id: true, title: true } },
         assignee: { select: { name: true } },
       },
@@ -33,6 +33,8 @@ export default async function RfqPage() {
     }),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
+
+  const items = rawItems.filter((i) => !isDeadDealItem(i));
 
   const counts: Record<string, number> = {};
   for (const s of statusValues) counts[s] = 0;
@@ -94,6 +96,7 @@ export default async function RfqPage() {
                       <th>Item</th>
                       <th>Qty</th>
                       <th>Parent</th>
+                      <th>Waiting</th>
                       <th>Cost / Price</th>
                       <th>Lead (days)</th>
                       <th>Assignee</th>
@@ -108,6 +111,7 @@ export default async function RfqPage() {
                         ? `/pipeline/${item.opportunity.id}`
                         : null;
                       const parentLabel = item.order?.title ?? item.opportunity?.title ?? "Unlinked item";
+                      const daysWaiting = Math.floor((Date.now() - new Date(item.createdAt).getTime()) / 86_400_000);
                       return (
                         <RfqRow
                           key={item.id}
@@ -115,6 +119,7 @@ export default async function RfqPage() {
                           users={users}
                           parentHref={parentHref}
                           parentLabel={parentLabel}
+                          daysWaiting={daysWaiting}
                         />
                       );
                     })}

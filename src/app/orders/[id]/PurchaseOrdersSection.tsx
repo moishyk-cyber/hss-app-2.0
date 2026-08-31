@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PO_STATUSES, PO_DELIVERY_STATUSES, PO_DELIVERY_STATUS_COLORS, labelFor } from "@/lib/constants";
+import type { PaymentGate } from "@/lib/flow";
 import {
   advancePoStatus,
   createPurchaseOrder,
@@ -38,20 +39,26 @@ type UnassignedLineItem = { id: string; name: string; qty: number };
 type Vendor = { id: string; name: string };
 
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
-const GATE_MESSAGE = "Payment gate: deposit/full payment required before POs are sent";
+/** Amber past this many days sitting in "sent" without acknowledgment. */
+const PO_AGING_THRESHOLD_DAYS = 5;
+
+function daysSince(date: Date | null): number | null {
+  if (!date) return null;
+  return Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000);
+}
 
 export default function PurchaseOrdersSection({
   orderId,
   purchaseOrders,
   unassignedLineItems,
   vendors,
-  hasPaidPayment,
+  gate,
 }: {
   orderId: string;
   purchaseOrders: Po[];
   unassignedLineItems: UnassignedLineItem[];
   vendors: Vendor[];
-  hasPaidPayment: boolean;
+  gate: PaymentGate;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
@@ -59,7 +66,7 @@ export default function PurchaseOrdersSection({
 
   async function handleAdvance(poId: string, blocked: boolean) {
     if (blocked) {
-      setErrors((e) => ({ ...e, [poId]: GATE_MESSAGE }));
+      setErrors((e) => ({ ...e, [poId]: gate.reason }));
       return;
     }
     const res = await advancePoStatus(poId);
@@ -142,7 +149,8 @@ export default function PurchaseOrdersSection({
           {purchaseOrders.map((po) => {
             const idx = PO_ORDER.indexOf(po.status);
             const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
-            const blocked = po.status === "draft" && !hasPaidPayment;
+            const blocked = po.status === "draft" && !gate.open;
+            const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
             return (
               <div key={po.id} className="rounded-lg border border-border bg-panel p-3 transition-colors">
                 <div className="flex items-start justify-between">
@@ -167,7 +175,18 @@ export default function PurchaseOrdersSection({
                   Ship to: {po.shipTo === "hss" ? "HSS warehouse" : "Client direct"}
                 </div>
                 <div className="mt-1 text-xs text-gray-dark">
-                  Sent: {fmtDate(po.sentDate)} · Ack: {fmtDate(po.ackDate)} · Expected: {fmtDate(po.expectedDelivery)}
+                  Sent: {fmtDate(po.sentDate)}
+                  {sentDaysAgo != null && (
+                    <span
+                      className={
+                        sentDaysAgo > PO_AGING_THRESHOLD_DAYS ? "ml-1 font-medium text-orange" : "ml-1 text-gray"
+                      }
+                    >
+                      (sent {sentDaysAgo}d ago)
+                    </span>
+                  )}
+                  {" · Ack: "}
+                  {fmtDate(po.ackDate)} · Expected: {fmtDate(po.expectedDelivery)}
                 </div>
 
                 <ul className="mt-2 space-y-0.5 text-sm text-ink">

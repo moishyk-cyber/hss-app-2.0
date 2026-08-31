@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { PaymentGate } from "@/lib/flow";
 import { addPayment, markPaymentInvoiced, markPaymentPaid } from "../actions";
 import { fmtDate, PAYMENT_STATUS_COLORS } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
@@ -14,7 +15,15 @@ type Payment = {
   date: Date | null;
 };
 
-export default function PaymentsSection({ orderId, payments }: { orderId: string; payments: Payment[] }) {
+export default function PaymentsSection({
+  orderId,
+  payments,
+  gate,
+}: {
+  orderId: string;
+  payments: Payment[];
+  gate: PaymentGate;
+}) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +42,15 @@ export default function PaymentsSection({ orderId, payments }: { orderId: string
 
   return (
     <div className="space-y-3">
+      {gate.exempt ? (
+        <div className="text-xs text-gray-dark">{gate.reason}</div>
+      ) : gate.requiredTotal != null ? (
+        <div className="text-xs text-gray-dark">
+          Required: ${gate.requiredTotal.toLocaleString()} · Paid: ${gate.paidTotal.toLocaleString()} · Outstanding: $
+          {gate.shortfall.toLocaleString()}
+        </div>
+      ) : null}
+
       {payments.length === 0 ? (
         <div className="empty-state">
           No payments recorded yet. Record the deposit or full payment below to unlock purchase orders.

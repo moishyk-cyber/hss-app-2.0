@@ -4,11 +4,15 @@ import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
 import { PendingButton, ActionButton, BadgeSelect, OptimisticSelect } from "@/lib/ui";
 import { markLineItemRemoved, setLineItemAssignee, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
 
+/** Amber past this many days sitting in the RFQ queue without a status change. */
+const RFQ_WAITING_THRESHOLD_DAYS = 7;
+
 export default function RfqRow({
   item,
   users,
   parentHref,
   parentLabel,
+  daysWaiting,
 }: {
   item: {
     id: string;
@@ -25,6 +29,7 @@ export default function RfqRow({
   users: { id: string; name: string }[];
   parentHref: string | null;
   parentLabel: string;
+  daysWaiting: number;
 }) {
   async function handleSavePricing(formData: FormData) {
     const cost = String(formData.get("cost") ?? "");
@@ -47,6 +52,9 @@ export default function RfqRow({
         ) : (
           <span className="empty-value">no parent</span>
         )}
+      </td>
+      <td className={daysWaiting > RFQ_WAITING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray-dark"}>
+        {daysWaiting}d
       </td>
       <td>
         <form action={handleSavePricing} className="flex items-center gap-1">

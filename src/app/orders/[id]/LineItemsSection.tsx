@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { DELIVERY_STATUSES } from "@/lib/constants";
-import { setLineItemAssignee, setLineItemBackorderExpected, setLineItemDeliveryStatus } from "../actions";
+import {
+  addOrderLineItem,
+  setLineItemAssignee,
+  setLineItemBackorderExpected,
+  setLineItemDeliveryStatus,
+} from "../actions";
 import { DELIVERY_STATUS_COLORS, fmtDate } from "../utils";
 import { BadgeSelect, OptimisticSelect, PendingButton } from "@/lib/ui";
 
@@ -22,14 +27,24 @@ type Item = {
 };
 
 export default function LineItemsSection({
+  orderId,
   items,
   users,
 }: {
+  orderId: string;
   items: Item[];
   users: { id: string; name: string }[];
 }) {
   if (items.length === 0) {
-    return <div className="empty-state">No line items on this order.</div>;
+    return (
+      <div>
+        <div className="empty-state">
+          No line items on this order yet — add the first one below. New items land in the
+          RFQ queue for pricing.
+        </div>
+        <AddOrderItemForm orderId={orderId} />
+      </div>
+    );
   }
 
   return (
@@ -88,7 +103,56 @@ export default function LineItemsSection({
           ))}
         </tbody>
       </table>
+      <AddOrderItemForm orderId={orderId} />
     </div>
+  );
+}
+
+/** Inline add-item row — mirrors the pipeline detail page's affordance. */
+function AddOrderItemForm({ orderId }: { orderId: string }) {
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd(formData: FormData) {
+    const name = String(formData.get("name") ?? "");
+    const qty = Number(formData.get("qty") ?? 1);
+    const description = String(formData.get("description") ?? "");
+    const result = await addOrderLineItem(orderId, name, qty, description);
+    setError(result.ok ? null : result.message);
+  }
+
+  return (
+    <form action={handleAdd} className="mt-3 flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="name"
+        placeholder="Add an item…"
+        className="input-klyne min-w-[220px] flex-1 px-2 py-1.5 text-sm"
+        aria-label="New item name"
+      />
+      <input
+        type="number"
+        name="qty"
+        min={1}
+        defaultValue={1}
+        className="input-klyne w-16 px-2 py-1.5 text-sm"
+        aria-label="Quantity"
+      />
+      <input
+        type="text"
+        name="description"
+        placeholder="Details (optional)"
+        className="input-klyne min-w-[160px] px-2 py-1.5 text-sm"
+        aria-label="Item details"
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Adding…">
+        + Add item
+      </PendingButton>
+      {error && (
+        <span role="alert" className="text-xs text-red">
+          {error}
+        </span>
+      )}
+    </form>
   );
 }
 

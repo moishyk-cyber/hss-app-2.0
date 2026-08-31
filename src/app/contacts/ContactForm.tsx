@@ -47,6 +47,11 @@ export function ContactForm({
           Every contact belongs to a business — pick one before saving. If the business isn&rsquo;t
           on the list yet, add it first.
         </FormAlert>
+      ) : error === "invalid_value" ? (
+        <FormAlert>
+          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+          please re-pick and try again.
+        </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : null}

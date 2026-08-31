@@ -115,6 +115,14 @@ export const USER_ROLES = [
   { value: "viewer", label: "Viewer" },
 ] as const;
 
+/** True when `value` is one of the list's enum values — validate before persisting. */
+export function isValidValue(
+  list: ReadonlyArray<{ value: string; label: string }>,
+  value: string | null | undefined
+): boolean {
+  return !!value && list.some((x) => x.value === value);
+}
+
 export function labelFor(
   list: ReadonlyArray<{ value: string; label: string }>,
   value: string | null | undefined

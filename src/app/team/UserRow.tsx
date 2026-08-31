@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BadgeSelect, Spinner } from "@/lib/ui";
+import { USER_ROLES } from "@/lib/constants";
+import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import type { ActionResult } from "@/lib/actionResult";
 import { updateUserField, setUserActive } from "./actions";
 
@@ -17,14 +18,12 @@ function InlineField({
   initial,
   placeholder,
   type = "text",
-  list,
 }: {
   id: string;
-  field: "name" | "email" | "role";
+  field: "name" | "email";
   initial: string;
   placeholder?: string;
   type?: string;
-  list?: string;
 }) {
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -47,7 +46,6 @@ function InlineField({
       <input
         className="input-klyne w-full min-w-0"
         type={type}
-        list={list}
         value={value}
         placeholder={placeholder}
         onChange={(e) => setValue(e.target.value)}
@@ -83,7 +81,11 @@ export function UserRow({
         <InlineField id={user.id} field="email" initial={user.email} type="email" placeholder="email@hsskitchens.com" />
       </td>
       <td className="min-w-[140px]">
-        <InlineField id={user.id} field="role" initial={user.role} list="team-role-suggestions" placeholder="e.g. sales" />
+        <OptimisticSelect
+          value={user.role}
+          options={USER_ROLES}
+          action={(next) => updateUserField(user.id, "role", next)}
+        />
       </td>
       <td>
         <BadgeSelect

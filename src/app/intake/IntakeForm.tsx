@@ -1,25 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { FormAlert, PendingButton } from "@/lib/ui";
+import { readStoredUserId, storeUserId } from "@/lib/identityClient";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
 
-/** Remembers who is doing intake — stands in for auth until there is a real session. */
-const SALESPERSON_KEY = "hss.salespersonId";
 const MAX_COMPANY_RESULTS = 8;
 
 function subscribeToStoredSalesperson(onChange: () => void) {
   window.addEventListener("storage", onChange);
   return () => window.removeEventListener("storage", onChange);
-}
-
-function readStoredSalesperson(): string | null {
-  try {
-    return window.localStorage.getItem(SALESPERSON_KEY);
-  } catch {
-    return null; // private mode / storage disabled
-  }
 }
 
 /** The server has no localStorage, so it always renders "unassigned". */
@@ -147,11 +139,14 @@ export function IntakeForm({
   salespeople,
   initialCompanyId,
   error,
+  duplicateCompany,
 }: {
   companies: IntakeCompany[];
   salespeople: { id: string; name: string }[];
   initialCompanyId?: string;
   error?: string;
+  /** Name of the already-existing business that blocked a "new client" submission. */
+  duplicateCompany?: string;
 }) {
   const initialCompany = initialCompanyId
     ? companies.find((c) => c.id === initialCompanyId)
@@ -162,6 +157,9 @@ export function IntakeForm({
   const [companyId, setCompanyId] = useState(initialCompany?.id ?? "");
   const [newCompanyName, setNewCompanyName] = useState("");
   const [contactMode, setContactMode] = useState<"existing" | "new">("existing");
+  // Tracked only so the form can say out loud that a blank name creates no contact —
+  // the server stays permissive here, because mid-call speed beats a blocking error.
+  const [newContactFirstName, setNewContactFirstName] = useState("");
   const [salespersonOverride, setSalespersonOverride] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<"project" | "order">("project");
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
@@ -174,10 +172,12 @@ export function IntakeForm({
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
   const [autoFocusKey, setAutoFocusKey] = useState(1);
 
-  // No auth yet: remember the last salesperson locally and preselect them.
+  // No auth yet: remember the last salesperson locally and preselect them. This is the
+  // same identity the sidebar's "Working as" picker uses, so picking here also sets the
+  // cookie the activity log attributes entries to.
   const storedSalespersonId = useSyncExternalStore(
     subscribeToStoredSalesperson,
-    readStoredSalesperson,
+    readStoredUserId,
     noStoredSalesperson
   );
   const rememberedSalespersonId =
@@ -188,11 +188,8 @@ export function IntakeForm({
   const salespersonId = salespersonOverride ?? rememberedSalespersonId ?? "";
 
   function rememberSalesperson(id: string) {
-    try {
-      if (id) window.localStorage.setItem(SALESPERSON_KEY, id);
-    } catch {
-      // ignore
-    }
+    // storeUserId also mirrors into the cookie Server Actions read for attribution.
+    if (id) storeUserId(id);
   }
 
   const companyOptions = useMemo(
@@ -239,7 +236,17 @@ export function IntakeForm({
       onSubmit={() => rememberSalesperson(salespersonId)}
       className="pb-4"
     >
-      {error === "save_failed" ? (
+      {error === "duplicate_company" ? (
+        <FormAlert>
+          <strong>{duplicateCompany ?? "That business"}</strong> is already on file — nothing was
+          saved. Search for it above and pick the existing record instead of creating a second one.
+          If it doesn&rsquo;t show up in the search, open{" "}
+          <Link href="/companies" className="underline">
+            Businesses
+          </Link>{" "}
+          and check its type: only customers and leads appear in this picker.
+        </FormAlert>
+      ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : null}
 
@@ -317,7 +324,7 @@ export function IntakeForm({
                           </p>
                         )
                       ) : (
-                        <NewContactFields />
+                        <NewContactFields firstName={newContactFirstName} onFirstNameChange={setNewContactFirstName} />
                       )}
                     </div>
                   </>
@@ -384,7 +391,7 @@ export function IntakeForm({
 
                 <div className="rounded-[10px] border border-border bg-panel p-3">
                   <p className="section-label mb-2">Primary contact</p>
-                  <NewContactFields />
+                  <NewContactFields firstName={newContactFirstName} onFirstNameChange={setNewContactFirstName} />
                 </div>
               </div>
             )}
@@ -663,12 +670,32 @@ export function IntakeForm({
   );
 }
 
-function NewContactFields() {
+function NewContactFields({
+  firstName,
+  onFirstNameChange,
+}: {
+  firstName: string;
+  onFirstNameChange: (next: string) => void;
+}) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <label className="block">
         <span className={labelClass}>First name</span>
-        <input name="newContactFirstName" className={inputClass} />
+        <input
+          name="newContactFirstName"
+          value={firstName}
+          onChange={(e) => onFirstNameChange(e.target.value)}
+          className={inputClass}
+        />
+        {/*
+          A blank first name silently skips contact creation on the server. Saying so
+          here turns a surprise ("where did the person I typed go?") into a choice.
+        */}
+        {firstName.trim() === "" ? (
+          <span className="mt-1 block text-xs text-gray">
+            No contact will be created — the rest of these fields are saved with a name.
+          </span>
+        ) : null}
       </label>
       <label className="block">
         <span className={labelClass}>Last name</span>

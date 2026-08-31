@@ -16,25 +16,32 @@ export default async function PipelinePage({
   const { view } = await searchParams;
   const isList = view === "list";
 
-  const [opportunities, stageChanges] = await Promise.all([
-    prisma.opportunity.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        stage: true,
-        value: true,
-        createdAt: true,
-        nextFollowUp: true,
-        company: { select: { id: true, name: true } },
-      },
-    }),
-    prisma.activityLog.findMany({
-      where: { linkedType: "opportunity", action: "stage_changed" },
-      orderBy: { at: "desc" },
-      select: { linkedId: true, at: true },
-    }),
-  ]);
+  const opportunities = await prisma.opportunity.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      stage: true,
+      value: true,
+      createdAt: true,
+      nextFollowUp: true,
+      company: { select: { id: true, name: true } },
+    },
+  });
+
+  // Scoped to the deals actually on screen. Unscoped, this loaded every stage_changed
+  // row ever written — a table that only grows, for a number shown on a handful of cards.
+  const stageChanges = opportunities.length
+    ? await prisma.activityLog.findMany({
+        where: {
+          action: "stage_changed",
+          linkedType: "opportunity",
+          linkedId: { in: opportunities.map((o) => o.id) },
+        },
+        orderBy: { at: "desc" },
+        select: { linkedId: true, at: true },
+      })
+    : [];
 
   // Days-in-stage runs from the last logged stage change, or creation if never moved.
   const lastStageChange = new Map<string, Date>();

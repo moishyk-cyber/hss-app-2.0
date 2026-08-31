@@ -29,16 +29,33 @@ export function CompanyForm({
   submitLabel,
   cancelHref,
   error,
+  duplicateCompany,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   company?: CompanyFormValues;
   submitLabel: string;
   cancelHref: string;
   error?: string;
+  /** Name of the existing business that blocked this save. */
+  duplicateCompany?: string;
 }) {
   return (
     <form action={action} className="card max-w-3xl">
-      {error === "save_failed" ? (
+      {error === "duplicate_company" ? (
+        <FormAlert>
+          <strong>{duplicateCompany ?? "A business with that name"}</strong> already exists —
+          nothing was saved. Open it from{" "}
+          <Link href="/companies" className="underline">
+            Businesses
+          </Link>{" "}
+          and edit that record instead of creating a second one.
+        </FormAlert>
+      ) : error === "invalid_value" ? (
+        <FormAlert>
+          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+          please re-pick and try again.
+        </FormAlert>
+      ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : null}
       {company?.id ? <input type="hidden" name="id" value={company.id} /> : null}

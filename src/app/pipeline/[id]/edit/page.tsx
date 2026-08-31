@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES } from "@/lib/constants";
 import { PendingButton } from "@/lib/ui";
 import { updateOpportunity } from "../../actions";
 import {
@@ -12,8 +11,11 @@ import {
   ORDER_TYPES,
   PageHeader,
   Select,
+  StageBadge,
   TextArea,
+  CLOSED_STAGES,
   dateInputValue,
+  stageOptions,
 } from "../../_ui";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,7 @@ export default async function EditOpportunityPage({
   ]);
   if (!opportunity) notFound();
 
+  const closed = CLOSED_STAGES.includes(opportunity.stage);
   const companyOptions = companies.map((c) => ({ value: c.id, label: c.name }));
   const contactOptions = contacts.map((c) => ({
     value: c.id,
@@ -55,19 +58,50 @@ export default async function EditOpportunityPage({
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
       <form action={updateOpportunity} className="card max-w-4xl space-y-8">
-        {error === "save_failed" ? (
+        {error === "stage_locked" ? (
+          <div className="banner-alert">
+            Won and Lost can&rsquo;t be set from this form — they create the order, carry the line
+            items across and stage the payment. Use Mark Won or Mark Lost on the{" "}
+            <Link href={`/pipeline/${opportunity.id}`} className="underline">
+              deal page
+            </Link>{" "}
+            instead. Nothing else was saved.
+          </div>
+        ) : error === "invalid_value" ? (
+          <div className="banner-alert">
+            One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+            please re-pick and try again.
+          </div>
+        ) : error === "save_failed" ? (
           <div className="banner-alert">Something went wrong while saving. Please try again.</div>
         ) : null}
         <input type="hidden" name="id" value={opportunity.id} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Title" name="title" defaultValue={opportunity.title} required />
-          <Select
-            label="Stage"
-            name="stage"
-            options={OPPORTUNITY_STAGES}
-            defaultValue={opportunity.stage}
-          />
+          {/*
+            Won/Lost are never selectable here — closing a deal runs Mark Won / Mark
+            Lost, which create the order and stage the payment. A deal that is already
+            closed shows its stage read-only (and posts it unchanged) so the rest of
+            the form stays editable.
+          */}
+          {closed ? (
+            <div className="block">
+              <span className="field-label">Stage</span>
+              <div className="flex h-[38px] items-center gap-2">
+                <StageBadge stage={opportunity.stage} />
+                <span className="text-xs text-gray">closed — set from the deal page</span>
+              </div>
+              <input type="hidden" name="stage" value={opportunity.stage} />
+            </div>
+          ) : (
+            <Select
+              label="Stage"
+              name="stage"
+              options={stageOptions(opportunity.stage)}
+              defaultValue={opportunity.stage}
+            />
+          )}
           <Select
             label="Company"
             name="companyId"

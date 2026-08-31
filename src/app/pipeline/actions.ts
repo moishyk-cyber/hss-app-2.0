@@ -3,8 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES, RFQ_STATUSES, labelFor } from "@/lib/constants";
+import { OPPORTUNITY_STAGES, RFQ_STATUSES, isValidValue, labelFor } from "@/lib/constants";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
+import { logActivity } from "@/lib/log";
+import { recomputeOrderStatus } from "@/lib/flow";
+import {
+  CLOSED_STAGES,
+  DELIVERY_TYPES,
+  DESIGN_STATUSES,
+  ORDER_TYPES,
+} from "./_ui";
+
+/** Won/Lost never move through a dropdown — they are side-effectful closes. */
+const CLOSED_STAGE_MESSAGE =
+  "Use Mark Won / Mark Lost on the deal page — they create the order and payment.";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -31,29 +43,19 @@ function bool(formData: FormData, key: string): boolean {
   return formData.get(key) === "1";
 }
 
-async function logActivity(
-  linkedType: string,
-  linkedId: string,
-  action: string,
-  detail: string
-) {
-  await prisma.activityLog.create({
-    data: { userName: "System", linkedType, linkedId, action, detail },
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Line-item editing from the opportunity detail page.
 // Each one revalidates /rfq too, since the same rows drive the purchasing queue.
 // ---------------------------------------------------------------------------
 
 /** Revalidate every surface a line-item edit is visible on. */
-function revalidateLineItem(opportunityId: string | null) {
-  if (opportunityId) revalidatePath(`/pipeline/${opportunityId}`);
+function revalidateLineItem(item: { opportunityId: string | null; orderId: string | null }) {
+  if (item.opportunityId) revalidatePath(`/pipeline/${item.opportunityId}`);
   revalidatePath("/pipeline");
   revalidatePath("/rfq");
   // The same LineItem also surfaces under its order once the deal is won.
   revalidatePath("/orders");
+  if (item.orderId) revalidatePath(`/orders/${item.orderId}`);
 }
 
 export async function updateLineItemQty(lineItemId: string, qty: number): Promise<ActionResult> {
@@ -69,7 +71,7 @@ export async function updateLineItemQty(lineItemId: string, qty: number): Promis
       "qty_changed",
       `"${item.name}" quantity set to ${safeQty}`
     );
-    revalidateLineItem(item.opportunityId);
+    revalidateLineItem(item);
   }, "Could not update quantity. Please try again.");
 }
 
@@ -94,7 +96,7 @@ export async function updateLineItemAssignee(
       "assignee_changed",
       `"${item.name}" assigned to ${assignee?.name ?? "nobody"}`
     );
-    revalidateLineItem(item.opportunityId);
+    revalidateLineItem(item);
   }, "Could not update the assignee. Please try again.");
 }
 
@@ -114,11 +116,14 @@ export async function updateLineItemPricing(
       "pricing_changed",
       `"${item.name}" cost ${unitCost ?? "cleared"} / price ${unitPrice ?? "cleared"}`
     );
-    revalidateLineItem(item.opportunityId);
+    revalidateLineItem(item);
   }, "Could not update pricing. Please try again.");
 }
 
 export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: string): Promise<ActionResult> {
+  if (!isValidValue(RFQ_STATUSES, rfqStatus)) {
+    return { ok: false, message: "That is not a valid RFQ status." };
+  }
   return safeAction(async () => {
     const item = await prisma.lineItem.update({
       where: { id: lineItemId },
@@ -130,12 +135,66 @@ export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: str
       "rfq_status_changed",
       `"${item.name}" RFQ status set to ${labelFor(RFQ_STATUSES, rfqStatus)}`
     );
-    revalidateLineItem(item.opportunityId);
+    revalidateLineItem(item);
   }, "Could not update RFQ status. Please try again.");
+}
+
+/**
+ * Add a line item to an open deal.
+ *
+ * Intake is not the only moment items appear — the client adds a fryer on the callback,
+ * and until now the only way in was the edit form, which has no item fields at all.
+ */
+export async function addLineItem(formData: FormData) {
+  const opportunityId = str(formData, "opportunityId");
+  if (!opportunityId) throw new Error("Missing opportunity id");
+
+  const name = str(formData, "name");
+  if (!name) redirect(`/pipeline/${opportunityId}?error=item_name_required`);
+
+  const parsedQty = num(formData, "qty");
+  const qty = parsedQty != null && parsedQty > 0 ? Math.floor(parsedQty) : 1;
+  const description = str(formData, "description");
+
+  try {
+    const item = await prisma.lineItem.create({
+      data: {
+        opportunityId,
+        name,
+        description,
+        qty,
+        // A new item has never been out for quote — it starts in the RFQ queue.
+        rfqStatus: "needs_pricing",
+      },
+    });
+    await logActivity(
+      "line_item",
+      item.id,
+      "item_added",
+      `"${item.name}" added to the deal (qty ${qty}) — needs pricing`
+    );
+  } catch (err) {
+    console.error(err);
+    redirect(`/pipeline/${opportunityId}?error=save_failed`);
+  }
+
+  revalidatePath(`/pipeline/${opportunityId}`);
+  revalidatePath("/pipeline");
+  revalidatePath("/rfq");
+  redirect(`/pipeline/${opportunityId}`);
 }
 
 /** Kanban card stage picker. */
 export async function changeOpportunityStage(id: string, stage: string): Promise<ActionResult> {
+  if (!isValidValue(OPPORTUNITY_STAGES, stage)) {
+    return { ok: false, message: "That is not a valid stage." };
+  }
+  // Closing a deal creates an order, carries the line items and stages a payment.
+  // A bare stage write would skip all of it and leave a "won" deal with no order.
+  if (CLOSED_STAGES.includes(stage)) {
+    return { ok: false, message: CLOSED_STAGE_MESSAGE };
+  }
+
   return safeAction(async () => {
     const before = await prisma.opportunity.findUnique({ where: { id } });
     if (!before) throw new Error("Opportunity not found");
@@ -161,16 +220,47 @@ export async function updateOpportunity(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing opportunity id");
 
+  // Validate the enum-shaped fields BEFORE the try, so redirect() isn't swallowed
+  // by the catch that turns real save failures into ?error=save_failed.
+  // The days-in-stage metric reads only "stage_changed" rows, so this read is also
+  // what lets an edit-form stage move be logged instead of silently freezing it.
+  const before = await prisma.opportunity.findUnique({
+    where: { id },
+    select: { stage: true },
+  });
+  if (!before) redirect(`/pipeline/${id}/edit?error=save_failed`);
+
+  const stage = str(formData, "stage") ?? before.stage;
+  if (!isValidValue(OPPORTUNITY_STAGES, stage)) {
+    redirect(`/pipeline/${id}/edit?error=invalid_value`);
+  }
+  // Same rule as the dropdowns: this form cannot CLOSE a deal. An already-closed
+  // deal keeping its own stage is fine — editing a won deal's notes must still work.
+  if (CLOSED_STAGES.includes(stage) && stage !== before.stage) {
+    redirect(`/pipeline/${id}/edit?error=stage_locked`);
+  }
+
+  const orderType = str(formData, "orderType") ?? "order";
+  const designStatus = str(formData, "designStatus") ?? "none";
+  const deliveryType = str(formData, "deliveryType");
+  if (
+    !isValidValue(ORDER_TYPES, orderType) ||
+    !isValidValue(DESIGN_STATUSES, designStatus) ||
+    (deliveryType != null && !isValidValue(DELIVERY_TYPES, deliveryType))
+  ) {
+    redirect(`/pipeline/${id}/edit?error=invalid_value`);
+  }
+
   try {
     const updated = await prisma.opportunity.update({
       where: { id },
       data: {
         title: str(formData, "title") ?? "Untitled opportunity",
-        stage: str(formData, "stage") ?? "new",
+        stage,
         companyId: str(formData, "companyId"),
         primaryContactId: str(formData, "primaryContactId"),
         salespersonId: str(formData, "salespersonId"),
-        orderType: str(formData, "orderType") ?? "order",
+        orderType,
         needsPricing: bool(formData, "needsPricing"),
         value: num(formData, "value"),
         neededByDate: date(formData, "neededByDate"),
@@ -184,16 +274,28 @@ export async function updateOpportunity(formData: FormData) {
         plumbingElectricalNotes: str(formData, "plumbingElectricalNotes"),
         budget: num(formData, "budget"),
         clientVisionNotes: str(formData, "clientVisionNotes"),
-        deliveryType: str(formData, "deliveryType"),
+        deliveryType,
         openingSize: str(formData, "openingSize"),
         installationNeeded: bool(formData, "installationNeeded"),
-        designStatus: str(formData, "designStatus") ?? "none",
+        designStatus,
         locationName: str(formData, "locationName"),
         deliveryAddress: str(formData, "deliveryAddress"),
         notes: str(formData, "notes"),
       },
     });
     await logActivity("opportunity", id, "opportunity_updated", `"${updated.title}" updated`);
+
+    if (before.stage !== stage) {
+      await logActivity(
+        "opportunity",
+        id,
+        "stage_changed",
+        `Stage moved from ${labelFor(OPPORTUNITY_STAGES, before.stage)} to ${labelFor(
+          OPPORTUNITY_STAGES,
+          stage
+        )}`
+      );
+    }
   } catch (err) {
     console.error(err);
     redirect(`/pipeline/${id}/edit?error=save_failed`);
@@ -217,7 +319,9 @@ export async function markOpportunityLost(formData: FormData) {
   try {
     const updated = await prisma.opportunity.update({
       where: { id },
-      data: { stage: "lost", lostReason },
+      // A closed deal has no next step — leaving the follow-up date behind puts a
+      // permanent "Follow up overdue" chip on a deal nobody should be chasing.
+      data: { stage: "lost", lostReason, nextFollowUp: null },
     });
     await logActivity(
       "opportunity",
@@ -251,12 +355,26 @@ export async function markOpportunityWon(formData: FormData) {
     where: { id },
     include: {
       lineItems: true,
+      orders: { select: { id: true } },
       company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
   if (!opportunity) throw new Error("Opportunity not found");
 
-  const value = opportunity.value ?? 0;
+  // Idempotency guard is on the ORDER, not on the stage: a double-click must not
+  // create a second order, but a deal stuck at stage "won" with no order (the old
+  // dropdown bypass) must still be able to run this as recovery.
+  if (opportunity.orders.length > 0) {
+    redirect(`/pipeline/${opportunity.id}`);
+  }
+
+  // The deposit and the payment gate are both percentages of this number. Winning at
+  // $0 stages a $0 payment and opens the gate on an unpaid order — refuse instead.
+  if (!opportunity.value || opportunity.value <= 0) {
+    redirect(`/pipeline/${opportunity.id}?error=value_required`);
+  }
+
+  const value = opportunity.value;
   const isProject = opportunity.orderType === "project";
   // No company on the deal — fall back to the old house default rather than skipping the deposit.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
@@ -296,7 +414,11 @@ export async function markOpportunityWon(formData: FormData) {
         data: { orderId: created.id },
       });
 
-      await tx.opportunity.update({ where: { id: opportunity.id }, data: { stage: "won" } });
+      await tx.opportunity.update({
+        where: { id: opportunity.id },
+        // Clearing the follow-up keeps closed deals out of the overdue chips.
+        data: { stage: "won", nextFollowUp: null },
+      });
 
       if (payment) {
         await tx.payment.create({
@@ -317,29 +439,29 @@ export async function markOpportunityWon(formData: FormData) {
     redirect(`/pipeline/${opportunity.id}?error=save_failed`);
   }
 
-  // The order is already committed at this point — a logging hiccup here shouldn't
-  // block the redirect or make it look like the win didn't go through.
-  try {
-    const carried = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed").length;
-    await logActivity(
-      "opportunity",
-      opportunity.id,
-      "stage_changed",
-      `"${opportunity.title}" marked Won — order created with ${carried} line item(s)`
-    );
-    await logActivity(
-      "order",
-      order.id,
-      "order_created",
-      `Order created from opportunity "${opportunity.title}" (${
-        payment
-          ? `${payment.type} payment of $${payment.amount} pending`
-          : "no deposit required for this account — full payment due after delivery"
-      })`
-    );
-  } catch (err) {
-    console.error(err);
-  }
+  // The order is already committed at this point — logActivity never throws, so a
+  // logging hiccup cannot make it look like the win didn't go through.
+  const carried = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed").length;
+  await logActivity(
+    "opportunity",
+    opportunity.id,
+    "stage_changed",
+    `"${opportunity.title}" marked Won — order created with ${carried} line item(s)`
+  );
+  await logActivity(
+    "order",
+    order.id,
+    "order_created",
+    `Order created from opportunity "${opportunity.title}" (${
+      payment
+        ? `${payment.type} payment of $${payment.amount} pending`
+        : "no deposit required for this account — full payment due after delivery"
+    })`
+  );
+
+  // The order was created as "new"; re-derive it so it reads awaiting_payment (or
+  // whatever the account's deposit terms actually imply) instead of a stale default.
+  await recomputeOrderStatus(order.id);
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${opportunity.id}`);

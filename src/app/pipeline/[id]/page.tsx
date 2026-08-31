@@ -2,9 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { FlowStepper, type FlowStep } from "@/lib/flow";
+import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
-import { markOpportunityLost, markOpportunityWon } from "../actions";
+import { addLineItem, markOpportunityLost, markOpportunityWon } from "../actions";
 import { LineItemRow } from "../LineItemRow";
 import {
   Card,
@@ -172,8 +172,9 @@ export default async function OpportunityDetailPage({
 
       <div className="card mb-8">
         <FlowStepper steps={steps} />
+        {/* A div, not a p: the recovery branch below embeds a form. */}
         {closed ? (
-          <p className="mt-4 border-t border-border pt-4 text-center text-xs text-gray-dark">
+          <div className="mt-4 border-t border-border pt-4 text-center text-xs text-gray-dark">
             {stage === "won" ? (
               linkedOrder ? (
                 <>
@@ -186,12 +187,29 @@ export default async function OpportunityDetailPage({
                   </Link>
                 </>
               ) : (
-                "Won — no order linked yet."
+                // Recovery path: the old stage dropdown could set "won" without ever
+                // running markOpportunityWon, leaving a closed deal with no order and
+                // no payment. Offer the missing half instead of a dead end.
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <span>
+                    Marked Won, but no order was ever created — the line items and the payment are
+                    still sitting on the deal.
+                  </span>
+                  <form action={markOpportunityWon}>
+                    <input type="hidden" name="id" value={opportunity.id} />
+                    <PendingButton
+                      className="btn btn-sm active:scale-[0.99]"
+                      pendingText="Creating order…"
+                    >
+                      Create the order
+                    </PendingButton>
+                  </form>
+                </div>
               )
             ) : (
               <>Lost — {opportunity.lostReason ?? "no reason recorded"}</>
             )}
-          </p>
+          </div>
         ) : null}
       </div>
 
@@ -199,6 +217,17 @@ export default async function OpportunityDetailPage({
         <div className="banner-alert mb-4">
           A lost reason is required before a deal can be marked Lost.
         </div>
+      ) : error === "value_required" ? (
+        <div className="banner-alert mb-4">
+          Add a deal value before marking won — the deposit and payment gate are calculated from
+          it.{" "}
+          <Link href={`/pipeline/${opportunity.id}/edit`} className="underline">
+            Set the value
+          </Link>
+          .
+        </div>
+      ) : error === "item_name_required" ? (
+        <div className="banner-alert mb-4">Give the item a name before adding it.</div>
       ) : error === "save_failed" ? (
         <div className="banner-alert mb-4">Something went wrong while saving. Please try again.</div>
       ) : null}
@@ -297,14 +326,7 @@ export default async function OpportunityDetailPage({
             {opportunity.lineItems.length === 0 ? (
               <div className="p-5">
                 <div className="empty-state">
-                  No line items yet. Items arrive from Intake, or add them on the{" "}
-                  <Link
-                    href={`/pipeline/${opportunity.id}/edit`}
-                    className="text-primary transition-colors hover:underline"
-                  >
-                    deal
-                  </Link>
-                  .
+                  No line items yet. Items arrive from Intake — or add the first one below.
                 </div>
               </div>
             ) : (
@@ -328,6 +350,42 @@ export default async function OpportunityDetailPage({
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {/*
+              The client adds a fryer on the callback. Until now the only route in was
+              the edit form, which has no item fields — so items could only ever be
+              captured at intake. New items land in the RFQ queue needing pricing.
+            */}
+            {closed ? null : (
+              <form
+                action={addLineItem}
+                className="flex flex-wrap items-end gap-2 border-t border-border px-5 py-4"
+              >
+                <input type="hidden" name="opportunityId" value={opportunity.id} />
+                <label className="block min-w-48 flex-1">
+                  <span className="field-label">Add item</span>
+                  <input
+                    name="name"
+                    required
+                    placeholder="e.g. Double convection oven"
+                    className="input-klyne w-full"
+                  />
+                </label>
+                <label className="block w-20">
+                  <span className="field-label">Qty</span>
+                  <input
+                    name="qty"
+                    type="number"
+                    min="1"
+                    defaultValue="1"
+                    className="input-klyne w-full"
+                  />
+                </label>
+                <PendingButton className="btn btn-sm mb-0.5 active:scale-[0.99]" pendingText="Adding…">
+                  Add
+                </PendingButton>
+              </form>
             )}
           </section>
 
