@@ -7,13 +7,14 @@
 // now live on the Delivery tab (see DeliverySection.tsx); this tab keeps the
 // PO status ladder, sent-aging, gate blocking, and carrier tracking info.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PO_STATUSES, labelFor } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
 import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
 import { PO_STATUS_COLORS, fmtDate } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { SearchCombobox } from "@/lib/Combobox";
+import { Avatar } from "@/lib/Avatar";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
@@ -71,6 +72,10 @@ export default function PurchaseOrdersSection({
   const [vendorQuery, setVendorQuery] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [newVendorName, setNewVendorName] = useState("");
+
+  // "Make it list": rows stay compact, the full detail + tracking form pop up.
+  const [openPoId, setOpenPoId] = useState<string | null>(null);
+  const openPo = purchaseOrders.find((po) => po.id === openPoId) ?? null;
 
   async function handleAdvance(poId: string, blocked: boolean) {
     if (blocked) {
@@ -194,73 +199,150 @@ export default function PurchaseOrdersSection({
             : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {purchaseOrders.map((po) => {
-            const idx = PO_ORDER.indexOf(po.status);
-            const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
-            const blocked = po.status === "draft" && !gate.open;
-            const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
-            return (
-              <div key={po.id} className="rounded-lg border border-border bg-panel p-3 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-medium text-ink">{po.poNumber ?? "(no PO#)"}</div>
-                    <div className="text-xs text-gray-dark">{po.supplier?.name ?? "No vendor"}</div>
-                  </div>
-                  <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
-                    {labelFor(PO_STATUSES, po.status)}
-                  </span>
-                </div>
-
-                <div className="mt-2 text-xs text-gray-dark">
-                  Ship to: {po.shipTo === "hss" ? "HSS warehouse" : "Client direct"}
-                </div>
-                <div className="mt-1 text-xs text-gray-dark">
-                  Sent: {fmtDate(po.sentDate)}
-                  {sentDaysAgo != null && (
-                    <span
-                      className={
-                        sentDaysAgo > PO_AGING_THRESHOLD_DAYS ? "ml-1 font-medium text-orange" : "ml-1 text-gray"
+        // One dense row per PO (Aug 31 feedback: "make it list") - details and
+        // the tracking form open in a popup on click, like the Delivery tab.
+        <div className="card card-flush overflow-hidden">
+          <ul className="divide-y divide-border">
+            {purchaseOrders.map((po) => {
+              const idx = PO_ORDER.indexOf(po.status);
+              const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
+              const blocked = po.status === "draft" && !gate.open;
+              const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
+              return (
+                <li key={po.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setOpenPoId(po.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpenPoId(po.id);
                       }
-                    >
-                      (sent {sentDaysAgo}d ago)
+                    }}
+                    className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-hover"
+                  >
+                    <Avatar name={po.supplier?.name ?? "?"} kind="business" size="sm" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
+                      {po.poNumber ?? "(no PO#)"}
+                      <span className="ml-2 text-[12px] font-normal text-gray-dark">
+                        {po.supplier?.name ?? "no vendor"}
+                      </span>
                     </span>
-                  )}
-                  {" · Ack: "}
-                  {fmtDate(po.ackDate)} · Expected: {fmtDate(po.expectedDelivery)}
-                </div>
-
-                <ul className="mt-2 space-y-0.5 text-sm text-ink">
-                  {po.lineItems.map((li) => (
-                    <li key={li.id}>
-                      {li.name} <span className="text-gray">x{li.qty}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-3 flex items-center gap-2">
-                  {next && (
-                    <ActionButton
-                      action={() => handleAdvance(po.id, blocked)}
-                      className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
-                    >
-                      Advance to {labelFor(PO_STATUSES, next)}
-                    </ActionButton>
-                  )}
-                </div>
-                {errors[po.id] && <div className="banner-warn mt-2">{errors[po.id]}</div>}
-
-                <TrackingEdit
-                  poId={po.id}
-                  trackingUrl={po.trackingUrl}
-                  trackingCarrier={po.trackingCarrier}
-                  expectedDelivery={po.expectedDelivery}
-                />
-              </div>
-            );
-          })}
+                    <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
+                      {po.lineItems.length} item{po.lineItems.length === 1 ? "" : "s"}
+                    </span>
+                    {sentDaysAgo != null && (
+                      <span
+                        className={`hidden shrink-0 text-[12px] md:block ${
+                          sentDaysAgo > PO_AGING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray"
+                        }`}
+                      >
+                        sent {sentDaysAgo}d ago
+                      </span>
+                    )}
+                    <span className="shrink-0">
+                      <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
+                        {labelFor(PO_STATUSES, po.status)}
+                      </span>
+                    </span>
+                    {next && (
+                      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        <ActionButton
+                          action={() => handleAdvance(po.id, blocked)}
+                          className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
+                        >
+                          Advance to {labelFor(PO_STATUSES, next)}
+                        </ActionButton>
+                      </span>
+                    )}
+                  </div>
+                  {errors[po.id] && <div className="banner-warn mx-4 mb-2">{errors[po.id]}</div>}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
+
+      {openPo ? <PoDetailModal po={openPo} onClose={() => setOpenPoId(null)} /> : null}
+    </div>
+  );
+}
+
+/** PO popup: items, ship-to, the dates, and the carrier tracking form. */
+function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="po-modal-title"
+        tabIndex={-1}
+        className="card w-full max-w-lg space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="po-modal-title" className="text-base font-semibold text-ink">
+              {po.poNumber ?? "(no PO#)"}
+            </h2>
+            <div className="text-xs text-gray-dark">{po.supplier?.name ?? "no vendor"}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray transition-colors hover:bg-hover hover:text-ink"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="text-xs text-gray-dark">
+          Ship to: {po.shipTo === "hss" ? "HSS warehouse" : "Client direct"} · Sent: {fmtDate(po.sentDate)} · Ack:{" "}
+          {fmtDate(po.ackDate)} · Expected: {fmtDate(po.expectedDelivery)}
+        </div>
+
+        <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
+          {po.lineItems.map((li) => (
+            <li key={li.id}>
+              {li.name} <span className="text-gray">x{li.qty}</span>
+            </li>
+          ))}
+        </ul>
+
+        <TrackingEdit
+          poId={po.id}
+          trackingUrl={po.trackingUrl}
+          trackingCarrier={po.trackingCarrier}
+          expectedDelivery={po.expectedDelivery}
+        />
+      </div>
     </div>
   );
 }
