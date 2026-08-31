@@ -145,7 +145,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               </div>
             </Link>
 
-            <span className="relative z-10 hidden min-w-0 flex-1 lg:block">
+            <span className="relative z-10 hidden w-44 shrink-0 lg:block">
               <TruckerSelect poId={leg.id} value={leg.trucker} truckers={truckers} />
             </span>
 
