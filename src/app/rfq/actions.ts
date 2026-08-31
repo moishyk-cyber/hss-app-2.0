@@ -12,7 +12,7 @@ async function log(linkedId: string, action: string, detail: string) {
 
 /**
  * A line item's RFQ status can move estimating (opportunity), fulfillment (order),
- * and the dashboard's "needs pricing" queue all at once — revalidate everywhere it
+ * and the dashboard's "needs pricing" queue all at once - revalidate everywhere it
  * could be showing, not just /rfq.
  */
 async function revalidateLineItem(lineItemId: string) {
@@ -36,7 +36,7 @@ export async function updateLineItemPricing(
       where: { id: lineItemId },
       data: { unitCost, unitPrice },
     });
-    await log(lineItemId, "rfq_pricing_updated", `Cost/price updated to ${unitCost ?? "—"} / ${unitPrice ?? "—"}`);
+    await log(lineItemId, "rfq_pricing_updated", `Cost/price updated to ${unitCost ?? "not set"} / ${unitPrice ?? "not set"}`);
     await revalidateLineItem(lineItemId);
   }, "Could not update pricing. Please try again.");
 }

@@ -26,7 +26,7 @@ export const DESIGN_STATUSES = [
 ] as const;
 
 /**
- * Won and Lost are NOT reachable from a stage dropdown — they are side-effectful
+ * Won and Lost are NOT reachable from a stage dropdown - they are side-effectful
  * closes (order + payment / lost reason) that only Mark Won / Mark Lost perform.
  * changeOpportunityStage rejects them server-side; these keep them off the menus.
  */
@@ -108,7 +108,7 @@ export function DetailHeader({
 }) {
   return (
     <div className="mb-6">
-      {/* One back control everywhere — @/lib/BackLink (Aug 31 feedback). */}
+      {/* One back control everywhere - @/lib/BackLink (Aug 31 feedback). */}
       <BackLink href={backHref} label={backLabel} />
       <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
@@ -147,7 +147,7 @@ export function Card({
   );
 }
 
-/** Muted italic stand-in — never a bare dash. See DESIGN_V2.md §2. */
+/** Muted italic stand-in - never a bare dash. See DESIGN_V2.md §2. */
 export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
   return <span className="empty-value">{children}</span>;
 }
@@ -288,7 +288,7 @@ export function Checkbox({
   );
 }
 
-/** Null when there is no date — callers decide how to say "nothing here". */
+/** Null when there is no date - callers decide how to say "nothing here". */
 export function fmtDate(date: Date | null | undefined): string | null {
   if (!date) return null;
   return date.toISOString().slice(0, 10);

@@ -1,6 +1,6 @@
 "use client";
 
-// Shared interaction primitives — the smoothness kit.
+// Shared interaction primitives - the smoothness kit.
 // Every server-action control in the app should use these (or the same patterns)
 // so nothing ever feels dead between click and response.
 

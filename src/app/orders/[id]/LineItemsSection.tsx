@@ -39,7 +39,7 @@ export default function LineItemsSection({
     return (
       <div>
         <div className="empty-state">
-          No line items on this order yet — add the first one below. New items land in the
+          No line items on this order yet - add the first one below. New items land in the
           RFQ queue for pricing.
         </div>
         <AddOrderItemForm orderId={orderId} />
@@ -108,7 +108,7 @@ export default function LineItemsSection({
   );
 }
 
-/** Inline add-item row — mirrors the pipeline detail page's affordance. */
+/** Inline add-item row - mirrors the pipeline detail page's affordance. */
 function AddOrderItemForm({ orderId }: { orderId: string }) {
   const [error, setError] = useState<string | null>(null);
 

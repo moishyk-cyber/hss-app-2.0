@@ -93,9 +93,9 @@ export function LineItemRow({
   item: EditableLineItem;
   users: { id: string; name: string }[];
 }) {
-  // Assignee is optional everywhere — the blank option clears it.
+  // Assignee is optional everywhere - the blank option clears it.
   const assigneeOptions = [
-    { value: "", label: "— unassigned —" },
+    { value: "", label: "Unassigned" },
     ...users.map((u) => ({ value: u.id, label: u.name })),
   ];
 
@@ -118,7 +118,7 @@ export function LineItemRow({
         />
       </td>
 
-      {/* Cost and Price deliberately absent — pricing is edited in the RFQ queue. */}
+      {/* Cost and Price deliberately absent - pricing is edited in the RFQ queue. */}
 
       <td>
         <OptimisticSelect

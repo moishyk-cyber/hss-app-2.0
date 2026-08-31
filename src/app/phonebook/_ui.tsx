@@ -1,7 +1,7 @@
 // Local presentational helpers for the /phonebook directory.
 import { COMPANY_TYPES, labelFor } from "@/lib/constants";
 
-// Company type has no colour map in constants — map onto the shared badge palette.
+// Company type has no colour map in constants - map onto the shared badge palette.
 // Kept in step with /companies: only the client lifecycle gets a status colour.
 // Supply-side partners are categories, not statuses, so they stay grey rather than
 // borrowing amber, which the brand reserves for "needs attention".
@@ -25,7 +25,7 @@ export function TypeBadge({ type }: { type: string }) {
 
 /**
  * Initial avatar, Google-Contacts style. The colour is derived from the name so a
- * person keeps the same one on every render — it's a recognition aid, not decoration.
+ * person keeps the same one on every render - it's a recognition aid, not decoration.
  * Businesses get a rounded square so the two kinds of row are told apart at a glance.
  */
 export function Avatar({ name, kind }: { name: string; kind: "business" | "person" }) {
@@ -102,7 +102,7 @@ function PinIcon() {
 /* --- contact details ----------------------------------------------------- */
 
 /**
- * Dialable phone link — this is a phone book, tapping a number should call it.
+ * Dialable phone link - this is a phone book, tapping a number should call it.
  * Renders nothing when there's no number (DESIGN_V2 §2: no bare dashes).
  */
 export function PhoneLink({

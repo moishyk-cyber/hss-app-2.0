@@ -62,7 +62,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const anyDraft = poStatuses.includes("draft");
   const anySent = poStatuses.includes("sent");
 
-  // "complete" must win outright — a completed order renders as Complete even if,
+  // "complete" must win outright - a completed order renders as Complete even if,
   // say, gate math would otherwise say "payment" (e.g. a since-refunded payment).
   let phase: Phase;
   if (order.status === "complete") phase = "complete";
@@ -132,7 +132,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     );
   } else if (order.status !== "complete" && canCompleteOrder(order)) {
     // canCompleteOrder is vacuously true when there are no POs at all (a direct
-    // intake order with no purchasing leg) — don't gate this on purchaseOrders.length.
+    // intake order with no purchasing leg) - don't gate this on purchaseOrders.length.
     primaryAction = (
       <ActionButton action={markOrderComplete.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
         Mark complete

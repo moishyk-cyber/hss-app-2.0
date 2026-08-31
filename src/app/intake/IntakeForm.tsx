@@ -2,7 +2,7 @@
 
 // Intake, rebuilt for the Aug 31 feedback round: ONE top-to-bottom column of
 // numbered sections that unlock as they're answered, instead of a two-column
-// wall of panels. Still a single <form> — progressive disclosure only hides
+// wall of panels. Still a single <form> - progressive disclosure only hides
 // what hasn't been reached yet, so nothing is a separate route or a lost draft.
 
 import Link from "next/link";
@@ -50,7 +50,7 @@ function contactName(contact: IntakeContact): string {
 
 /**
  * One numbered step of the call. A locked section shows its number and title so
- * the whole shape of the form is visible from the start — it just can't be
+ * the whole shape of the form is visible from the start - it just can't be
  * answered out of order.
  */
 function Section({
@@ -228,7 +228,7 @@ export function IntakeForm({
   const [contactMode, setContactMode] = useState<"existing" | "new">("existing");
   const [contactQuery, setContactQuery] = useState("");
   const [contactId, setContactId] = useState("");
-  // Tracked only so the form can say out loud that a blank name creates no contact —
+  // Tracked only so the form can say out loud that a blank name creates no contact -
   // the server stays permissive here, because mid-call speed beats a blocking error.
   const [newContactFirstName, setNewContactFirstName] = useState("");
   const [showSalespersonPicker, setShowSalespersonPicker] = useState(false);
@@ -245,7 +245,7 @@ export function IntakeForm({
   const [autoFocusKey, setAutoFocusKey] = useState(0);
 
   // No auth yet: the sidebar's "Working as" identity is who this intake belongs to.
-  // The salesperson dropdown is gone from the form — it was one more thing to fill in
+  // The salesperson dropdown is gone from the form - it was one more thing to fill in
   // mid-call, and it always meant "me".
   const storedSalespersonId = useSyncExternalStore(
     subscribeToStoredSalesperson,
@@ -272,7 +272,7 @@ export function IntakeForm({
 
   const selectedCompany = companies.find((c) => c.id === companyId) ?? null;
 
-  // Contacts are loaded whole and filtered here — the picked business is client state.
+  // Contacts are loaded whole and filtered here - the picked business is client state.
   const contactOptions = useMemo(
     () =>
       companyId
@@ -285,7 +285,7 @@ export function IntakeForm({
 
   const goesToPipeline = orderType === "project" || needsPricing === "yes";
 
-  // A deal without a client is not useful — keep everything downstream closed
+  // A deal without a client is not useful - keep everything downstream closed
   // until one is picked (or a new one is being typed).
   const clientReady =
     clientMode === "new" ? newCompanyName.trim() !== "" : companyId !== "";
@@ -317,7 +317,7 @@ export function IntakeForm({
     setItems((rows) => (rows.length === 1 ? rows : rows.filter((r) => r.key !== key)));
   }
 
-  /** Enter inside an item row never submits — it adds the next row instead. */
+  /** Enter inside an item row never submits - it adds the next row instead. */
   function onItemKeyDown(e: React.KeyboardEvent, isLastRow: boolean) {
     if (e.key !== "Enter") return;
     e.preventDefault();
@@ -339,7 +339,7 @@ export function IntakeForm({
     >
       {error === "duplicate_company" ? (
         <FormAlert>
-          <strong>{duplicateCompany ?? "That business"}</strong> is already on file — nothing was
+          <strong>{duplicateCompany ?? "That business"}</strong> is already on file - nothing was
           saved. Search for it above and pick the existing record instead of creating a second one.
           If it doesn&rsquo;t show up in the search, open{" "}
           <Link href="/companies" className="underline">
@@ -357,7 +357,7 @@ export function IntakeForm({
       <input type="hidden" name="orderType" value={orderType} />
 
       <div className="space-y-5">
-        {/* ============ 1 — Who's calling ============ */}
+        {/* ============ 1 - Who's calling ============ */}
         <Section index={1} title="Who’s calling" hint="Find the business, then the person.">
           {clientMode === "existing" ? (
             <div className="space-y-4">
@@ -365,7 +365,7 @@ export function IntakeForm({
                 query={companyQuery}
                 setQuery={(next) => {
                   setCompanyQuery(next);
-                  // Typing again means they're re-searching — drop the old pick.
+                  // Typing again means they're re-searching - drop the old pick.
                   if (companyId) {
                     setCompanyId("");
                     setOverrideDelivery(false);
@@ -468,7 +468,7 @@ export function IntakeForm({
                         <input type="hidden" name="contactId" value={contactId} />
                         {contactId === "" ? (
                           <p className="mt-2 text-xs text-gray">
-                            No contact will be created — leave this blank if you didn&rsquo;t catch
+                            No contact will be created - leave this blank if you didn&rsquo;t catch
                             a name.
                           </p>
                         ) : null}
@@ -573,12 +573,12 @@ export function IntakeForm({
               disabled={!clientReady}
               disabledReason="Pick or create a business first"
             >
-              Next — what do they need?
+              Next - what do they need?
             </NextButton>
           ) : null}
         </Section>
 
-        {/* ============ 2 — What do they need ============ */}
+        {/* ============ 2 - What do they need ============ */}
         <Section
           index={2}
           title="What do they need"
@@ -602,7 +602,7 @@ export function IntakeForm({
 
           {orderType === "project" ? (
             <>
-              {/* A project always goes out for pricing — keep the field honest and implicit. */}
+              {/* A project always goes out for pricing - keep the field honest and implicit. */}
               <input type="hidden" name="needsPricing" value="yes" />
               <p className="mt-2 text-[13px] text-gray-dark">
                 Bid / measurement work. Projects always go out for pricing, so this becomes an
@@ -618,14 +618,14 @@ export function IntakeForm({
                   value="yes"
                   checked={needsPricing === "yes"}
                   onChange={setNeedsPricing}
-                  label="Yes — send to pipeline"
+                  label="Yes - send to pipeline"
                 />
                 <InlineRadio
                   name="needsPricing"
                   value="no"
                   checked={needsPricing === "no"}
                   onChange={setNeedsPricing}
-                  label="No — priced already"
+                  label="No - priced already"
                 />
               </div>
             </div>
@@ -746,7 +746,7 @@ export function IntakeForm({
                 {deliveryType === "inside" ? (
                   <div className="banner-warn sm:col-span-2">
                     Inside delivery: confirm the openings fit before ordering. Equipment that will
-                    not fit through the door comes back with a restocking fee — tell the client up
+                    not fit through the door comes back with a restocking fee - tell the client up
                     front.
                   </div>
                 ) : null}
@@ -774,11 +774,11 @@ export function IntakeForm({
           ) : null}
 
           {openSection < 3 ? (
-            <NextButton onClick={() => setOpenSection(3)}>Next — when do they need it?</NextButton>
+            <NextButton onClick={() => setOpenSection(3)}>Next - when do they need it?</NextButton>
           ) : null}
         </Section>
 
-        {/* ============ 3 — When & submit ============ */}
+        {/* ============ 3 - When & submit ============ */}
         <Section
           index={3}
           title="When & submit"
@@ -804,7 +804,7 @@ export function IntakeForm({
                     rememberSalesperson(e.target.value);
                   }}
                 >
-                  <option value="">— unassigned —</option>
+                  <option value="">Unassigned</option>
                   {salespeople.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name}
@@ -914,7 +914,7 @@ function NewContactFields({
         */}
         {firstName.trim() === "" ? (
           <span className="mt-1 block text-xs text-gray">
-            No contact will be created — the rest of these fields are saved with a name.
+            No contact will be created - the rest of these fields are saved with a name.
           </span>
         ) : null}
       </label>
@@ -924,7 +924,7 @@ function NewContactFields({
       </label>
       <label className="block">
         <span className={labelClass}>Title</span>
-        {/* Free text — a fixed list hid people's real jobs. Stored as typed. */}
+        {/* Free text - a fixed list hid people's real jobs. Stored as typed. */}
         <input
           name="newContactTitle"
           list="intake-title-suggestions"

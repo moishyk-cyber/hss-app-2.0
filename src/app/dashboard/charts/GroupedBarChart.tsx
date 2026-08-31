@@ -1,6 +1,6 @@
 import { SERIES_1, SERIES_2 } from "./colors";
 
-// The ONE two-series chart in the dashboard — grouped (not stacked) bars,
+// The ONE two-series chart in the dashboard - grouped (not stacked) bars,
 // with a legend row (single-series charts get no legend; this one needs it).
 export function GroupedBarChart({
   data,
@@ -54,7 +54,7 @@ export function GroupedBarChart({
           const showTick = i % tickStep === 0 || i === data.length - 1;
           return (
             <g key={i}>
-              <title>{`${d.label} — ${seriesLabels[0]}: ${formatValue(d.a)}, ${seriesLabels[1]}: ${formatValue(d.b)}`}</title>
+              <title>{`${d.label} - ${seriesLabels[0]}: ${formatValue(d.a)}, ${seriesLabels[1]}: ${formatValue(d.b)}`}</title>
               {aH > 0 && (
                 <>
                   <rect x={groupX} y={ay} width={barW} height={aH} rx={4} ry={4} fill={SERIES_1} />

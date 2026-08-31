@@ -1,5 +1,5 @@
 // The flow engine: payment-gate evaluation and derived order status.
-// This is the ONLY place gate/status rules live — actions and pages must call
+// This is the ONLY place gate/status rules live - actions and pages must call
 // these instead of re-deriving (the old bug class: two truths that drift).
 
 import { prisma } from "@/lib/prisma";
@@ -52,14 +52,14 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
       paidTotal,
       requiredTotal: null,
       shortfall: 0,
-      reason: "No deposit required for this account — full payment collected after delivery",
+      reason: "No deposit required for this account - full payment collected after delivery",
     };
   }
 
   const value = order.orderValue ?? 0;
   const agreed = order.depositRequired ?? null;
   if (value <= 0 && agreed == null) {
-    // Nothing to measure sufficiency against — fall back to "any paid payment".
+    // Nothing to measure sufficiency against - fall back to "any paid payment".
     const open = paidTotal > 0;
     return {
       open,
@@ -163,7 +163,7 @@ export const FLOW_ORDER_INCLUDE = {
 /**
  * Re-derive and persist Order.status from payments/POs/items. Call after any
  * mutation that changes those facts. Leaves "stuck" and "complete" alone.
- * Never throws — status sync must not fail the mutation that triggered it.
+ * Never throws - status sync must not fail the mutation that triggered it.
  */
 export async function recomputeOrderStatus(orderId: string): Promise<string | null> {
   try {

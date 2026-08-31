@@ -82,7 +82,7 @@ export default async function CompaniesPage({
               <Link href="/companies/new" className="text-primary transition-colors hover:underline">
                 Add the first one
               </Link>{" "}
-              — every contact, deal and order hangs off a business.
+              - every contact, deal and order hangs off a business.
             </>
           )}
         </div>

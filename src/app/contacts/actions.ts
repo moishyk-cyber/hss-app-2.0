@@ -31,13 +31,13 @@ function readContactFields(formData: FormData) {
 }
 
 /**
- * The business may not exist yet — the form's combobox lets the user create one
+ * The business may not exist yet - the form's combobox lets the user create one
  * inline, which arrives as `newCompanyName`. Create it, then attach the contact.
  *
  * If a business with that name (normalized) is already on file we LINK to it rather
  * than creating a duplicate. Linking is the right call here: the user typed the name
  * specifically to attach this person to that business, so the existing record is
- * exactly what they meant — unlike intake, where a match means the whole deal is
+ * exactly what they meant - unlike intake, where a match means the whole deal is
  * about to be filed under a second copy of the client.
  */
 async function resolveCompanyId(formData: FormData, existing: string | null) {
@@ -80,7 +80,7 @@ export async function createContact(formData: FormData) {
   }
   data.companyId = companyId;
 
-  // Every contact belongs to a business — bounce back to the form if none was picked.
+  // Every contact belongs to a business - bounce back to the form if none was picked.
   if (!data.companyId) {
     redirect("/contacts/new?error=company_required");
   }

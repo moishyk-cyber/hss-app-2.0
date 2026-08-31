@@ -1,5 +1,5 @@
 // Local presentational helpers for the /contacts module.
-// Back navigation is NOT one of them — every page uses @/lib/BackLink.
+// Back navigation is NOT one of them - every page uses @/lib/BackLink.
 
 /** Visible required marker. The control's own `required` is what AT announces. */
 export function RequiredMark() {
@@ -138,7 +138,7 @@ export const CONTACT_TITLES = [
 ] as const;
 
 /**
- * Title is free text — a four-option dropdown hid people's real jobs. The common
+ * Title is free text - a four-option dropdown hid people's real jobs. The common
  * ones are offered as suggestions; whatever is typed is stored exactly as typed.
  */
 export function TitleField({
@@ -175,7 +175,7 @@ export const CONTACT_STATUSES = [
   { value: "inactive", label: "Inactive" },
 ] as const;
 
-// Contact status has no colour map in constants — map onto the shared badge palette.
+// Contact status has no colour map in constants - map onto the shared badge palette.
 export const CONTACT_STATUS_BADGES: Record<string, string> = {
   active: "badge-green",
   onboarding: "badge-blue",

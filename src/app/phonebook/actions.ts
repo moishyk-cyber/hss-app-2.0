@@ -7,7 +7,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 
 /**
  * Attach an orphaned contact to a business.
- * Every contact should belong to one — this is the fix-up path in the Phone Book.
+ * Every contact should belong to one - this is the fix-up path in the Phone Book.
  */
 export async function assignContactCompany(contactId: string, companyId: string): Promise<ActionResult> {
   if (!contactId || !companyId) return { ok: false, message: "Pick a business first." };

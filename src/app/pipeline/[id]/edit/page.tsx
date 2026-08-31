@@ -61,7 +61,7 @@ export default async function EditOpportunityPage({
       <form action={updateOpportunity} className="card max-w-4xl space-y-8">
         {error === "stage_locked" ? (
           <div className="banner-alert">
-            Won and Lost can&rsquo;t be set from this form — they create the order, carry the line
+            Won and Lost can&rsquo;t be set from this form - they create the order, carry the line
             items across and stage the payment. Use the{" "}
             <Link href={`/pipeline/${opportunity.id}#close`} className="underline">
               Close panel on the deal page
@@ -70,7 +70,7 @@ export default async function EditOpportunityPage({
           </div>
         ) : error === "invalid_value" ? (
           <div className="banner-alert">
-            One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+            One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved -
             please re-pick and try again.
           </div>
         ) : error === "save_failed" ? (
@@ -81,7 +81,7 @@ export default async function EditOpportunityPage({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Title" name="title" defaultValue={opportunity.title} required />
           {/*
-            Won/Lost are never selectable here — closing a deal runs Mark Won / Mark
+            Won/Lost are never selectable here - closing a deal runs Mark Won / Mark
             Lost, which create the order and stage the payment. A deal that is already
             closed shows its stage read-only (and posts it unchanged) so the rest of
             the form stays editable.
@@ -91,7 +91,7 @@ export default async function EditOpportunityPage({
               <span className="field-label">Stage</span>
               <div className="flex h-[38px] items-center gap-2">
                 <StageBadge stage={opportunity.stage} />
-                <span className="text-xs text-gray">closed — set from the deal page</span>
+                <span className="text-xs text-gray">closed - set from the deal page</span>
               </div>
               <input type="hidden" name="stage" value={opportunity.stage} />
             </div>
@@ -108,21 +108,21 @@ export default async function EditOpportunityPage({
             name="companyId"
             options={companyOptions}
             defaultValue={opportunity.companyId}
-            includeBlank="— none —"
+            includeBlank="None"
           />
           <Select
             label="Primary contact"
             name="primaryContactId"
             options={contactOptions}
             defaultValue={opportunity.primaryContactId}
-            includeBlank="— none —"
+            includeBlank="None"
           />
           <Select
             label="Salesperson"
             name="salespersonId"
             options={userOptions}
             defaultValue={opportunity.salespersonId}
-            includeBlank="— unassigned —"
+            includeBlank="Unassigned"
           />
           <Select
             label="Order type"
@@ -193,7 +193,7 @@ export default async function EditOpportunityPage({
               name="deliveryType"
               options={DELIVERY_TYPES}
               defaultValue={opportunity.deliveryType}
-              includeBlank="— none —"
+              includeBlank="None"
             />
             <Field
               label="How large are the openings"

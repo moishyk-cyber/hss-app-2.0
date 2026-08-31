@@ -3,8 +3,8 @@
 // Delivery tab (Aug 31 feedback: "a delivery tab" under each order). Reads
 // top-to-bottom: the line-items table first (per-item delivery status,
 // arrival dates, backorder date, assignee, and the add-item form), then each
-// PO's real-world delivery-day info — trucker, pickup address, scheduled
-// delivery date, ship cost, delivery-day contact — plus that PO's own
+// PO's real-world delivery-day info - trucker, pickup address, scheduled
+// delivery date, ship cost, delivery-day contact - plus that PO's own
 // delivery-status pill. PO status ladder / sent-aging / carrier tracking stay
 // on the Purchase Orders tab; this tab is the delivery-day view only.
 
@@ -96,7 +96,7 @@ export default function DeliverySection({
 
 /**
  * Real-world delivery/trucking fields, modeled 1:1 on the client's Delivery
- * Sheet: trucker (free text — a mix of couriers and named drivers, not a
+ * Sheet: trucker (free text - a mix of couriers and named drivers, not a
  * fixed list), pickup address, scheduled delivery date, ship cost, whether
  * that cost was billed back to the customer, and the delivery-day contact
  * phone. All batched behind one "Save shipment details" button.
@@ -121,7 +121,7 @@ function ShipmentDetailsEdit({
   deliveryContactPhone: string | null;
 }) {
   // Prefill pickup address from the supplier's on-file address as a starting
-  // point when nothing's been entered for this PO yet — still freely editable,
+  // point when nothing's been entered for this PO yet - still freely editable,
   // since real pickup legs vary shipment to shipment.
   const pickupDefault = pickupAddress ?? supplierDeliveryAddress ?? "";
   const scheduledDefault = scheduledDeliveryDate

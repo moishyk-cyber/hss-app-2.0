@@ -56,7 +56,7 @@ export default async function ContactsPage({
               <Link href="/phonebook" className="text-primary transition-colors hover:underline">
                 Phone Book
               </Link>{" "}
-              — every contact belongs to a business.
+              - every contact belongs to a business.
             </>
           )}
         </div>

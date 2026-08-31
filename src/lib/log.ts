@@ -3,7 +3,7 @@ import { currentUserName } from "@/lib/identityServer";
 
 /**
  * Write one activity-log entry attributed to the sidebar identity ("Working as").
- * Never throws — a logging hiccup must not fail or roll back the business
+ * Never throws - a logging hiccup must not fail or roll back the business
  * mutation it narrates. All per-folder log helpers should delegate here.
  */
 export async function logActivity(

@@ -2,10 +2,10 @@
 import { BackLink } from "@/lib/BackLink";
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
-// Company type has no colour map in constants — map onto the shared badge palette.
+// Company type has no colour map in constants - map onto the shared badge palette.
 // Only the client lifecycle carries a status colour: an active customer is green, a
 // lead neutral, a dead lead grey. Supply-side partners are categories, not statuses,
-// so they stay grey — amber would read as "needs attention" when nothing is wrong,
+// so they stay grey - amber would read as "needs attention" when nothing is wrong,
 // and the badge text already says which kind of partner it is.
 const TYPE_BADGES: Record<string, string> = {
   lead: "badge-blue",
@@ -25,7 +25,7 @@ export function TypeBadge({ type }: { type: string }) {
   );
 }
 
-/** labelFor() falls back to a bare dash — never let that reach the page (§2). */
+/** labelFor() falls back to a bare dash - never let that reach the page (§2). */
 export function VerticalLabel({ vertical }: { vertical: string | null }) {
   if (!vertical) return <span className="empty-value">not categorised</span>;
   return <>{labelFor(COMPANY_VERTICALS, vertical)}</>;
@@ -74,7 +74,7 @@ export function DetailHeader({
 }) {
   return (
     <div className="mb-6">
-      {/* One back control everywhere — @/lib/BackLink (Aug 31 feedback). */}
+      {/* One back control everywhere - @/lib/BackLink (Aug 31 feedback). */}
       <BackLink href={backHref} label={backLabel} />
       <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
@@ -240,7 +240,7 @@ export function Checkbox({
   );
 }
 
-/** Null when there is no date — callers decide how to say "nothing here". */
+/** Null when there is no date - callers decide how to say "nothing here". */
 export function fmtDate(date: Date | null | undefined): string | null {
   if (!date) return null;
   return date.toISOString().slice(0, 10);
@@ -251,7 +251,7 @@ export function fmtMoney(amount: number | null | undefined): string | null {
   return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
-/** Muted italic stand-in — never a bare dash. See DESIGN_V2.md §2. */
+/** Muted italic stand-in - never a bare dash. See DESIGN_V2.md §2. */
 export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
   return <span className="empty-value">{children}</span>;
 }

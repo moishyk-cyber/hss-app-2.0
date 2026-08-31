@@ -16,7 +16,7 @@ export default async function TeamPage() {
         <div>
           <h1 className="page-title">Team</h1>
           <p className="page-sub">
-            Everyone who can be assigned an order, item, or task. Add or update people here —
+            Everyone who can be assigned an order, item, or task. Add or update people here -
             changes show up everywhere immediately.
           </p>
         </div>
@@ -24,7 +24,7 @@ export default async function TeamPage() {
       </div>
 
       {users.length === 0 ? (
-        <div className="empty-state">No teammates yet — add the first one above.</div>
+        <div className="empty-state">No teammates yet - add the first one above.</div>
       ) : (
         <div className="card card-flush overflow-hidden overflow-x-auto">
           <table className="table-klyne min-w-[680px]">

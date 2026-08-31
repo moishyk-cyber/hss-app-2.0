@@ -3,7 +3,7 @@
 // Invoice tab (Aug 31 feedback: "the whole QuickBooks invoice thing is very
 // complicated... make it extremely straightforward"). One summary line, plain
 // payment rows with a single next-step button each, and one clean QuickBooks
-// invoice-number row — the only place that field lives now (removed from the
+// invoice-number row - the only place that field lives now (removed from the
 // order header meta grid).
 
 import { useState } from "react";

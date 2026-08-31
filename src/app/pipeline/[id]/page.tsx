@@ -72,7 +72,7 @@ export default async function OpportunityDetailPage({
   const isProject = opportunity.orderType === "project";
   const linkedOrder = opportunity.orders[0] ?? null;
 
-  // Deposit terms come from the account, and prefill the Close panel — where the
+  // Deposit terms come from the account, and prefill the Close panel - where the
   // salesperson can override them with whatever was actually agreed on the call.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
@@ -99,7 +99,7 @@ export default async function OpportunityDetailPage({
       return `Chase ${awaitingQuoteCount} quote${awaitingQuoteCount === 1 ? "" : "s"}`;
     }
     if (stage === "revisions_needed") return "Send revised proposal";
-    if (stage === "proposal_sent") return "Awaiting client — then close it";
+    if (stage === "proposal_sent") return "Awaiting client - then close it";
     if (stage === "negotiation") return "Close the deal";
     if (itemCount === 0) return "Add line items";
     if (pricedCount > 0) return "Send proposal";
@@ -110,7 +110,7 @@ export default async function OpportunityDetailPage({
   const currentStepIndex = foundStepIndex === -1 ? 0 : foundStepIndex;
   const closeStepIndex = STEPPER.length - 1;
 
-  // A won deal that never got an order is only half-closed — the Close panel stays
+  // A won deal that never got an order is only half-closed - the Close panel stays
   // open as the recovery route (it reuses the same Won form).
   const needsOrderRecovery = stage === "won" && !linkedOrder;
   const showClosePanel = !closed || needsOrderRecovery;
@@ -192,7 +192,7 @@ export default async function OpportunityDetailPage({
             {stage === "won" ? (
               linkedOrder ? (
                 <>
-                  Won — now an order:{" "}
+                  Won - now an order:{" "}
                   <Link
                     href={`/orders/${linkedOrder.id}`}
                     className="text-primary transition-colors hover:underline"
@@ -206,7 +206,7 @@ export default async function OpportunityDetailPage({
                 // no payment. Point at the Close panel, which offers the missing half.
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <span>
-                    Marked Won, but no order was ever created — the line items and the payment are
+                    Marked Won, but no order was ever created - the line items and the payment are
                     still sitting on the deal.
                   </span>
                   <Link href="#close" className="text-primary transition-colors hover:underline">
@@ -215,7 +215,7 @@ export default async function OpportunityDetailPage({
                 </div>
               )
             ) : (
-              <>Lost — {opportunity.lostReason ?? "no reason recorded"}</>
+              <>Lost - {opportunity.lostReason ?? "no reason recorded"}</>
             )}
           </div>
         ) : null}
@@ -227,7 +227,7 @@ export default async function OpportunityDetailPage({
         </div>
       ) : error === "value_required" ? (
         <div className="banner-alert mb-4">
-          A won deal needs a price — the deposit and the payment gate are both measured against it.{" "}
+          A won deal needs a price - the deposit and the payment gate are both measured against it.{" "}
           <Link href="#close" className="underline">
             Enter the total in the Close panel
           </Link>
@@ -332,7 +332,7 @@ export default async function OpportunityDetailPage({
             {opportunity.lineItems.length === 0 ? (
               <div className="p-5">
                 <div className="empty-state">
-                  No line items yet. Items arrive from Intake — or add the first one below.
+                  No line items yet. Items arrive from Intake - or add the first one below.
                 </div>
               </div>
             ) : (
@@ -362,7 +362,7 @@ export default async function OpportunityDetailPage({
 
             {/*
               The client adds a fryer on the callback. Until now the only route in was
-              the edit form, which has no item fields — so items could only ever be
+              the edit form, which has no item fields - so items could only ever be
               captured at intake. New items land in the RFQ queue needing pricing.
             */}
             {closed ? null : (
@@ -487,19 +487,19 @@ export default async function OpportunityDetailPage({
                           />
                         </label>
                         <p className="mt-1.5 text-xs text-gray">
-                          Prefilled at {depositPercent}% for this account — change it to whatever
+                          Prefilled at {depositPercent}% for this account - change it to whatever
                           was agreed. Untick the box and POs won&rsquo;t wait for a payment.
                         </p>
                       </div>
                     ) : (
                       <p className="text-[13px] text-gray-dark">
-                        A straight order stages the full payment — POs go out once it&rsquo;s paid.
+                        A straight order stages the full payment - POs go out once it&rsquo;s paid.
                       </p>
                     )}
 
                     {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
                     <PendingButton className="btn active:scale-[0.99]" pendingText="Creating order…">
-                      {needsOrderRecovery ? "Create the order" : "Mark won — create the order"}
+                      {needsOrderRecovery ? "Create the order" : "Mark won - create the order"}
                     </PendingButton>
                   </form>
 

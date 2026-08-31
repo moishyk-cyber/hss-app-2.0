@@ -15,7 +15,7 @@ function getServerSnapshot(): string | null {
 }
 
 /**
- * Sidebar identity picker — stands in for auth. Whoever is picked here is who
+ * Sidebar identity picker - stands in for auth. Whoever is picked here is who
  * the activity log credits (via the cookie mirror in identityClient).
  */
 export default function WhoAmI({ users }: { users: { id: string; name: string }[] }) {

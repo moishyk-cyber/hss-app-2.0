@@ -1,7 +1,7 @@
-// FlowStepper — shows where a record sits in the end-to-end journey, and (per the
+// FlowStepper - shows where a record sits in the end-to-end journey, and (per the
 // Aug 31 feedback round) doubles as the control for moving it: a step can carry an
 // href (jump to a tab/section) or a bound server action (move the stage directly).
-// Server-renderable (no client JS — actions render as <form> buttons).
+// Server-renderable (no client JS - actions render as <form> buttons).
 // See docs/UX_FLOW.md §3B.
 
 import Link from "next/link";
@@ -17,7 +17,7 @@ export type FlowStep = {
   formAction?: (formData: FormData) => Promise<void>;
 };
 
-/** Dot marker — checked when done, filled when current. No numbers (feedback: cleaner). */
+/** Dot marker - checked when done, filled when current. No numbers (feedback: cleaner). */
 function StepDot({ state }: { state: FlowStep["state"] }) {
   return (
     <span

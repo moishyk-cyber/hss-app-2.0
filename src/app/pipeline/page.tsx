@@ -30,7 +30,7 @@ export default async function PipelinePage({
   });
 
   // Scoped to the deals actually on screen. Unscoped, this loaded every stage_changed
-  // row ever written — a table that only grows, for a number shown on a handful of cards.
+  // row ever written - a table that only grows, for a number shown on a handful of cards.
   const stageChanges = opportunities.length
     ? await prisma.activityLog.findMany({
         where: {
@@ -49,7 +49,7 @@ export default async function PipelinePage({
     if (!lastStageChange.has(log.linkedId)) lastStageChange.set(log.linkedId, log.at);
   }
 
-  // Everything the client board needs, already formatted — no dates cross the boundary.
+  // Everything the client board needs, already formatted - no dates cross the boundary.
   const cards: KanbanCard[] = opportunities.map((o) => ({
     id: o.id,
     title: o.title,

@@ -1,4 +1,4 @@
-// Shared status vocabularies — the ONLY source of truth for enum values and labels.
+// Shared status vocabularies - the ONLY source of truth for enum values and labels.
 // Both sales and ops modules import from here. Do not redefine these anywhere.
 
 export const OPPORTUNITY_STAGES = [
@@ -27,16 +27,16 @@ export const DELIVERY_STATUSES = [
   { value: "backordered", label: "Backordered" },
   { value: "in_transit_to_hss", label: "In Transit to HSS" },
   { value: "in_transit_to_client", label: "In Transit to Client" },
-  { value: "arrived_complete", label: "Arrived — Complete" },
+  { value: "arrived_complete", label: "Arrived" },
 ] as const;
 
-// PO-level delivery/trucking status — modeled on the client's real delivery
+// PO-level delivery/trucking status - modeled on the client's real delivery
 // tracking spreadsheet (pending -> scheduled -> partial/full delivery).
 export const PO_DELIVERY_STATUSES = [
   { value: "pending", label: "Pending" },
   { value: "scheduled", label: "Scheduled" },
-  { value: "delivered_partial", label: "Delivered — Partial" },
-  { value: "delivered_full", label: "Delivered — Full" },
+  { value: "delivered_partial", label: "Delivered - Partial" },
+  { value: "delivered_full", label: "Delivered - Full" },
 ] as const;
 
 export const ORDER_STATUSES = [
@@ -115,7 +115,7 @@ export const USER_ROLES = [
   { value: "viewer", label: "Viewer" },
 ] as const;
 
-/** True when `value` is one of the list's enum values — validate before persisting. */
+/** True when `value` is one of the list's enum values - validate before persisting. */
 export function isValidValue(
   list: ReadonlyArray<{ value: string; label: string }>,
   value: string | null | undefined
@@ -127,11 +127,11 @@ export function labelFor(
   list: ReadonlyArray<{ value: string; label: string }>,
   value: string | null | undefined
 ): string {
-  if (!value) return "—";
+  if (!value) return "not set";
   return list.find((x) => x.value === value)?.label ?? value;
 }
 
-// Badge classes per status family — defined in globals.css (.badge-*).
+// Badge classes per status family - defined in globals.css (.badge-*).
 // Always render as: className={`badge ${STAGE_COLORS[stage]}`}
 export const STAGE_COLORS: Record<string, string> = {
   new: "badge-blue",

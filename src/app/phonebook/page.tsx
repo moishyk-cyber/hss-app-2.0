@@ -11,19 +11,19 @@ export const dynamic = "force-dynamic";
 /**
  * One line in the directory. Businesses and people share the same shape so they can
  * be sorted into a single alphabetical list (Aug 31 feedback: the card grid buried
- * people inside their business — a phone book should be one dense scannable list).
+ * people inside their business - a phone book should be one dense scannable list).
  */
 type DirectoryRow = {
   key: string;
   kind: "business" | "person";
-  /** Alphabetised on this — the same string that's displayed. */
+  /** Alphabetised on this - the same string that's displayed. */
   name: string;
   /** Second column: the person's business, or the site the business sits at. */
   subtitle: string | null;
   email: string | null;
   phone: string | null;
   phoneExt: string | null;
-  /** Company type, for the chip — a person inherits their business's. */
+  /** Company type, for the chip - a person inherits their business's. */
   type: string;
   href: string;
   priority: boolean;
@@ -194,7 +194,7 @@ export default async function PhoneBookPage({
 
   return (
     <div>
-      <PageHeader title="Phone Book" subtitle="Every business and every person — one directory.">
+      <PageHeader title="Phone Book" subtitle="Every business and every person - one directory.">
         <Link href="/companies/new" className="btn">
           New business
         </Link>
@@ -203,7 +203,7 @@ export default async function PhoneBookPage({
         </Link>
       </PageHeader>
 
-      {/* Search and filters stay pinned — the list under them can run for pages. */}
+      {/* Search and filters stay pinned - the list under them can run for pages. */}
       <div className="sticky top-0 z-20 -mx-1 mb-4 px-1 pb-3 pt-1">
         <div className="card space-y-3 bg-surface/95 backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -252,7 +252,7 @@ export default async function PhoneBookPage({
               <Link href="/companies/new" className="text-primary transition-colors hover:underline">
                 Add the first one
               </Link>{" "}
-              — every contact, deal and order hangs off a business.
+              - every contact, deal and order hangs off a business.
             </>
           )}
         </div>

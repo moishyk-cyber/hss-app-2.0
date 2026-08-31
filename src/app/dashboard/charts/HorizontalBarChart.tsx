@@ -2,7 +2,7 @@ import { SERIES_1 } from "./colors";
 
 // Horizontal bar chart: one bar per category, value labels to the right.
 // Rounded corners on the data end only (right, since bars grow rightward
-// from the axis on the left) — anchored/square on the axis side.
+// from the axis on the left) - anchored/square on the axis side.
 export function HorizontalBarChart({
   data,
   formatValue = (v: number) => String(v),

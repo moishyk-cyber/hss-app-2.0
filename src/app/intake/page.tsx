@@ -14,7 +14,7 @@ export default async function IntakePage({
   const [companies, contacts, salespeople] = await Promise.all([
     prisma.company.findMany({
       where: { type: { in: ["customer", "lead"] } },
-      // deliveryAddress is shown read-only under the picked business — the intake
+      // deliveryAddress is shown read-only under the picked business - the intake
       // reuses it unless the caller says the delivery goes somewhere else.
       select: { id: true, name: true, deliveryAddress: true, locationName: true },
       orderBy: { name: "asc" },
@@ -42,7 +42,7 @@ export default async function IntakePage({
           <p className="page-sub">
             {preselected
               ? `New request for ${preselected.name}.`
-              : "Take the call and capture it here — projects and anything needing a price go to the pipeline, priced re-orders become orders."}
+              : "Take the call and capture it here - projects and anything needing a price go to the pipeline, priced re-orders become orders."}
           </p>
         </div>
         <Link href="/pipeline" className="btn active:scale-[0.99]">

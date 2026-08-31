@@ -24,7 +24,7 @@ const DRAG_MIME = "text/plain";
 
 /** Mirrors the server-side rejection in changeOpportunityStage. */
 const CLOSED_STAGE_MESSAGE =
-  "Use Mark Won / Mark Lost on the deal page — they create the order and payment.";
+  "Use Mark Won / Mark Lost on the deal page - they create the order and payment.";
 
 function money(amount: number | null): string | null {
   if (amount == null) return null;
@@ -50,13 +50,13 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
     const card = optimisticCards.find((c) => c.id === id);
     if (!card || card.stage === stage) return;
     // Won/Lost have no column to drop into, but a picker could still offer them on
-    // an already-closed card — never let either reach the plain stage write.
+    // an already-closed card - never let either reach the plain stage write.
     if (CLOSED_STAGES.includes(stage)) return { ok: false, message: CLOSED_STAGE_MESSAGE };
     applyMove({ id, stage });
     return changeOpportunityStage(id, stage);
   }
 
-  /** Drop handler — outside React's event transition, so it opens its own. */
+  /** Drop handler - outside React's event transition, so it opens its own. */
   function moveByDrag(id: string, stage: string) {
     startTransition(async () => {
       await move(id, stage);
@@ -160,7 +160,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                     </div>
                   ) : null}
 
-                  {/* Keyboard/no-drag alternative — moves the card optimistically too. */}
+                  {/* Keyboard/no-drag alternative - moves the card optimistically too. */}
                   <div className="mt-3">
                     <BadgeSelect
                       value={card.stage}
@@ -185,7 +185,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                       .
                     </>
                   ) : (
-                    <>Nothing here — deals arrive from {openStages[stageIndex - 1].label}.</>
+                    <>Nothing here - deals arrive from {openStages[stageIndex - 1].label}.</>
                   )}
                 </p>
               ) : null}

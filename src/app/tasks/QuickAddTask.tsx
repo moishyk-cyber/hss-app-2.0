@@ -1,7 +1,7 @@
 "use client";
 
 // Google-Tasks-style quick add (Aug 31 feedback): type a title, hit Enter,
-// done. Assignee defaults to the "Working as" identity — no form to fill in.
+// done. Assignee defaults to the "Working as" identity - no form to fill in.
 // CreateTaskPanel (the floating + button) stays available for anything that
 // needs a due date, priority, type, or a linked record up front.
 

@@ -84,7 +84,7 @@ export default async function CompanyDetailPage({
               value={
                 company.requiresDeposit
                   ? `${company.depositPercent}% required`
-                  : "not required — full payment after delivery"
+                  : "not required - full payment after delivery"
               }
             />
             <DetailRow
@@ -164,7 +164,7 @@ export default async function CompanyDetailPage({
                 >
                   Intake
                 </Link>{" "}
-                — projects and anything needing a price land in the pipeline.
+                - projects and anything needing a price land in the pipeline.
               </div>
             ) : (
               <ul className="divide-y divide-border">

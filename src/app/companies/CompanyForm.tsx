@@ -43,7 +43,7 @@ export function CompanyForm({
     <form action={action} className="card max-w-3xl">
       {error === "duplicate_company" ? (
         <FormAlert>
-          <strong>{duplicateCompany ?? "A business with that name"}</strong> already exists —
+          <strong>{duplicateCompany ?? "A business with that name"}</strong> already exists -
           nothing was saved. Open it from{" "}
           <Link href="/companies" className="underline">
             Businesses
@@ -52,7 +52,7 @@ export function CompanyForm({
         </FormAlert>
       ) : error === "invalid_value" ? (
         <FormAlert>
-          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved -
           please re-pick and try again.
         </FormAlert>
       ) : error === "save_failed" ? (
@@ -73,7 +73,7 @@ export function CompanyForm({
           name="vertical"
           options={COMPANY_VERTICALS}
           defaultValue={company?.vertical}
-          includeBlank="— none —"
+          includeBlank="None"
         />
         <Checkbox
           label="Priority client"

@@ -79,7 +79,7 @@ export async function submitIntake(formData: FormData) {
   const goesToPipeline = orderType === "project" || needsPricing;
 
   // The salesperson dropdown is gone from the form (feedback: one more thing to fill
-  // in mid-call, and it always meant "me"). Fall back to the sidebar identity — and
+  // in mid-call, and it always meant "me"). Fall back to the sidebar identity - and
   // if there isn't one either, save it unassigned rather than blocking a live call.
   const salespersonId = await resolveSalesperson();
 
@@ -88,7 +88,7 @@ export async function submitIntake(formData: FormData) {
     if (picked) return picked;
     const cookieId = await currentUserId();
     if (!cookieId) return null;
-    // A cookie can outlive the user it names — an unknown id would break the insert.
+    // A cookie can outlive the user it names - an unknown id would break the insert.
     const user = await prisma.user.findUnique({
       where: { id: cookieId },
       select: { id: true },
@@ -98,7 +98,7 @@ export async function submitIntake(formData: FormData) {
 
   // Duplicate-business guard, BEFORE the transaction: redirect() throws, and a throw
   // inside runIntakeTransaction would be caught below and reported as save_failed.
-  // Matching is on the normalized name across ALL company types — the duplicate is as
+  // Matching is on the normalized name across ALL company types - the duplicate is as
   // likely to be filed as a lost_lead or a supplier as it is a customer.
   const proposedCompanyName = clientMode === "new" ? str(formData, "newCompanyName") : null;
   if (proposedCompanyName) {
@@ -145,7 +145,7 @@ export async function submitIntake(formData: FormData) {
     // --- client -----------------------------------------------------------
     let companyId: string | null = null;
     let companyName = "New client";
-    /** Address on file for the picked business — the default destination. */
+    /** Address on file for the picked business - the default destination. */
     let companyDeliveryAddress: string | null = null;
 
     if (clientMode === "new") {

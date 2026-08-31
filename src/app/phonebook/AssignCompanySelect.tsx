@@ -15,7 +15,7 @@ export function AssignCompanySelect({
     ...companies.map((c) => ({ value: c.id, label: c.name })),
   ];
 
-  // Not a status pill — this is an assignment picker, so it stays a plain select.
+  // Not a status pill - this is an assignment picker, so it stays a plain select.
   return (
     <OptimisticSelect
       value=""

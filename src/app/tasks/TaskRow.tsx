@@ -31,7 +31,7 @@ export type TaskRowData = {
   subtasks: TaskRowData[];
 };
 
-/** The checkbox IS the done/not-done toggle — unchecking sends it back to Not Started. */
+/** The checkbox IS the done/not-done toggle - unchecking sends it back to Not Started. */
 function TaskCheckbox({ taskId, done }: { taskId: string; done: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [optimisticDone, setOptimisticDone] = useOptimistic(done);

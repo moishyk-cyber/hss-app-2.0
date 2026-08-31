@@ -5,13 +5,13 @@ export type QueueRow = {
   href: string;
   primary: ReactNode;
   secondary?: ReactNode;
-  /** Right-aligned trailing content — amount due, a badge, etc. */
+  /** Right-aligned trailing content - amount due, a badge, etc. */
   meta?: ReactNode;
 };
 
 /**
  * One actionable dashboard queue (docs/UX_FLOW.md §C): a title + count, up to
- * `rows.length` items (callers pass at most 5), a "View all →" link, and a
+ * `rows.length` items (callers pass at most 5), a "View all" link, and a
  * one-line empty state that teaches where the queue's items come from.
  */
 export function QueueCard({
@@ -38,7 +38,7 @@ export function QueueCard({
         </h3>
         {rows.length > 0 && (
           <Link href={viewAllHref} className="shrink-0 text-xs font-medium text-blue transition-colors hover:underline">
-            {viewAllLabel} →
+            {viewAllLabel}
           </Link>
         )}
       </div>

@@ -41,7 +41,7 @@ export default async function OrdersPage({
     <div className="space-y-8">
       <div>
         <h1 className="page-title">Orders</h1>
-        <p className="page-sub">Fulfillment pipeline — payment, POs, delivery.</p>
+        <p className="page-sub">Fulfillment pipeline - payment, POs, delivery.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -67,7 +67,7 @@ export default async function OrdersPage({
               No orders yet. Orders are created automatically when an opportunity is won, or directly from a
               simple intake.{" "}
               <Link href="/intake" className="text-blue transition-colors hover:underline">
-                Go to Intake →
+                Go to Intake
               </Link>
             </>
           )}

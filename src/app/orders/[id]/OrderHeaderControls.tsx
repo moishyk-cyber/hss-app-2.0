@@ -44,7 +44,7 @@ export function UrgencyStatusControls({
         <span className="field-label" style={{ marginBottom: 0 }}>
           Status
         </span>
-        {/* Status is derived from payments/POs/items (see @/lib/flow) — no longer a
+        {/* Status is derived from payments/POs/items (see @/lib/flow) - no longer a
             manual dropdown. The only manual overrides are the stuck toggle below. */}
         <span className={`badge ${ORDER_STATUS_COLORS[status] ?? "badge-gray"}`}>
           {labelFor(ORDER_STATUSES, status)}

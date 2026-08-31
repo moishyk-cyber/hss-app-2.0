@@ -44,12 +44,12 @@ export function ContactForm({
 
       {error === "company_required" ? (
         <FormAlert>
-          Every contact belongs to a business — pick one before saving. If the business isn&rsquo;t
+          Every contact belongs to a business - pick one before saving. If the business isn&rsquo;t
           on the list yet, add it first.
         </FormAlert>
       ) : error === "invalid_value" ? (
         <FormAlert>
-          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved —
+          One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved -
           please re-pick and try again.
         </FormAlert>
       ) : error === "save_failed" ? (

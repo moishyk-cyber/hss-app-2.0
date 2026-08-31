@@ -6,7 +6,7 @@
 
 import { prisma } from "@/lib/prisma";
 
-/** Trim, lowercase, collapse internal whitespace — "  Acme  Kitchens " === "acme kitchens". */
+/** Trim, lowercase, collapse internal whitespace - "  Acme  Kitchens " === "acme kitchens". */
 export function normalizeCompanyName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }

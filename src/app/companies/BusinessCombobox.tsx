@@ -1,7 +1,7 @@
 "use client";
 
 // Type-to-search business picker with a "create what you typed" escape hatch.
-// Shared by the intake screen and the contact form — a caller mid-call should
+// Shared by the intake screen and the contact form - a caller mid-call should
 // never dead-end because the business isn't on file yet.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -180,7 +180,7 @@ export function BusinessCombobox({
 
           {rowCount === 0 ? (
             <li className="px-3 py-2 text-[13px] text-gray">
-              No businesses yet — type a name to create one.
+              No businesses yet - type a name to create one.
             </li>
           ) : null}
         </ul>

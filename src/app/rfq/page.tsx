@@ -50,7 +50,7 @@ export default async function RfqPage() {
     <div className="space-y-8">
       <div>
         <h1 className="page-title">RFQ Queue</h1>
-        <p className="page-sub">Estimating queue — items awaiting pricing before they can move to a proposal.</p>
+        <p className="page-sub">Estimating queue - items awaiting pricing before they can move to a proposal.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -65,7 +65,7 @@ export default async function RfqPage() {
         <div className="empty-state">
           {NEEDS_PRICING_EMPTY}{" "}
           <Link href="/intake" className="text-blue transition-colors hover:underline">
-            Go to Intake →
+            Go to Intake
           </Link>
         </div>
       ) : (
@@ -81,7 +81,7 @@ export default async function RfqPage() {
                   <>
                     {NEEDS_PRICING_EMPTY}{" "}
                     <Link href="/intake" className="text-blue transition-colors hover:underline">
-                      Go to Intake →
+                      Go to Intake
                     </Link>
                   </>
                 ) : (

@@ -2,7 +2,7 @@
 
 // Purchase Orders tab (Aug 31 feedback: creating POs is "very not
 // streamlined"). While any line item still needs a PO, the create form sits
-// at the top with nothing to click through — no toggle to find. Shipment/
+// at the top with nothing to click through - no toggle to find. Shipment/
 // trucking/scheduled-delivery details and the PO's own delivery-status pill
 // now live on the Delivery tab (see DeliverySection.tsx); this tab keeps the
 // PO status ladder, sent-aging, gate blocking, and carrier tracking info.
@@ -55,7 +55,7 @@ export default function PurchaseOrdersSection({
   gate: PaymentGate;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // Once anything still needs a PO, the form stays up — there's nothing to
+  // Once anything still needs a PO, the form stays up - there's nothing to
   // toggle. The "+ Create PO" reveal only applies once everything's assigned
   // (an edge case: creating an extra PO with no items left to attach).
   const hasUnassigned = unassignedLineItems.length > 0;
@@ -101,7 +101,7 @@ export default function PurchaseOrdersSection({
           <div>
             <span className="field-label">Vendor</span>
             <select name="supplierId" required className="input-klyne w-full max-w-xs">
-              <option value="">— select vendor —</option>
+              <option value="">Select vendor</option>
               {vendors.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name}
@@ -149,7 +149,7 @@ export default function PurchaseOrdersSection({
       {purchaseOrders.length === 0 ? (
         <div className="empty-state">
           {hasUnassigned
-            ? "No purchase orders yet — use the form above."
+            ? "No purchase orders yet - use the form above."
             : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (

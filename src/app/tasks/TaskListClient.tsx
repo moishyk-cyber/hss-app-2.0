@@ -72,7 +72,7 @@ export default function TaskListClient({
         <div className="empty-state">
           {applyMine
             ? "No tasks assigned to you right now."
-            : "No tasks yet. Add one above — tasks also get added automatically as orders and customer requests move through fulfillment."}
+            : "No tasks yet. Add one above - tasks also get added automatically as orders and customer requests move through fulfillment."}
         </div>
       ) : (
         <div className="card card-flush overflow-hidden">
@@ -81,7 +81,7 @@ export default function TaskListClient({
               <div className="empty-state">
                 {statusFilter
                   ? `Nothing ${labelFor(TASK_STATUSES, statusFilter).toLowerCase()} right now.`
-                  : "Nothing active — everything's done."}
+                  : "Nothing active - everything's done."}
               </div>
             </div>
           ) : (

@@ -41,11 +41,11 @@ export async function addOrderLineItem(
         name: trimmed,
         description: description.trim() || null,
         qty: safeQty,
-        // Late-added items still need a price — they join the RFQ queue.
+        // Late-added items still need a price - they join the RFQ queue.
         rfqStatus: "needs_pricing",
       },
     });
-    await log(orderId, "item_added", `"${item.name}" added to the order (qty ${safeQty}) — needs pricing`);
+    await log(orderId, "item_added", `"${item.name}" added to the order (qty ${safeQty}) - needs pricing`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
     revalidatePath("/rfq");
@@ -85,7 +85,7 @@ export async function setOrderUrgency(orderId: string, urgency: string): Promise
 }
 
 /**
- * Explicit "Mark stuck" — a manual override the derived-status recompute never
+ * Explicit "Mark stuck" - a manual override the derived-status recompute never
  * clears (see MANUAL_STATUSES in @/lib/flow).
  */
 export async function markOrderStuck(orderId: string): Promise<ActionResult> {
@@ -98,7 +98,7 @@ export async function markOrderStuck(orderId: string): Promise<ActionResult> {
 
 /**
  * Leaves "stuck": derives the true status from payments/POs/items right now.
- * Can't just call recomputeOrderStatus() here — it intentionally no-ops on
+ * Can't just call recomputeOrderStatus() here - it intentionally no-ops on
  * "stuck"/"complete" so routine mutations never silently clear a manual flag.
  * This action IS that explicit override, so it re-derives directly instead.
  */
@@ -108,7 +108,7 @@ export async function unstickOrder(orderId: string): Promise<ActionResult> {
     if (!order) throw new Error("Order not found");
     const derived = deriveOrderStatus(order);
     await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
-    await log(orderId, "order_unstuck", `Order unstuck — status set to ${derived}`);
+    await log(orderId, "order_unstuck", `Order unstuck - status set to ${derived}`);
     revalidateOrder(orderId);
   }, "Could not unstick the order. Please try again.");
 }
@@ -156,7 +156,7 @@ export async function reopenOrder(orderId: string): Promise<ActionResult> {
     if (order.status !== "complete") return;
     const derived = deriveOrderStatus(order);
     await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
-    await log(orderId, "order_reopened", `Order reopened — status set to ${derived}`);
+    await log(orderId, "order_reopened", `Order reopened - status set to ${derived}`);
     revalidateOrder(orderId);
   }, "Could not reopen the order. Please try again.");
 }
@@ -170,7 +170,7 @@ export async function updateOrderQbInvoice(
       where: { id: orderId },
       data: { quickbooksInvoiceNo: quickbooksInvoiceNo || null },
     });
-    await log(orderId, "order_qb_invoice_set", `QuickBooks invoice # set to ${quickbooksInvoiceNo || "—"}`);
+    await log(orderId, "order_qb_invoice_set", `QuickBooks invoice # set to ${quickbooksInvoiceNo || "not set"}`);
     revalidateOrder(orderId);
   }, "Could not save the invoice number. Please try again.");
 }
@@ -180,7 +180,7 @@ export async function addPayment(orderId: string, type: string, amount: number):
     return { ok: false, message: "Enter a valid payment amount greater than $0." };
   }
   if (amount > 10_000_000) {
-    return { ok: false, message: "That amount looks too large — double-check it." };
+    return { ok: false, message: "That amount looks too large - double-check it." };
   }
   return safeAction(async () => {
     await prisma.payment.create({ data: { orderId, type, amount, status: "pending" } });
@@ -250,7 +250,7 @@ export async function setLineItemBackorderExpected(
       await log(
         item.orderId,
         "line_item_backorder_expected_set",
-        `${item.name} backorder expected date set to ${backorderExpected || "—"}`
+        `${item.name} backorder expected date set to ${backorderExpected || "not set"}`
       );
       revalidateOrder(item.orderId);
     }

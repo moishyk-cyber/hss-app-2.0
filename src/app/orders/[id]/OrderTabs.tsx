@@ -2,7 +2,7 @@
 
 // Order detail tabs (Aug 31 feedback: "create tabs... Invoice tab, a PO tab,
 // a delivery tab"). Client tab bar wrapping three server-rendered panels.
-// Supports deep links via URL hash — #invoice, #purchase-orders, #delivery,
+// Supports deep links via URL hash - #invoice, #purchase-orders, #delivery,
 // plus the legacy #payments anchor mapped onto Invoice. The FlowStepper above
 // this component drives it via next/link `href`s that point at these same
 // hashes (same interaction language as the sales pipeline stepper).
@@ -51,7 +51,7 @@ export function OrderTabs({
   }, []);
 
   // Belt-and-suspenders: the FlowStepper's steps render as next/link <Link>s,
-  // which navigate via history.pushState rather than a real hash assignment —
+  // which navigate via history.pushState rather than a real hash assignment -
   // that doesn't reliably fire "hashchange". Catch the click directly instead.
   useEffect(() => {
     function onClick(e: MouseEvent) {

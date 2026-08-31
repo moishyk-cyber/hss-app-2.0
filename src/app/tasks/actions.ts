@@ -42,7 +42,7 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
 /**
  * Google-Tasks-style quick add (Aug 31 feedback): a single "Add a task" input up
  * top. Assignee comes from the caller's "Working as" identity (readStoredUserId
- * on the client) rather than a form field — the full CreateTaskPanel stays
+ * on the client) rather than a form field - the full CreateTaskPanel stays
  * available for anything more detailed (due date, priority, type, linking).
  */
 export async function quickAddTask(title: string, assigneeId: string | null): Promise<ActionResult> {
@@ -95,7 +95,7 @@ export async function setTaskLink(taskId: string, linkedType: string, linkedId: 
   }, "Could not link the task. Please try again.");
 }
 
-/** Resolves the poster's real name server-side from authorId — the client no longer supplies it. */
+/** Resolves the poster's real name server-side from authorId - the client no longer supplies it. */
 export async function addTaskComment(
   taskId: string,
   body: string,
@@ -130,7 +130,7 @@ export type TaskCommentData = {
   author: { name: string } | null;
 };
 
-/** Comment bodies aren't shipped with the task list — fetched lazily on first expand. */
+/** Comment bodies aren't shipped with the task list - fetched lazily on first expand. */
 export async function getTaskComments(taskId: string): Promise<TaskCommentData[]> {
   return prisma.taskComment.findMany({
     where: { taskId },

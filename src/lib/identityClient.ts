@@ -19,7 +19,7 @@ export function storeUserId(id: string) {
   try {
     window.localStorage.setItem(IDENTITY_KEY, id);
     document.cookie = `${IDENTITY_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`;
-    // The native "storage" event only fires in OTHER tabs — dispatch one here so
+    // The native "storage" event only fires in OTHER tabs - dispatch one here so
     // same-tab useSyncExternalStore subscribers update too.
     window.dispatchEvent(new StorageEvent("storage", { key: IDENTITY_KEY, newValue: id }));
   } catch {

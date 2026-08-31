@@ -63,7 +63,7 @@ export default function CreateTaskPanel({ users }: { users: { id: string; name: 
             <div>
               <span className="field-label">Assignee</span>
               <select name="assigneeId" className="input-klyne w-full">
-                <option value="">— unassigned —</option>
+                <option value="">Unassigned</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}

@@ -14,9 +14,9 @@ import {
   ORDER_TYPES,
 } from "./_ui";
 
-/** Won/Lost never move through a dropdown — they are side-effectful closes. */
+/** Won/Lost never move through a dropdown - they are side-effectful closes. */
 const CLOSED_STAGE_MESSAGE =
-  "Use the Close panel on the deal page — it creates the order and stages the payment.";
+  "Use the Close panel on the deal page - it creates the order and stages the payment.";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -75,7 +75,7 @@ export async function updateLineItemQty(lineItemId: string, qty: number): Promis
   }, "Could not update quantity. Please try again.");
 }
 
-/** Assignee is optional everywhere — an empty string clears it. */
+/** Assignee is optional everywhere - an empty string clears it. */
 export async function updateLineItemAssignee(
   lineItemId: string,
   assigneeId: string
@@ -142,7 +142,7 @@ export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: str
 /**
  * Add a line item to an open deal.
  *
- * Intake is not the only moment items appear — the client adds a fryer on the callback,
+ * Intake is not the only moment items appear - the client adds a fryer on the callback,
  * and until now the only way in was the edit form, which has no item fields at all.
  */
 export async function addLineItem(formData: FormData) {
@@ -163,7 +163,7 @@ export async function addLineItem(formData: FormData) {
         name,
         description,
         qty,
-        // A new item has never been out for quote — it starts in the RFQ queue.
+        // A new item has never been out for quote - it starts in the RFQ queue.
         rfqStatus: "needs_pricing",
       },
     });
@@ -171,7 +171,7 @@ export async function addLineItem(formData: FormData) {
       "line_item",
       item.id,
       "item_added",
-      `"${item.name}" added to the deal (qty ${qty}) — needs pricing`
+      `"${item.name}" added to the deal (qty ${qty}) - needs pricing`
     );
   } catch (err) {
     console.error(err);
@@ -217,7 +217,7 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
 }
 
 /**
- * The FlowStepper on the deal page IS the stage control (Aug 31 feedback) — each
+ * The FlowStepper on the deal page IS the stage control (Aug 31 feedback) - each
  * open step is a form button bound to this. Same guard as changeOpportunityStage:
  * open stages only, so Won/Lost can never be written without their side effects.
  *
@@ -226,7 +226,7 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
 export async function moveStageFromStepper(
   id: string,
   stage: string,
-  // The stepper's form carries no fields — everything it needs is bound above.
+  // The stepper's form carries no fields - everything it needs is bound above.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _formData: FormData
 ): Promise<void> {
@@ -284,7 +284,7 @@ export async function updateOpportunity(formData: FormData) {
     redirect(`/pipeline/${id}/edit?error=invalid_value`);
   }
   // Same rule as the dropdowns: this form cannot CLOSE a deal. An already-closed
-  // deal keeping its own stage is fine — editing a won deal's notes must still work.
+  // deal keeping its own stage is fine - editing a won deal's notes must still work.
   if (CLOSED_STAGES.includes(stage) && stage !== before.stage) {
     redirect(`/pipeline/${id}/edit?error=stage_locked`);
   }
@@ -360,7 +360,7 @@ export async function markOpportunityLost(formData: FormData) {
   if (!id) throw new Error("Missing opportunity id");
   const lostReason = str(formData, "lostReason");
 
-  // A lost reason is mandatory — bounce back to the detail page with an error.
+  // A lost reason is mandatory - bounce back to the detail page with an error.
   if (!lostReason) {
     redirect(`/pipeline/${id}?error=lost_reason_required`);
   }
@@ -368,7 +368,7 @@ export async function markOpportunityLost(formData: FormData) {
   try {
     const updated = await prisma.opportunity.update({
       where: { id },
-      // A closed deal has no next step — leaving the follow-up date behind puts a
+      // A closed deal has no next step - leaving the follow-up date behind puts a
       // permanent "Follow up overdue" chip on a deal nobody should be chasing.
       data: { stage: "lost", lostReason, nextFollowUp: null },
     });
@@ -376,7 +376,7 @@ export async function markOpportunityLost(formData: FormData) {
       "opportunity",
       id,
       "stage_changed",
-      `"${updated.title}" marked Lost — reason: ${lostReason}`
+      `"${updated.title}" marked Lost - reason: ${lostReason}`
     );
   } catch (err) {
     console.error(err);
@@ -389,7 +389,7 @@ export async function markOpportunityLost(formData: FormData) {
 }
 
 /**
- * Mark Won — driven by the Close panel on the deal page (Aug 31 feedback): the
+ * Mark Won - driven by the Close panel on the deal page (Aug 31 feedback): the
  * salesperson types the price they actually agreed and, for a project, whether a
  * deposit was agreed and how much. Those answers ARE the order: they set the order
  * value, the Order.depositRequired gate amount, and the staged payment.
@@ -424,7 +424,7 @@ export async function markOpportunityWon(formData: FormData) {
   const submittedValue = num(formData, "value");
 
   // The gate and the deposit are both measured against this number. Winning at $0
-  // stages a $0 payment and opens the gate on an unpaid order — refuse instead.
+  // stages a $0 payment and opens the gate on an unpaid order - refuse instead.
   // The Close panel requires it client-side; this is the server-side backstop.
   const value =
     fromClosePanel && submittedValue != null && submittedValue > 0
@@ -435,7 +435,7 @@ export async function markOpportunityWon(formData: FormData) {
   }
 
   const isProject = opportunity.orderType === "project";
-  // No company on the deal — fall back to the old house default rather than skipping the deposit.
+  // No company on the deal - fall back to the old house default rather than skipping the deposit.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
 
@@ -444,7 +444,7 @@ export async function markOpportunityWon(formData: FormData) {
   let payment: { type: string; amount: number; notes: string } | null;
 
   if (!isProject) {
-    // A straight order is paid in full before POs go out — nothing to negotiate.
+    // A straight order is paid in full before POs go out - nothing to negotiate.
     payment = { type: "full", amount: Math.round(value), notes: "Full payment generated on win" };
   } else if (fromClosePanel) {
     if (formData.get("requireDeposit") === "1") {
@@ -498,7 +498,7 @@ export async function markOpportunityWon(formData: FormData) {
       await tx.opportunity.update({
         where: { id: opportunity.id },
         // Clearing the follow-up keeps closed deals out of the overdue chips.
-        // The price agreed in the Close panel is the deal's real value — write it
+        // The price agreed in the Close panel is the deal's real value - write it
         // back so the deal and its order never disagree about the number.
         data: { stage: "won", nextFollowUp: null, value },
       });
@@ -522,14 +522,14 @@ export async function markOpportunityWon(formData: FormData) {
     redirect(`/pipeline/${opportunity.id}?error=save_failed`);
   }
 
-  // The order is already committed at this point — logActivity never throws, so a
+  // The order is already committed at this point - logActivity never throws, so a
   // logging hiccup cannot make it look like the win didn't go through.
   const carried = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed").length;
   await logActivity(
     "opportunity",
     opportunity.id,
     "stage_changed",
-    `"${opportunity.title}" marked Won — order created with ${carried} line item(s)`
+    `"${opportunity.title}" marked Won - order created with ${carried} line item(s)`
   );
   await logActivity(
     "order",
@@ -538,7 +538,7 @@ export async function markOpportunityWon(formData: FormData) {
     `Order created from opportunity "${opportunity.title}" (${
       payment
         ? `${payment.type} payment of $${payment.amount} pending`
-        : "no deposit agreed — full payment due after delivery"
+        : "no deposit agreed - full payment due after delivery"
     })`
   );
 

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-// Table-cell date/money formatters. Per DESIGN_V2.md §2, a bare "—" is only
+// Table-cell date/money formatters. Per DESIGN_V2.md §2, a bare "-" is only
 // allowed inside table bodies for numeric/currency-like cells where column
 // alignment matters, and even then it must read as de-emphasized (reduced
-// opacity), never bold/dark. These return a muted thin dash for that case —
+// opacity), never bold/dark. These return a muted thin dash for that case -
 // do NOT reuse them outside a <table>; card/detail views need the full
 // `.empty-value` muted phrase instead (see orders/[id]/page.tsx).
 function mutedDash() {

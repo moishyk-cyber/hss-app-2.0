@@ -6,7 +6,7 @@ import { RequiredMark } from "./_ui";
 
 /**
  * Business picker for the contact form. Every contact belongs to a business, but
- * the business might not be on file yet — so "create what you typed" is inline.
+ * the business might not be on file yet - so "create what you typed" is inline.
  * Submits either `companyId` (existing) or `newCompanyName` (create-then-attach).
  */
 export function BusinessField({
@@ -40,7 +40,7 @@ export function BusinessField({
             }}
             className="text-xs text-gray-dark transition-colors hover:text-ink"
           >
-            ← Search existing instead
+            Search existing instead
           </button>
         </div>
         <input

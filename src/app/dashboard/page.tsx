@@ -21,7 +21,7 @@ const RANGE_CONFIG: Record<RangeKey, { days: number; weeks: number; months: numb
   "12m": { days: 365, weeks: 26, months: 12, label: "12 Months" },
 };
 
-/** Days between two dates, floored — used for every "N days ago / waiting" queue label. */
+/** Days between two dates, floored - used for every "N days ago / waiting" queue label. */
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / 86_400_000);
 }
@@ -195,7 +195,7 @@ export default async function DashboardPage({
 
   // "Won" date proxy: an opportunity has no wonAt timestamp, so we use the
   // createdAt of its earliest linked order (an order is created at the won
-  // transition) — falling back to the opportunity's own createdAt for the
+  // transition) - falling back to the opportunity's own createdAt for the
   // rare won opportunity with no order yet.
   const wonInRange = wonOpportunities
     .map((o) => ({ value: o.value ?? 0, date: o.orders[0]?.createdAt ?? o.createdAt }))
@@ -209,7 +209,7 @@ export default async function DashboardPage({
     .filter((g) => g.status !== "complete")
     .reduce((sum, g) => sum + g._count._all, 0);
 
-  // ---- Chart (a): pipeline value by stage — current snapshot, not range-bound ----
+  // ---- Chart (a): pipeline value by stage - current snapshot, not range-bound ----
   const stageChartData = OPEN_STAGES.map((stage) => {
     const g = opportunityStageGroups.find((x) => x.stage === stage);
     return { label: labelFor(OPPORTUNITY_STAGES, stage), value: g?._sum.value ?? 0 };
@@ -219,7 +219,7 @@ export default async function DashboardPage({
   // "New intake" = every opportunity's createdAt (every opportunity started as
   // an intake event) PLUS orders with no opportunityId (orders created directly
   // from a simple, no-pricing-needed intake). Orders that stem from a WON
-  // opportunity are intentionally excluded — counting both would double the
+  // opportunity are intentionally excluded - counting both would double the
   // same underlying intake event. Includes both form and manual submissions.
   const intakeDates = [...intakeOpportunities.map((o) => o.createdAt), ...standaloneOrders.map((o) => o.createdAt)];
   const intakeChartData = buildWeeklyCounts(intakeDates, cfg.weeks, now);
@@ -231,7 +231,7 @@ export default async function DashboardPage({
   }));
   const wonChartData = buildMonthlyBuckets(wonForChart, cfg.months, now, "sum");
 
-  // ---- Chart (d): orders by status — full fulfillment ladder, not range-bound ----
+  // ---- Chart (d): orders by status - full fulfillment ladder, not range-bound ----
   const statusChartData = ORDER_STATUSES.map((s) => {
     const g = orderStatusGroups.find((x) => x.status === s.value);
     return { label: s.label, value: g?._count._all ?? 0 };
@@ -288,7 +288,7 @@ export default async function DashboardPage({
     const sentDaysAgo = po.status === "sent" && po.sentDate ? daysBetween(now, po.sentDate) : null;
     return {
       href: `/orders/${po.orderId}#purchase-orders`,
-      primary: `${po.poNumber ?? "PO"} — ${po.order.title}`,
+      primary: `${po.poNumber ?? "PO"} - ${po.order.title}`,
       secondary: po.supplier?.name ?? "No vendor",
       meta:
         po.status === "sent" ? (
@@ -308,7 +308,7 @@ export default async function DashboardPage({
       const date = (po.scheduledDeliveryDate ?? po.expectedDelivery) as Date;
       return {
         href: `/orders/${po.orderId}#purchase-orders`,
-        label: `${po.poNumber ?? "PO"} — ${po.order.title}`,
+        label: `${po.poNumber ?? "PO"} - ${po.order.title}`,
         date,
         meta: po.scheduledDeliveryDate ? "scheduled" : "expected",
       };
@@ -355,7 +355,7 @@ export default async function DashboardPage({
               .join(" · ")}
             {urgentOrders.length > 3 ? ` +${urgentOrders.length - 3} more` : ""}
           </span>
-          <span className="ml-auto shrink-0 text-xs font-medium text-blue">View all →</span>
+          <span className="ml-auto shrink-0 text-xs font-medium text-blue">View all</span>
         </Link>
       )}
 
@@ -382,7 +382,7 @@ export default async function DashboardPage({
         <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} accent="var(--primary)" />
       </div>
 
-      {/* Queue 2: Follow-ups due — opportunities + overdue tasks share one card, but each
+      {/* Queue 2: Follow-ups due - opportunities + overdue tasks share one card, but each
           record type keeps its own "View all" (opportunities have no combined view). */}
       <div className="card">
         <div className="flex items-center justify-between gap-2">
@@ -393,10 +393,10 @@ export default async function DashboardPage({
           {followUpRows.length > 0 && (
             <div className="flex shrink-0 gap-3 text-xs font-medium">
               <Link href="/pipeline" className="text-blue transition-colors hover:underline">
-                Pipeline →
+                Pipeline
               </Link>
               <Link href="/tasks" className="text-blue transition-colors hover:underline">
-                Tasks →
+                Tasks
               </Link>
             </div>
           )}
