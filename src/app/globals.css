@@ -386,18 +386,6 @@ label > .field-label,
   position: relative;
   overflow: hidden;
 }
-/* Colored top accent bar — keep to 2-3 semantic colors across a row of tiles,
-   never five unrelated hues. Set --accent-bar per tile (e.g. var(--primary),
-   var(--green), var(--accent) for the one urgent tile). */
-.stat-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--accent-bar, var(--border));
-}
 .stat-value {
   font-family: var(--font-archivo), sans-serif;
   font-size: 28px;

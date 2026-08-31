@@ -38,15 +38,13 @@ function StatTile({
   label,
   value,
   sub,
-  accent,
 }: {
   label: string;
   value: string;
   sub?: string;
-  accent: string;
 }) {
   return (
-    <div className="stat-card" style={{ "--accent-bar": accent } as React.CSSProperties}>
+    <div className="stat-card">
       <div className="section-label">{label}</div>
       <div className="stat-value mt-1">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-gray">{sub}</div>}
@@ -362,7 +360,7 @@ export default async function DashboardPage({
         <Link
           href="/orders"
           className="card card-interactive flex items-center gap-3 text-sm"
-          style={{ borderLeftWidth: 4, borderLeftColor: "var(--red)", padding: "14px 20px" }}
+          style={{ padding: "14px 20px" }}
         >
           <span className="badge badge-red shrink-0">{urgentOrders.length} urgent</span>
           <span className="truncate text-ink">
@@ -381,22 +379,19 @@ export default async function DashboardPage({
           label="Open Pipeline Value"
           value={fmtMoney(openPipelineValue)}
           sub={`${openPipelineCount} open`}
-          accent="var(--primary)"
         />
-        <StatTile label={`Won (${cfg.label})`} value={fmtMoney(wonValueInRange)} accent="var(--green)" />
+        <StatTile label={`Won (${cfg.label})`} value={fmtMoney(wonValueInRange)} />
         <StatTile
           label="Open Orders Value"
           value={fmtMoney(openOrdersValue)}
           sub={`${openOrdersCount} open`}
-          accent="var(--primary)"
         />
         <StatTile
           label="Awaiting Payment"
           value={fmtMoney(awaitingPaymentValue)}
           sub={`${awaitingPaymentRows.length} order${awaitingPaymentRows.length === 1 ? "" : "s"}`}
-          accent="var(--accent)"
         />
-        <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} accent="var(--primary)" />
+        <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} />
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
