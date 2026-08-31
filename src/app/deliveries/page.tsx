@@ -9,6 +9,7 @@ import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { fmtDate } from "../orders/utils";
 import { CountPill } from "../dashboard/QueueCard";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
+import { TruckerSelect } from "./TruckerSelect";
 
 export const dynamic = "force-dynamic";
 
@@ -108,7 +109,7 @@ function isUrgent(leg: DeliveryLeg): boolean {
   return leg.order.urgency === "same_day" || leg.order.urgency === "emergency";
 }
 
-function LegTable({ legs }: { legs: DeliveryLeg[] }) {
+function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] }) {
   return (
     <div className="card card-flush overflow-hidden">
       <ul className="divide-y divide-border">
@@ -144,8 +145,8 @@ function LegTable({ legs }: { legs: DeliveryLeg[] }) {
               </div>
             </Link>
 
-            <span className="hidden min-w-0 flex-1 truncate text-[12px] text-gray-dark lg:block">
-              {leg.trucker ?? <span className="empty-value">no trucker yet</span>}
+            <span className="relative z-10 hidden min-w-0 flex-1 lg:block">
+              <TruckerSelect poId={leg.id} value={leg.trucker} truckers={truckers} />
             </span>
 
             <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
@@ -236,6 +237,13 @@ export default async function DeliveriesPage({
     filterAnd.push({ expectedDelivery: { gte: day, lt: nextDay } });
   }
 
+  const truckerRows = await prisma.purchaseOrder.findMany({
+    where: { trucker: { not: null } },
+    select: { trucker: true },
+    distinct: ["trucker"],
+  });
+  const knownTruckers = truckerRows.map((t) => t.trucker as string);
+
   const [inFlightRaw, deliveredRaw] = await Promise.all([
     // A PO is "in flight" once it is out with the vendor, or while its delivery
     // leg still has to happen at all.
@@ -309,7 +317,7 @@ export default async function DeliveriesPage({
             passed without a delivered status.
           </div>
         ) : (
-          <LegTable legs={needsAttention} />
+          <LegTable legs={needsAttention} truckers={knownTruckers} />
         )}
       </Section>
 
@@ -320,7 +328,7 @@ export default async function DeliveriesPage({
             here.
           </div>
         ) : (
-          <LegTable legs={scheduled} />
+          <LegTable legs={scheduled} truckers={knownTruckers} />
         )}
       </Section>
 
@@ -337,7 +345,7 @@ export default async function DeliveriesPage({
             {delivered.length === 0 ? (
               <div className="empty-state">Nothing marked delivered in the last 14 days.</div>
             ) : (
-              <LegTable legs={delivered} />
+              <LegTable legs={delivered} truckers={knownTruckers} />
             )}
           </div>
         </details>

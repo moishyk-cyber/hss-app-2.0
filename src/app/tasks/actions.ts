@@ -126,6 +126,7 @@ export type TaskCommentData = {
   id: string;
   body: string;
   createdAt: Date;
+  authorId: string | null;
   authorName: string | null;
   author: { name: string } | null;
 };

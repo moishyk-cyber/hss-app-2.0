@@ -426,6 +426,18 @@ export async function updatePoTracking(
 }
 
 /** PO-level delivery/trucking status pill (pending | scheduled | delivered_partial | delivered_full). */
+/** Inline trucker pick from the /deliveries list (full free-text edit lives in the shipment form). */
+export async function setPoTrucker(poId: string, trucker: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: { trucker: trucker || null },
+    });
+    await log(po.orderId, "po_shipment_details_updated", `PO ${po.poNumber ?? po.id} trucker set to ${trucker || "none"}`);
+    revalidateOrder(po.orderId);
+  }, "Could not set the trucker. Please try again.");
+}
+
 export async function setPoDeliveryStatus(poId: string, deliveryStatus: string): Promise<ActionResult> {
   if (!isValidValue(PO_DELIVERY_STATUSES, deliveryStatus)) {
     return { ok: false, message: "Not a valid delivery status." };

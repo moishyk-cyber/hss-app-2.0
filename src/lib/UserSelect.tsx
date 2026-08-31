@@ -6,9 +6,10 @@
 // Optimistic, and pulls a fresh server render after the action like the other
 // controls in ui.tsx.
 
-import { useEffect, useRef, useState, useTransition, useOptimistic } from "react";
+import { useRef, useState, useTransition, useOptimistic } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "./Avatar";
+import { DropMenu, useDismiss } from "./ui";
 import type { ActionResult } from "./actionResult";
 
 type UserOption = { id: string; name: string };
@@ -32,25 +33,12 @@ export function UserSelect({
   const [optimistic, setOptimistic] = useOptimistic(value);
   const [error, setError] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   const current = users.find((u) => u.id === optimistic) ?? null;
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
 
   function pick(nextId: string) {
     setOpen(false);
@@ -98,11 +86,8 @@ export function UserSelect({
         </span>
       </button>
 
-      {open ? (
-        <ul
-          role="listbox"
-          className="card card-flush absolute left-0 z-30 mt-1 max-h-64 w-48 overflow-y-auto py-1.5"
-        >
+      <DropMenu open={open} anchorRef={boxRef} menuRef={menuRef}>
+        <ul role="listbox" className="card card-flush max-h-64 w-48 overflow-y-auto py-1.5">
           {rows.map((u) => (
             <li key={u.id || "unassigned"} role="option" aria-selected={u.id === optimistic}>
               <button
@@ -127,7 +112,7 @@ export function UserSelect({
             </li>
           ))}
         </ul>
-      ) : null}
+      </DropMenu>
 
       {error ? (
         <span role="alert" className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs">

@@ -4,7 +4,7 @@
 // Every server-action control in the app should use these (or the same patterns)
 // so nothing ever feels dead between click and response.
 
-import { useFormStatus } from "react-dom";
+import { createPortal, useFormStatus } from "react-dom";
 import { useTransition, useOptimistic, useRef, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ActionResult } from "./actionResult";
@@ -111,11 +111,15 @@ function useOptimisticAction(value: string, action: (next: string) => Promise<Ac
 }
 
 /** Dismiss-on-outside-click / Escape for the custom dropdown menus. */
-function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) {
+export function useDismiss(
+  open: boolean,
+  close: () => void,
+  refs: ReadonlyArray<React.RefObject<HTMLElement | null>>
+) {
   useEffect(() => {
     if (!open) return;
     const onDocMouseDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
+      if (!refs.some((r) => r.current?.contains(e.target as Node))) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -126,7 +130,66 @@ function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLE
       document.removeEventListener("mousedown", onDocMouseDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, close, ref]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, close, ...refs]);
+}
+
+/**
+ * Portal wrapper for the custom dropdown menus: renders at document.body so no
+ * overflow container (tables, tab panels, cards) can clip the open menu. Fixed
+ * position tracks the trigger on scroll/resize and flips above the trigger when
+ * there's no room below.
+ */
+export function DropMenu({
+  open,
+  anchorRef,
+  menuRef,
+  children,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number; minWidth: number; up: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const r = anchorRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const spaceBelow = window.innerHeight - r.bottom;
+      const up = spaceBelow < 280 && r.top > spaceBelow;
+      setPos({ top: up ? r.top - 4 : r.bottom + 4, left: r.left, minWidth: r.width, up });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open, anchorRef]);
+
+  if (!open || !pos || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{
+        position: "fixed",
+        left: pos.left,
+        minWidth: pos.minWidth,
+        zIndex: 60,
+        ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }),
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
 }
 
 /**
@@ -151,7 +214,8 @@ export function OptimisticSelect({
   const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
-  useDismiss(open, () => setOpen(false), boxRef);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic ?? "";
   return (
     <span ref={boxRef} className="relative inline-flex items-center gap-2">
@@ -171,11 +235,8 @@ export function OptimisticSelect({
           ▾
         </span>
       </button>
-      {open ? (
-        <ul
-          role="listbox"
-          className="card card-flush absolute left-0 top-full z-30 mt-1 max-h-64 min-w-full overflow-y-auto py-1.5"
-        >
+      <DropMenu open={open} anchorRef={boxRef} menuRef={menuRef}>
+        <ul role="listbox" className="card card-flush max-h-64 overflow-y-auto py-1.5">
           {options.map((o) => (
             <li key={o.value} role="option" aria-selected={o.value === optimistic}>
               <button
@@ -193,7 +254,7 @@ export function OptimisticSelect({
             </li>
           ))}
         </ul>
-      ) : null}
+      </DropMenu>
       {error && <InlineError message={error} />}
     </span>
   );
@@ -220,7 +281,8 @@ export function BadgeSelect({
   const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLSpanElement>(null);
-  useDismiss(open, () => setOpen(false), boxRef);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
   return (
     <span ref={boxRef} className="relative inline-block">
@@ -241,11 +303,8 @@ export function BadgeSelect({
           ▾
         </span>
       </button>
-      {open ? (
-        <ul
-          role="listbox"
-          className="card card-flush absolute left-0 top-full z-30 mt-1 max-h-64 w-max overflow-y-auto p-1.5"
-        >
+      <DropMenu open={open} anchorRef={boxRef} menuRef={menuRef}>
+        <ul role="listbox" className="card card-flush max-h-64 w-max overflow-y-auto p-1.5">
           {options.map((o) => (
             <li key={o.value} role="option" aria-selected={o.value === optimistic}>
               <button
@@ -263,7 +322,7 @@ export function BadgeSelect({
             </li>
           ))}
         </ul>
-      ) : null}
+      </DropMenu>
       {error && <InlineError message={error} />}
     </span>
   );
