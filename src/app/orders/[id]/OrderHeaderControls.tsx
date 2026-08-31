@@ -1,7 +1,8 @@
 "use client";
 
 import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, ActionButton } from "@/lib/ui";
+import { BadgeSelect, ActionButton } from "@/lib/ui";
+import { UserSelect } from "@/lib/UserSelect";
 import {
   markOrderStuck,
   reopenOrder,
@@ -58,9 +59,9 @@ export function UrgencyStatusControls({
         <span className="field-label" style={{ marginBottom: 0 }}>
           Owner
         </span>
-        <OptimisticSelect
+        <UserSelect
           value={ownerId ?? ""}
-          options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+          users={users}
           action={(next) => setOrderOwner(orderId, next)}
         />
       </label>

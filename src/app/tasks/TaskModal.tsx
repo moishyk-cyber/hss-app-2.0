@@ -8,8 +8,8 @@
 
 import { useEffect, useRef } from "react";
 import { TASK_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_COLORS } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect } from "@/lib/ui";
-import { Avatar } from "@/lib/Avatar";
+import { BadgeSelect } from "@/lib/ui";
+import { UserSelect } from "@/lib/UserSelect";
 import { setTaskAssignee, setTaskStatus, setTaskPriority } from "./actions";
 import TaskLinkCell from "./TaskLinkCell";
 import CommentThread from "./CommentThread";
@@ -129,15 +129,10 @@ export default function TaskModal({
             <span className="field-label" style={{ marginBottom: 0 }}>
               Assignee
             </span>
-            <OptimisticSelect
+            <UserSelect
               value={task.assigneeId ?? ""}
-              options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+              users={users}
               action={(next) => setTaskAssignee(task.id, next)}
-              className="input-klyne px-1.5 py-1 text-xs"
-              render={(optimisticValue) => {
-                const name = users.find((u) => u.id === optimisticValue)?.name;
-                return name ? <Avatar name={name} kind="person" size="sm" /> : null;
-              }}
             />
           </label>
           <label className="flex items-center gap-2">

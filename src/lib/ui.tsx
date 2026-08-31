@@ -85,8 +85,54 @@ export function Spinner({ className = "" }: { className?: string }) {
 }
 
 /**
+ * Shared optimistic-action plumbing for the custom dropdowns below: applies the
+ * change instantly, runs the server action in a transition, surfaces failures,
+ * and pulls a fresh server render so everything derived from the value
+ * (steppers, badges, queues) updates immediately.
+ */
+function useOptimisticAction(value: string, action: (next: string) => Promise<ActionResult | void>) {
+  const [isPending, startTransition] = useTransition();
+  const [optimistic, setOptimistic] = useOptimistic(value);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  function run(next: string) {
+    startTransition(async () => {
+      setOptimistic(next);
+      setError(null);
+      try {
+        setError(errorFrom(await action(next)));
+      } catch {
+        setError("Something went wrong. Please try again.");
+      }
+      router.refresh();
+    });
+  }
+  return { isPending, optimistic, error, run };
+}
+
+/** Dismiss-on-outside-click / Escape for the custom dropdown menus. */
+function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close, ref]);
+}
+
+/**
  * Select that applies its change INSTANTLY on screen (optimistic) and runs the
- * server action in a transition. If the action throws, the value snaps back.
+ * server action in a transition. Renders a styled popover menu, not the raw
+ * browser dropdown (Aug 31 feedback: "fix all dropdowns").
  */
 export function OptimisticSelect({
   value,
@@ -99,51 +145,64 @@ export function OptimisticSelect({
   options: ReadonlyArray<{ value: string; label: string }>;
   action: (next: string) => Promise<ActionResult | void>;
   className?: string;
-  /** Optional: render the current value as a badge/label next to the select. */
+  /** Optional: render the current value as a badge/label next to the control. */
   render?: (optimisticValue: string, pending: boolean) => React.ReactNode;
 }) {
-  const [isPending, startTransition] = useTransition();
-  const [optimistic, setOptimistic] = useOptimistic(value);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  useDismiss(open, () => setOpen(false), boxRef);
+  const label = options.find((o) => o.value === optimistic)?.label ?? optimistic ?? "";
   return (
-    <span className="relative inline-flex items-center gap-2">
+    <span ref={boxRef} className="relative inline-flex items-center gap-2">
       {render?.(optimistic, isPending)}
-      <select
-        className={`${className} ${isPending ? "opacity-60" : ""}`}
-        value={optimistic}
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         disabled={isPending}
-        onChange={(e) => {
-          const next = e.target.value;
-          startTransition(async () => {
-            setOptimistic(next);
-            setError(null);
-            try {
-              setError(errorFrom(await action(next)));
-            } catch {
-              setError("Something went wrong. Please try again.");
-            }
-            // Pull the fresh server render so the value sticks and everything
-            // derived from it (steppers, badges, queues) updates immediately.
-            router.refresh();
-          });
-        }}
+        onClick={() => setOpen((o) => !o)}
+        className={`${className} inline-flex cursor-pointer items-center justify-between gap-1.5 text-left ${
+          isPending ? "opacity-60" : ""
+        }`}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        <span className="truncate">{label}</span>
+        <span aria-hidden className="text-[9px] opacity-70">
+          ▾
+        </span>
+      </button>
+      {open ? (
+        <ul
+          role="listbox"
+          className="card card-flush absolute left-0 top-full z-30 mt-1 max-h-64 min-w-full overflow-y-auto py-1.5"
+        >
+          {options.map((o) => (
+            <li key={o.value} role="option" aria-selected={o.value === optimistic}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  if (o.value !== optimistic) run(o.value);
+                }}
+                className={`w-full whitespace-nowrap px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-hover ${
+                  o.value === optimistic ? "font-semibold text-ink" : "text-gray-dark"
+                }`}
+              >
+                {o.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {error && <InlineError message={error} />}
     </span>
   );
 }
 
 /**
- * A status pill that IS the dropdown: looks like a .badge, click opens the native
- * select menu, color + label flip optimistically the moment a value is chosen.
- * Replaces the old "badge + separate select" pairs.
+ * A status pill that IS the dropdown: looks like a .badge, click opens a styled
+ * popover of the option pills, color + label flip optimistically the moment a
+ * value is chosen.
  */
 export function BadgeSelect({
   value,
@@ -158,49 +217,53 @@ export function BadgeSelect({
   colorMap: Record<string, string>;
   fallback?: string;
 }) {
-  const [isPending, startTransition] = useTransition();
-  const [optimistic, setOptimistic] = useOptimistic(value);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLSpanElement>(null);
+  useDismiss(open, () => setOpen(false), boxRef);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
   return (
-    <span
-      className={`badge relative cursor-pointer select-none ${colorMap[optimistic] ?? fallback} ${
-        isPending ? "opacity-60" : ""
-      }`}
-    >
-      {isPending ? <Spinner className="mr-1" /> : null}
-      {label}
-      <span aria-hidden className="ml-1 text-[9px] opacity-70">
-        ▾
-      </span>
-      <select
+    <span ref={boxRef} className="relative inline-block">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
         aria-label="Change status"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-        value={optimistic}
         disabled={isPending}
-        onChange={(e) => {
-          const next = e.target.value;
-          startTransition(async () => {
-            setOptimistic(next);
-            setError(null);
-            try {
-              setError(errorFrom(await action(next)));
-            } catch {
-              setError("Something went wrong. Please try again.");
-            }
-            // Pull the fresh server render so the pill sticks and everything
-            // derived from it (steppers, badges, queues) updates immediately.
-            router.refresh();
-          });
-        }}
+        onClick={() => setOpen((o) => !o)}
+        className={`badge cursor-pointer select-none ${colorMap[optimistic] ?? fallback} ${
+          isPending ? "opacity-60" : ""
+        }`}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        {isPending ? <Spinner className="mr-1" /> : null}
+        {label}
+        <span aria-hidden className="ml-1 text-[9px] opacity-70">
+          ▾
+        </span>
+      </button>
+      {open ? (
+        <ul
+          role="listbox"
+          className="card card-flush absolute left-0 top-full z-30 mt-1 max-h-64 w-max overflow-y-auto p-1.5"
+        >
+          {options.map((o) => (
+            <li key={o.value} role="option" aria-selected={o.value === optimistic}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  if (o.value !== optimistic) run(o.value);
+                }}
+                className={`flex w-full items-center rounded-md px-1.5 py-1 transition-colors hover:bg-hover ${
+                  o.value === optimistic ? "bg-hover" : ""
+                }`}
+              >
+                <span className={`badge ${colorMap[o.value] ?? fallback}`}>{o.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {error && <InlineError message={error} />}
     </span>
   );

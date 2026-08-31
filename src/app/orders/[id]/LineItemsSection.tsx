@@ -9,13 +9,14 @@ import {
   setLineItemDeliveryStatus,
 } from "../actions";
 import { DELIVERY_STATUS_COLORS, fmtDate } from "../utils";
-import { BadgeSelect, OptimisticSelect, PendingButton } from "@/lib/ui";
+import { BadgeSelect, PendingButton } from "@/lib/ui";
+import { UserSelect } from "@/lib/UserSelect";
 
 type Item = {
   id: string;
   name: string;
   qty: number;
-  unitCost: number | null;
+  unitPrice: number | null;
   deliveryStatus: string;
   backorderExpected: Date | null;
   assigneeId: string | null;
@@ -54,7 +55,7 @@ export default function LineItemsSection({
           <tr>
             <th>Item</th>
             <th>Qty</th>
-            <th>Cost</th>
+            <th>Price</th>
             <th>Assignee</th>
             <th>Delivery Status</th>
             <th>Ordered / Arrived</th>
@@ -67,14 +68,13 @@ export default function LineItemsSection({
               <td className="font-medium text-ink">{item.name}</td>
               <td className="text-gray-dark">{item.qty}</td>
               <td className="text-gray-dark">
-                {item.unitCost != null ? `$${item.unitCost}` : <span className="text-gray/60">–</span>}
+                {item.unitPrice != null ? `$${item.unitPrice}` : <span className="text-gray/60">–</span>}
               </td>
               <td>
-                <OptimisticSelect
+                <UserSelect
                   value={item.assigneeId ?? ""}
-                  options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+                  users={users}
                   action={(next) => setLineItemAssignee(item.id, next)}
-                  className="input-klyne px-1.5 py-1 text-xs"
                 />
               </td>
               <td>

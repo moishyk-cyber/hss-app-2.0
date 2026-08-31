@@ -97,7 +97,7 @@ export default async function RfqPage() {
                       <th>Qty</th>
                       <th>Parent</th>
                       <th>Waiting</th>
-                      <th>Cost / Price</th>
+                      <th>Price</th>
                       <th>Lead (days)</th>
                       <th>Assignee</th>
                       <th>Actions</th>

@@ -100,20 +100,22 @@ export default async function OrdersPage({
                     className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                   >
                     {order.title}
-                    <span className="ml-2 truncate text-[12px] font-normal text-gray-dark">
-                      {order.company?.name ?? "no company"}
-                    </span>
                   </Link>
 
                   <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
                     {fmtMoney(order.orderValue)}
                   </span>
 
-                  <span className="hidden shrink-0 sm:block">
-                    <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
-                      {order.urgency.replace("_", " ")}
+                  {/* Quiet by default (Moishy: "too many details") - badges only
+                      when they say something: urgency only when urgent, payment
+                      only while money is still owed. */}
+                  {order.urgency !== "standard" ? (
+                    <span className="hidden shrink-0 sm:block">
+                      <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
+                        {order.urgency.replace("_", " ")}
+                      </span>
                     </span>
-                  </span>
+                  ) : null}
 
                   <span className="shrink-0">
                     <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
@@ -121,9 +123,11 @@ export default async function OrdersPage({
                     </span>
                   </span>
 
-                  <span className="hidden shrink-0 md:block">
-                    <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
-                  </span>
+                  {ps !== "paid" ? (
+                    <span className="hidden shrink-0 md:block">
+                      <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
+                    </span>
+                  ) : null}
 
                   <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
                     {fmtDate(order.neededByDate)}

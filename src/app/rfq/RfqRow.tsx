@@ -1,8 +1,9 @@
 "use client";
 
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { PendingButton, ActionButton, BadgeSelect, OptimisticSelect } from "@/lib/ui";
+import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
+import { UserSelect } from "@/lib/UserSelect";
 import { markLineItemRemoved, setLineItemAssignee, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
 
 /** Amber past this many days sitting in the RFQ queue without a status change. */
@@ -35,9 +36,10 @@ export default function RfqRow({
   daysWaiting: number;
 }) {
   async function handleSavePricing(formData: FormData) {
-    const cost = String(formData.get("cost") ?? "");
     const price = String(formData.get("price") ?? "");
-    await updateLineItemPricing(item.id, cost === "" ? null : parseFloat(cost), price === "" ? null : parseFloat(price));
+    // One money field per item (Moishy, Aug 31): price only. unitCost is passed
+    // through unchanged so existing data is preserved without being shown.
+    await updateLineItemPricing(item.id, item.unitCost, price === "" ? null : parseFloat(price));
   }
 
   return (
@@ -65,19 +67,11 @@ export default function RfqRow({
           <input
             type="number"
             step="0.01"
-            name="cost"
-            defaultValue={item.unitCost ?? ""}
-            className="input-klyne w-20 px-1.5 py-1 text-xs"
-            placeholder="cost"
-          />
-          <span className="text-gray">/</span>
-          <input
-            type="number"
-            step="0.01"
             name="price"
             defaultValue={item.unitPrice ?? ""}
-            className="input-klyne w-20 px-1.5 py-1 text-xs"
+            className="input-klyne w-24 px-1.5 py-1 text-xs"
             placeholder="price"
+            aria-label="Price"
           />
           <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]">Save</PendingButton>
         </form>
@@ -86,11 +80,10 @@ export default function RfqRow({
         {item.leadTimeDays != null ? item.leadTimeDays : <span className="text-gray/60">–</span>}
       </td>
       <td className="!py-1.5">
-        <OptimisticSelect
+        <UserSelect
           value={item.assigneeId ?? ""}
-          options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
+          users={users}
           action={(next) => setLineItemAssignee(item.id, next)}
-          className="input-klyne px-1.5 py-1 text-xs"
         />
       </td>
       <td className="!py-1.5">
@@ -101,12 +94,25 @@ export default function RfqRow({
             action={(next) => setLineItemRfqStatus(item.id, next)}
             colorMap={RFQ_STATUS_COLORS}
           />
-          <ActionButton
-            action={() => markLineItemRemoved(item.id)}
-            className="btn btn-sm btn-danger active:scale-[0.99]"
-          >
-            Remove
-          </ActionButton>
+          <span title="Remove item">
+            <ActionButton
+              action={() => markLineItemRemoved(item.id)}
+              className="btn btn-sm btn-danger !px-2 active:scale-[0.99]"
+            >
+              <svg
+                aria-label="Remove item"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </ActionButton>
+          </span>
         </div>
       </td>
     </tr>

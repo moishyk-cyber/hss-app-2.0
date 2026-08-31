@@ -22,7 +22,7 @@ type Item = {
   id: string;
   name: string;
   qty: number;
-  unitCost: number | null;
+  unitPrice: number | null;
   deliveryStatus: string;
   backorderExpected: Date | null;
   assigneeId: string | null;

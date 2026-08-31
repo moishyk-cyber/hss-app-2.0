@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { DELIVERY_STATUSES, RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
+import { BadgeSelect, Spinner } from "@/lib/ui";
+import { UserSelect } from "@/lib/UserSelect";
 import type { ActionResult } from "@/lib/actionResult";
 import {
   updateLineItemAssignee,
@@ -121,10 +122,9 @@ export function LineItemRow({
       {/* Cost and Price deliberately absent - pricing is edited in the RFQ queue. */}
 
       <td>
-        <OptimisticSelect
+        <UserSelect
           value={item.assigneeId ?? ""}
-          options={assigneeOptions}
-          className="input-klyne max-w-[10rem] px-2 py-1 text-xs"
+          users={users}
           action={(next) => updateLineItemAssignee(item.id, next)}
         />
       </td>

@@ -36,7 +36,7 @@ export async function updateLineItemPricing(
       where: { id: lineItemId },
       data: { unitCost, unitPrice },
     });
-    await log(lineItemId, "rfq_pricing_updated", `Cost/price updated to ${unitCost ?? "not set"} / ${unitPrice ?? "not set"}`);
+    await log(lineItemId, "rfq_pricing_updated", `Price updated to ${unitPrice ?? "not set"}`);
     await revalidateLineItem(lineItemId);
   }, "Could not update pricing. Please try again.");
 }
