@@ -52,7 +52,7 @@ export function UrgencyStatusControls({
           action={() => (isComplete ? reopenOrder(orderId) : isStuck ? unstickOrder(orderId) : markOrderStuck(orderId))}
           className="btn btn-sm active:scale-[0.99]"
         >
-          {isComplete ? "Reopen" : isStuck ? "Unstick" : "Mark stuck"}
+          {isComplete ? "Reopen" : isStuck ? "Resume" : "Mark stuck"}
         </ActionButton>
       </label>
       <label className="flex items-center gap-2">
