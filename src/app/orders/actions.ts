@@ -13,6 +13,8 @@ import {
   FLOW_ORDER_INCLUDE,
 } from "@/lib/flow";
 import { isValidValue, ORDER_URGENCIES, DELIVERY_STATUSES, PO_DELIVERY_STATUSES } from "@/lib/constants";
+import { PAYMENT_TYPES } from "./utils";
+import { findCompanyByNormalizedName } from "../companies/nameMatch";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("order", linkedId, action, detail);
@@ -22,6 +24,8 @@ function revalidateOrder(orderId: string) {
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
   revalidatePath("/dashboard");
+  // The deliveries tracker renders PO status/shipment data - keep it fresh too.
+  revalidatePath("/deliveries");
 }
 
 /** Add a line item to an existing order (the client called back and added something). */
@@ -161,33 +165,40 @@ export async function reopenOrder(orderId: string): Promise<ActionResult> {
   }, "Could not reopen the order. Please try again.");
 }
 
-export async function updateOrderQbInvoice(
+/**
+ * Invoice tab (Aug 31 feedback): adding a QuickBooks invoice asks for the invoice
+ * type, the amount, and (optionally) the QuickBooks link in one shot. Creates the
+ * Payment already in "invoiced" status - there's no separate "record payment then
+ * mark invoiced" step for invoices created this way. Legacy "pending" payments
+ * (recorded before this change) keep working through markPaymentInvoiced below.
+ */
+export async function addInvoice(
   orderId: string,
-  quickbooksInvoiceNo: string
+  type: string,
+  amount: number,
+  quickbooksLink: string
 ): Promise<ActionResult> {
-  return safeAction(async () => {
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { quickbooksInvoiceNo: quickbooksInvoiceNo || null },
-    });
-    await log(orderId, "order_qb_invoice_set", `QuickBooks invoice # set to ${quickbooksInvoiceNo || "not set"}`);
-    revalidateOrder(orderId);
-  }, "Could not save the invoice number. Please try again.");
-}
-
-export async function addPayment(orderId: string, type: string, amount: number): Promise<ActionResult> {
+  if (!isValidValue(PAYMENT_TYPES, type)) {
+    return { ok: false, message: "Pick an invoice type." };
+  }
   if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, message: "Enter a valid payment amount greater than $0." };
+    return { ok: false, message: "Enter a valid amount greater than $0." };
   }
   if (amount > 10_000_000) {
     return { ok: false, message: "That amount looks too large - double-check it." };
   }
+  const link = quickbooksLink.trim();
+  if (link && !/^https?:\/\//i.test(link)) {
+    return { ok: false, message: "The QuickBooks link should start with http:// or https://." };
+  }
   return safeAction(async () => {
-    await prisma.payment.create({ data: { orderId, type, amount, status: "pending" } });
-    await log(orderId, "payment_added", `Payment added: ${type} $${amount}`);
+    await prisma.payment.create({
+      data: { orderId, type, amount, status: "invoiced", quickbooksRef: link || null },
+    });
+    await log(orderId, "invoice_added", `Invoice added: ${type} $${amount}${link ? " (QuickBooks link attached)" : ""}`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
-  }, "Could not record the payment. Please try again.");
+  }, "Could not add the invoice. Please try again.");
 }
 
 export async function markPaymentInvoiced(paymentId: string): Promise<ActionResult> {
@@ -258,25 +269,54 @@ export async function setLineItemBackorderExpected(
 }
 
 /**
+ * Resolves the vendor to attach a PO to: an existing company id, or a typed name
+ * that either matches an existing company (by normalized name - same dedupe rule
+ * as intake) or creates a new one, type "supplier". Mirrors the business/contact
+ * search-or-create pattern on intake (Aug 31 feedback: "when selecting a vendor,
+ * do the same thing as business and creating a contact").
+ */
+async function resolveVendor(
+  supplierId: string,
+  newVendorName: string
+): Promise<{ id: string; name: string; created: boolean } | null> {
+  if (supplierId) {
+    const existing = await prisma.company.findUnique({ where: { id: supplierId }, select: { id: true, name: true } });
+    return existing ? { id: existing.id, name: existing.name, created: false } : null;
+  }
+  const trimmed = newVendorName.trim();
+  if (!trimmed) return null;
+  const match = await findCompanyByNormalizedName(trimmed);
+  if (match) return { id: match.id, name: match.name, created: false };
+  const created = await prisma.company.create({ data: { name: trimmed, type: "supplier" } });
+  return { id: created.id, name: created.name, created: true };
+}
+
+/**
  * Create a PO for one vendor, attaching only the explicitly chosen line items.
  * PO numbers are allocated by counting existing POs on the order and retrying
  * on a collision (two people creating a PO on the same order at once), guarded
- * by the @@unique([orderId, poNumber]) constraint in the schema.
+ * by the @@unique([orderId, poNumber]) constraint in the schema. `supplierId`
+ * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
+ * match for) one instead - exactly one of the two should be set.
  */
 export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
-  lineItemIds: string[]
+  lineItemIds: string[],
+  newVendorName: string = ""
 ): Promise<ActionResult> {
-  if (!supplierId || lineItemIds.length === 0) {
-    return { ok: false, message: "Pick a vendor and at least one item." };
+  if ((!supplierId && !newVendorName.trim()) || lineItemIds.length === 0) {
+    return { ok: false, message: "Pick or create a vendor, and at least one item." };
   }
   return safeAction(async () => {
-    const [order, supplier] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId } }),
-      prisma.company.findUnique({ where: { id: supplierId } }),
-    ]);
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Order not found");
+
+    const vendor = await resolveVendor(supplierId, newVendorName);
+    if (!vendor) throw new Error("Vendor not found");
+    if (vendor.created) {
+      await log(orderId, "vendor_created", `Vendor "${vendor.name}" created while creating a PO`);
+    }
 
     const base = order.jobId || order.id.slice(-6).toUpperCase();
 
@@ -287,7 +327,7 @@ export async function createPurchaseOrder(
       const poNumber = `PO-${base}-${existing + 1}`;
       try {
         po = await prisma.purchaseOrder.create({
-          data: { orderId, supplierId, poNumber, status: "draft" },
+          data: { orderId, supplierId: vendor.id, poNumber, status: "draft" },
         });
         break;
       } catch (err) {
@@ -302,7 +342,7 @@ export async function createPurchaseOrder(
       where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
       data: { purchaseOrderId: po.id },
     });
-    await log(orderId, "po_created", `PO ${po.poNumber} created for ${supplier?.name ?? "vendor"} (${lineItemIds.length} item(s))`);
+    await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not create the purchase order. Please try again.");

@@ -1,6 +1,17 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES, ORDER_STATUSES, labelFor } from "@/lib/constants";
+import {
+  OPPORTUNITY_STAGES,
+  ORDER_STATUSES,
+  RFQ_STATUSES,
+  TASK_STATUSES,
+  ORDER_STATUS_COLORS,
+  RFQ_STATUS_COLORS,
+  STAGE_COLORS,
+  labelFor,
+} from "@/lib/constants";
+import { currentUserId } from "@/lib/identityServer";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
 import { HorizontalBarChart } from "./charts/HorizontalBarChart";
@@ -9,17 +20,14 @@ import { GroupedBarChart } from "./charts/GroupedBarChart";
 import { buildWeeklyCounts, buildMonthlyBuckets, buildMonthlyMix } from "./charts/buckets";
 import { fmtMoney, fmtCompactMoney, fmtCount } from "./charts/colors";
 import { QueueCard, type QueueRow } from "./QueueCard";
+import { DashboardTabs } from "./DashboardTabs";
+import { RangePicker } from "./RangePicker";
+import { resolveRange } from "./ranges";
 
 export const dynamic = "force-dynamic";
 
 const OPEN_STAGES = OPPORTUNITY_STAGES.filter((s) => s.value !== "won" && s.value !== "lost").map((s) => s.value);
-
-type RangeKey = "month" | "90d" | "12m";
-const RANGE_CONFIG: Record<RangeKey, { days: number; weeks: number; months: number; label: string }> = {
-  month: { days: 30, weeks: 5, months: 3, label: "This Month" },
-  "90d": { days: 90, weeks: 13, months: 6, label: "90 Days" },
-  "12m": { days: 365, weeks: 26, months: 12, label: "12 Months" },
-};
+const RFQ_QUEUE_VALUES = RFQ_QUEUE_STATUSES.map((s) => s.value) as string[];
 
 /** Days between two dates, floored - used for every "N days ago / waiting" queue label. */
 function daysBetween(a: Date, b: Date): number {
@@ -46,20 +54,35 @@ function StatTile({
   );
 }
 
+/** Date chip for a follow-up / due / needed-by date, flagged when it is past due. */
+function DateChip({ date, overdue, prefix }: { date: Date | null; overdue: boolean; prefix: string }) {
+  if (!date) return <span className="empty-value text-xs">no date</span>;
+  return (
+    <span className={overdue ? "badge badge-orange" : "badge badge-gray"}>
+      {overdue ? "Overdue " : `${prefix} `}
+      {date.toLocaleDateString()}
+    </span>
+  );
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
 }) {
-  const { range: rawRange } = await searchParams;
-  const range: RangeKey = rawRange === "month" || rawRange === "12m" ? rawRange : "90d";
-  const cfg = RANGE_CONFIG[range];
+  const { range: rawRange, from, to } = await searchParams;
 
   const now = new Date();
-  const rangeStart = new Date(now.getTime() - cfg.days * 24 * 60 * 60 * 1000);
+  const cfg = resolveRange(now, rawRange, from, to);
+  const rangeStart = cfg.start;
+  const rangeEnd = cfg.end;
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1);
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  // "Working as" identity from the sidebar cookie. The sentinel keeps the
+  // My Items queries in the same parallel batch without matching any row.
+  const userId = await currentUserId();
+  const mineId = userId ?? "__no_identity__";
 
   const [
     urgentOrders,
@@ -71,12 +94,14 @@ export default async function DashboardPage({
     intakeOpportunities,
     standaloneOrders,
     mixOrders,
-    followUpOpportunities,
-    overdueTasks,
     ordersAwaitingPayment,
     posInFlight,
     poDeliveriesThisWeek,
     ordersDueThisWeek,
+    myDeals,
+    myOrders,
+    myTasks,
+    myPricingItemsRaw,
   ] = await Promise.all([
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
@@ -109,34 +134,22 @@ export default async function DashboardPage({
     }),
     prisma.lineItem.groupBy({
       by: ["rfqStatus"],
-      where: { rfqStatus: { in: RFQ_QUEUE_STATUSES.map((s) => s.value) as string[] } },
+      where: { rfqStatus: { in: RFQ_QUEUE_VALUES } },
       _count: { _all: true },
     }),
     prisma.opportunity.findMany({
-      where: { createdAt: { gte: rangeStart } },
+      where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
       select: { createdAt: true },
     }),
     prisma.order.findMany({
-      where: { createdAt: { gte: rangeStart }, opportunityId: null },
+      where: { createdAt: { gte: rangeStart, lte: rangeEnd }, opportunityId: null },
       select: { createdAt: true },
     }),
     prisma.order.findMany({
-      where: { createdAt: { gte: rangeStart } },
+      where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
       select: { orderType: true, createdAt: true },
     }),
-    // ---- Queue 2: follow-ups due (opportunities) ----
-    prisma.opportunity.findMany({
-      where: { stage: { notIn: ["won", "lost"] }, nextFollowUp: { lte: endOfToday } },
-      select: { id: true, title: true, nextFollowUp: true },
-      orderBy: { nextFollowUp: "asc" },
-    }),
-    // ---- Queue 2: follow-ups due (overdue tasks) ----
-    prisma.task.findMany({
-      where: { dueDate: { lt: startOfToday }, status: { not: "done" } },
-      select: { id: true, title: true, dueDate: true },
-      orderBy: { dueDate: "asc" },
-    }),
-    // ---- Queue 4: orders awaiting payment (also feeds the stat tile) ----
+    // ---- Team queue: orders awaiting payment (also feeds the stat tile) ----
     prisma.order.findMany({
       where: {
         OR: [{ status: "awaiting_payment" }, { status: "new", payments: { some: { status: { not: "paid" } } } }],
@@ -151,7 +164,7 @@ export default async function DashboardPage({
       },
       orderBy: { createdAt: "asc" },
     }),
-    // ---- Queue 5: POs awaiting acknowledgment / in transit ----
+    // ---- Team queue: POs awaiting acknowledgment / in transit ----
     prisma.purchaseOrder.findMany({
       where: { status: { in: ["sent", "shipped"] } },
       select: {
@@ -165,7 +178,7 @@ export default async function DashboardPage({
       },
       orderBy: { sentDate: "asc" },
     }),
-    // ---- Queue 6: deliveries this week (POs) ----
+    // ---- Team queue: deliveries this week (POs) ----
     prisma.purchaseOrder.findMany({
       where: {
         OR: [
@@ -182,12 +195,45 @@ export default async function DashboardPage({
         order: { select: { title: true } },
       },
     }),
-    // ---- Queue 6: deliveries this week (orders by neededByDate) ----
+    // ---- Team queue: deliveries this week (orders by neededByDate) ----
     prisma.order.findMany({
       where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
       select: { id: true, title: true, neededByDate: true },
     }),
+    // ---- My Items: everything OPEN with my name on it. With no identity
+    // picked, `mineId` matches nothing, so these come back empty and the tab
+    // shows its "pick your name" empty state instead. ----
+    prisma.opportunity.findMany({
+      where: { salespersonId: mineId, stage: { notIn: ["won", "lost"] } },
+      select: { id: true, title: true, stage: true, nextFollowUp: true },
+      orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
+    }),
+    prisma.order.findMany({
+      where: { ownerId: mineId, status: { not: "complete" } },
+      select: { id: true, title: true, status: true, neededByDate: true },
+      orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }],
+    }),
+    prisma.task.findMany({
+      where: { assigneeId: mineId, status: { not: "done" } },
+      select: { id: true, title: true, status: true, dueDate: true },
+      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    }),
+    prisma.lineItem.findMany({
+      where: { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES } },
+      select: {
+        id: true,
+        name: true,
+        rfqStatus: true,
+        createdAt: true,
+        orderId: true,
+        opportunity: { select: { stage: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
+
+  // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
+  const myPricingItems = myPricingItemsRaw.filter((i) => !isDeadDealItem(i));
 
   // ---- KPI tiles ----
   const openPipelineValue = opportunityStageGroups.reduce((sum, g) => sum + (g._sum.value ?? 0), 0);
@@ -199,7 +245,7 @@ export default async function DashboardPage({
   // rare won opportunity with no order yet.
   const wonInRange = wonOpportunities
     .map((o) => ({ value: o.value ?? 0, date: o.orders[0]?.createdAt ?? o.createdAt }))
-    .filter((o) => o.date >= rangeStart);
+    .filter((o) => o.date >= rangeStart && o.date <= rangeEnd);
   const wonValueInRange = wonInRange.reduce((sum, o) => sum + o.value, 0);
 
   const openOrdersValue = orderStatusGroups
@@ -222,14 +268,14 @@ export default async function DashboardPage({
   // opportunity are intentionally excluded - counting both would double the
   // same underlying intake event. Includes both form and manual submissions.
   const intakeDates = [...intakeOpportunities.map((o) => o.createdAt), ...standaloneOrders.map((o) => o.createdAt)];
-  const intakeChartData = buildWeeklyCounts(intakeDates, cfg.weeks, now);
+  const intakeChartData = buildWeeklyCounts(intakeDates, cfg.weeks, rangeEnd);
 
   // ---- Chart (c): won value by month ----
   const wonForChart = wonOpportunities.map((o) => ({
     amount: o.value ?? 0,
     date: o.orders[0]?.createdAt ?? o.createdAt,
   }));
-  const wonChartData = buildMonthlyBuckets(wonForChart, cfg.months, now, "sum");
+  const wonChartData = buildMonthlyBuckets(wonForChart, cfg.months, rangeEnd, "sum");
 
   // ---- Chart (d): orders by status - full fulfillment ladder, not range-bound ----
   const statusChartData = ORDER_STATUSES.map((s) => {
@@ -241,11 +287,11 @@ export default async function DashboardPage({
   const mixChartData = buildMonthlyMix(
     mixOrders.map((o) => ({ date: o.createdAt, type: o.orderType })),
     cfg.months,
-    now,
+    rangeEnd,
     "project"
   );
 
-  // ---- Queue 3 / RFQ health: items needing pricing, minus dead deals (same rule as /rfq) ----
+  // ---- RFQ health: items needing pricing, minus dead deals (same rule as /rfq) ----
   const pricingItems = needsPricingItemsRaw.filter((i) => !isDeadDealItem(i));
   const avgDaysWaiting =
     pricingItems.length > 0
@@ -255,26 +301,7 @@ export default async function DashboardPage({
   for (const s of RFQ_QUEUE_STATUSES) rfqCounts[s.value] = 0;
   for (const g of rfqStageGroups) rfqCounts[g.rfqStatus] = g._count._all;
 
-  // ---- Queue 2: follow-ups due + overdue tasks, oldest first ----
-  type FollowUpRow = { href: string; label: string; date: Date; overdue: boolean; kind: "Opportunity" | "Task" };
-  const followUpRows: FollowUpRow[] = [
-    ...followUpOpportunities.map((o) => ({
-      href: `/pipeline/${o.id}`,
-      label: o.title,
-      date: o.nextFollowUp as Date,
-      overdue: (o.nextFollowUp as Date) < startOfToday,
-      kind: "Opportunity" as const,
-    })),
-    ...overdueTasks.map((t) => ({
-      href: "/tasks",
-      label: t.title,
-      date: t.dueDate as Date,
-      overdue: true,
-      kind: "Task" as const,
-    })),
-  ].sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  // ---- Queue 4: orders awaiting payment (amount due + type), also drives the stat tile ----
+  // ---- Team queue: orders awaiting payment (amount due + type), also drives the stat tile ----
   const awaitingPaymentRows = ordersAwaitingPayment.map((o) => {
     const nonPaid = o.payments.filter((p) => p.status !== "paid");
     const amountDue = nonPaid.length > 0 ? nonPaid.reduce((sum, p) => sum + p.amount, 0) : o.orderValue ?? 0;
@@ -283,8 +310,8 @@ export default async function DashboardPage({
   });
   const awaitingPaymentValue = awaitingPaymentRows.reduce((sum, r) => sum + r.amountDue, 0);
 
-  // ---- Queue 5: POs awaiting acknowledgment (sent) / in transit (shipped) ----
-  const poQueueRows: QueueRow[] = posInFlight.slice(0, 5).map((po) => {
+  // ---- Team queue: POs awaiting acknowledgment (sent) / in transit (shipped) ----
+  const poQueueRows: QueueRow[] = posInFlight.slice(0, 8).map((po) => {
     const sentDaysAgo = po.status === "sent" && po.sentDate ? daysBetween(now, po.sentDate) : null;
     return {
       href: `/orders/${po.orderId}#purchase-orders`,
@@ -301,13 +328,13 @@ export default async function DashboardPage({
     };
   });
 
-  // ---- Queue 6: deliveries this week (POs + orders by neededByDate) ----
+  // ---- Team queue: deliveries this week (POs + orders by neededByDate) ----
   type DeliveryRow = { href: string; label: string; date: Date; meta: string };
   const deliveryRows: DeliveryRow[] = [
     ...poDeliveriesThisWeek.map((po) => {
       const date = (po.scheduledDeliveryDate ?? po.expectedDelivery) as Date;
       return {
-        href: `/orders/${po.orderId}#purchase-orders`,
+        href: `/orders/${po.orderId}#delivery`,
         label: `${po.poNumber ?? "PO"} - ${po.order.title}`,
         date,
         meta: po.scheduledDeliveryDate ? "scheduled" : "expected",
@@ -321,25 +348,15 @@ export default async function DashboardPage({
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  return (
+  // ------------------------------------------------------------------
+  // Tab 1: Overview - the numbers and the graphs.
+  // ------------------------------------------------------------------
+  const overview = (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-sub">Business health at a glance.</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/dashboard?range=month" className={range === "month" ? "chip chip-active" : "chip"}>
-            This month
-          </Link>
-          <Link href="/dashboard?range=90d" className={range === "90d" ? "chip chip-active" : "chip"}>
-            90 days
-          </Link>
-          <Link href="/dashboard?range=12m" className={range === "12m" ? "chip chip-active" : "chip"}>
-            12 months
-          </Link>
-        </div>
-      </div>
+      {/* useSearchParams needs a boundary even on a force-dynamic page. */}
+      <Suspense fallback={<div className="h-14" />}>
+        <RangePicker />
+      </Suspense>
 
       {urgentOrders.length > 0 && (
         <Link
@@ -380,113 +397,6 @@ export default async function DashboardPage({
           accent="var(--accent)"
         />
         <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} accent="var(--primary)" />
-      </div>
-
-      {/* Queue 2: Follow-ups due - opportunities + overdue tasks share one card, but each
-          record type keeps its own "View all" (opportunities have no combined view). */}
-      <div className="card">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="section-label flex items-center gap-2">
-            Follow-ups Due
-            <span className="badge badge-gray">{followUpRows.length}</span>
-          </h3>
-          {followUpRows.length > 0 && (
-            <div className="flex shrink-0 gap-3 text-xs font-medium">
-              <Link href="/pipeline" className="text-blue transition-colors hover:underline">
-                Pipeline
-              </Link>
-              <Link href="/tasks" className="text-blue transition-colors hover:underline">
-                Tasks
-              </Link>
-            </div>
-          )}
-        </div>
-        {followUpRows.length === 0 ? (
-          <div className="empty-state mt-2">
-            Nothing due. Follow-ups come from an opportunity&apos;s next-follow-up date and task due dates.
-          </div>
-        ) : (
-          <ul className="mt-2 divide-y divide-border">
-            {followUpRows.slice(0, 5).map((row, i) => (
-              <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <Link href={row.href} className="min-w-0 flex-1 truncate text-blue transition-colors hover:underline">
-                  {row.label}
-                </Link>
-                <span className="shrink-0 text-xs text-gray-dark">{row.kind}</span>
-                {row.overdue ? (
-                  <span className="badge badge-orange shrink-0">Overdue</span>
-                ) : (
-                  <span className="shrink-0 text-xs text-gray-dark">{row.date.toLocaleDateString()}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        {/* Queue 3: Items needing pricing */}
-        <QueueCard
-          title="Items Needing Pricing"
-          count={pricingItems.length}
-          viewAllHref="/rfq"
-          rows={pricingItems.slice(0, 5).map(
-            (item): QueueRow => {
-              const wait = daysBetween(now, item.createdAt);
-              return {
-                href: `/rfq#li-${item.id}`,
-                primary: item.name,
-                meta: <span className={wait > 7 ? "font-medium text-orange" : "text-gray-dark"}>{wait}d waiting</span>,
-              };
-            }
-          )}
-          emptyText={
-            <>
-              Nothing needs pricing. Items land here from Intake when they need a price.
-            </>
-          }
-        />
-
-        {/* Queue 4: Orders awaiting payment */}
-        <QueueCard
-          title="Orders Awaiting Payment"
-          count={awaitingPaymentRows.length}
-          viewAllHref="/orders?status=awaiting_payment"
-          rows={awaitingPaymentRows.slice(0, 5).map(
-            (o): QueueRow => ({
-              href: `/orders/${o.id}#payments`,
-              primary: o.title,
-              secondary: o.paymentType,
-              meta: fmtMoney(o.amountDue),
-            })
-          )}
-          emptyText="Nothing awaiting payment. Orders land here once a deposit or full payment is due but not yet paid."
-        />
-
-        {/* Queue 5: POs awaiting acknowledgment / in transit */}
-        <QueueCard
-          title="POs Awaiting Acknowledgment / In Transit"
-          count={posInFlight.length}
-          viewAllHref="/orders"
-          rows={poQueueRows}
-          emptyText="No POs in flight. They'll show up here once one is sent to a vendor."
-        />
-
-        {/* Queue 6: Deliveries this week */}
-        <QueueCard
-          title="Deliveries This Week"
-          count={deliveryRows.length}
-          viewAllHref="/orders?due=week"
-          rows={deliveryRows.slice(0, 5).map(
-            (row): QueueRow => ({
-              href: row.href,
-              primary: row.label,
-              secondary: row.meta,
-              meta: row.date.toLocaleDateString(),
-            })
-          )}
-          emptyText="Nothing scheduled to arrive this week."
-        />
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -552,6 +462,189 @@ export default async function DashboardPage({
           ))}
         </div>
       </div>
+    </div>
+  );
+
+  // ------------------------------------------------------------------
+  // Tab 2: My Items - everything open with my name on it, then the team
+  // queues that belong to nobody in particular.
+  // ------------------------------------------------------------------
+  const myItems = (
+    <div className="space-y-8">
+      {!userId ? (
+        <div className="empty-state">
+          Pick your name in the sidebar to see your items. Until then, only the team queues below apply to you.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <QueueCard
+            title="My Deals"
+            count={myDeals.length}
+            viewAllHref="/pipeline"
+            viewAllLabel="All deals"
+            rows={myDeals.slice(0, 8).map(
+              (d): QueueRow => ({
+                href: `/pipeline/${d.id}`,
+                primary: d.title,
+                secondary: (
+                  <span className={`badge ${STAGE_COLORS[d.stage] ?? "badge-gray"}`}>
+                    {labelFor(OPPORTUNITY_STAGES, d.stage)}
+                  </span>
+                ),
+                meta: (
+                  <DateChip
+                    date={d.nextFollowUp}
+                    overdue={!!d.nextFollowUp && d.nextFollowUp < startOfToday}
+                    prefix="Follow up"
+                  />
+                ),
+              })
+            )}
+            emptyText="No open deals assigned to you. Deals land here when you are set as the salesperson."
+          />
+
+          <QueueCard
+            title="My Orders"
+            count={myOrders.length}
+            viewAllHref="/orders"
+            viewAllLabel="All orders"
+            rows={myOrders.slice(0, 8).map(
+              (o): QueueRow => ({
+                href: `/orders/${o.id}`,
+                primary: o.title,
+                secondary: (
+                  <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>
+                    {labelFor(ORDER_STATUSES, o.status)}
+                  </span>
+                ),
+                meta: (
+                  <DateChip
+                    date={o.neededByDate}
+                    overdue={!!o.neededByDate && o.neededByDate < startOfToday}
+                    prefix="Needed"
+                  />
+                ),
+              })
+            )}
+            emptyText="No open orders assigned to you. Orders land here when you are set as the owner."
+          />
+
+          <QueueCard
+            title="My Tasks"
+            count={myTasks.length}
+            viewAllHref="/tasks"
+            viewAllLabel="All tasks"
+            rows={myTasks.slice(0, 8).map(
+              (t): QueueRow => ({
+                href: "/tasks",
+                primary: t.title,
+                secondary: <span className="text-xs text-gray-dark">{labelFor(TASK_STATUSES, t.status)}</span>,
+                meta: (
+                  <DateChip
+                    date={t.dueDate}
+                    overdue={!!t.dueDate && t.dueDate < startOfToday}
+                    prefix="Due"
+                  />
+                ),
+              })
+            )}
+            emptyText="No open tasks assigned to you. Tasks land here when someone assigns one to your name."
+          />
+
+          <QueueCard
+            title="My Items to Price"
+            count={myPricingItems.length}
+            viewAllHref="/rfq"
+            viewAllLabel="RFQ queue"
+            rows={myPricingItems.slice(0, 8).map(
+              (item): QueueRow => {
+                const wait = daysBetween(now, item.createdAt);
+                return {
+                  href: `/rfq#li-${item.id}`,
+                  primary: item.name,
+                  secondary: (
+                    <span className={`badge ${RFQ_STATUS_COLORS[item.rfqStatus] ?? "badge-gray"}`}>
+                      {labelFor(RFQ_STATUSES, item.rfqStatus)}
+                    </span>
+                  ),
+                  meta: <span className={wait > 7 ? "font-medium text-orange" : "text-gray-dark"}>{wait}d waiting</span>,
+                };
+              }
+            )}
+            emptyText="Nothing assigned to you to price. Items land here from Intake once they are assigned to you."
+          />
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <h2 className="section-label">Team queues</h2>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <QueueCard
+            title="Items Needing Pricing"
+            count={pricingItems.length}
+            viewAllHref="/rfq"
+            rows={pricingItems.slice(0, 8).map(
+              (item): QueueRow => {
+                const wait = daysBetween(now, item.createdAt);
+                return {
+                  href: `/rfq#li-${item.id}`,
+                  primary: item.name,
+                  meta: <span className={wait > 7 ? "font-medium text-orange" : "text-gray-dark"}>{wait}d waiting</span>,
+                };
+              }
+            )}
+            emptyText="Nothing needs pricing. Items land here from Intake when they need a price."
+          />
+
+          <QueueCard
+            title="Orders Awaiting Payment"
+            count={awaitingPaymentRows.length}
+            viewAllHref="/orders?status=awaiting_payment"
+            rows={awaitingPaymentRows.slice(0, 8).map(
+              (o): QueueRow => ({
+                href: `/orders/${o.id}#invoice`,
+                primary: o.title,
+                secondary: o.paymentType,
+                meta: fmtMoney(o.amountDue),
+              })
+            )}
+            emptyText="Nothing awaiting payment. Orders land here once a deposit or full payment is due but not yet paid."
+          />
+
+          <QueueCard
+            title="POs Awaiting Acknowledgment / In Transit"
+            count={posInFlight.length}
+            viewAllHref="/deliveries"
+            rows={poQueueRows}
+            emptyText="No POs in flight. They'll show up here once one is sent to a vendor."
+          />
+
+          <QueueCard
+            title="Deliveries This Week"
+            count={deliveryRows.length}
+            viewAllHref="/deliveries"
+            rows={deliveryRows.slice(0, 8).map(
+              (row): QueueRow => ({
+                href: row.href,
+                primary: row.label,
+                secondary: row.meta,
+                meta: row.date.toLocaleDateString(),
+              })
+            )}
+            emptyText="Nothing scheduled to arrive this week."
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-sub">Business health at a glance.</p>
+      </div>
+      <DashboardTabs overview={overview} myItems={myItems} />
     </div>
   );
 }

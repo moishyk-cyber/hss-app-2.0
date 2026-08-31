@@ -7,8 +7,21 @@ export function BackLink({ href, label = "Back" }: { href: string; label?: strin
   return (
     <Link
       href={href}
-      className="inline-flex items-center rounded-full border border-border bg-panel px-3 py-1.5 text-[12.5px] font-medium text-gray-dark transition-colors hover:bg-hover hover:text-ink"
+      className="inline-flex items-center gap-1 rounded-full border border-border bg-panel py-1.5 pl-2 pr-3 text-[12.5px] font-medium text-gray-dark transition-colors hover:bg-hover hover:text-ink"
     >
+      <svg
+        aria-hidden
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
       {label}
     </Link>
   );

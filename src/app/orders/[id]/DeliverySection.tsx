@@ -1,17 +1,21 @@
 "use client";
 
-// Delivery tab (Aug 31 feedback: "a delivery tab" under each order). Reads
-// top-to-bottom: the line-items table first (per-item delivery status,
-// arrival dates, backorder date, assignee, and the add-item form), then each
-// PO's real-world delivery-day info - trucker, pickup address, scheduled
-// delivery date, ship cost, delivery-day contact - plus that PO's own
-// delivery-status pill. PO status ladder / sent-aging / carrier tracking stay
-// on the Purchase Orders tab; this tab is the delivery-day view only.
-
+// Delivery tab (Aug 31 feedback: "a delivery tab" under each order, then later
+// "show ALL the tracking/trucking info in one place per PO"). Reads top-to-bottom:
+// the line-items table first (per-item delivery status, arrival dates, backorder
+// date, assignee, and the add-item form), then each PO's complete delivery-day
+// picture in one card - trucker, pickup address, scheduled delivery date, expected
+// delivery, ship cost + charged-to-customer, delivery contact phone, carrier
+// tracking link, and that PO's own delivery-status pill - so nothing requires
+// hopping to the Purchase Orders tab just to see delivery info. Expected delivery
+// and the carrier tracking link are still edited on the Purchase Orders tab
+// (procurement view); showing them here too is intentional duplication of
+// read-only info, not a second source of truth.
 import { useState } from "react";
 import { PO_DELIVERY_STATUSES, PO_DELIVERY_STATUS_COLORS } from "@/lib/constants";
 import { setPoDeliveryStatus, updatePoShipmentDetails } from "../actions";
 import { PendingButton, BadgeSelect } from "@/lib/ui";
+import { fmtDate } from "../utils";
 import LineItemsSection from "./LineItemsSection";
 
 type Item = {
@@ -39,6 +43,9 @@ type Po = {
   shipCost: number | null;
   chargedToCustomer: boolean;
   deliveryContactPhone: string | null;
+  expectedDelivery: Date | null;
+  trackingUrl: string | null;
+  trackingCarrier: string | null;
   supplier: { name: string; deliveryAddress: string | null } | null;
 };
 
@@ -74,6 +81,21 @@ export default function DeliverySection({
                     action={(next) => setPoDeliveryStatus(po.id, next)}
                     colorMap={PO_DELIVERY_STATUS_COLORS}
                   />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-dark">
+                  <span>Expected: {fmtDate(po.expectedDelivery)}</span>
+                  {po.trackingUrl ? (
+                    <a
+                      href={po.trackingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue transition-colors hover:underline"
+                    >
+                      Track shipment{po.trackingCarrier ? ` (${po.trackingCarrier})` : ""}
+                    </a>
+                  ) : (
+                    <span className="empty-value">no tracking link yet</span>
+                  )}
                 </div>
                 <ShipmentDetailsEdit
                   poId={po.id}

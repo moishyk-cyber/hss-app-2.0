@@ -105,6 +105,7 @@ export function OptimisticSelect({
   const [isPending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(value);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   return (
     <span className="relative inline-flex items-center gap-2">
       {render?.(optimistic, isPending)}
@@ -122,6 +123,9 @@ export function OptimisticSelect({
             } catch {
               setError("Something went wrong. Please try again.");
             }
+            // Pull the fresh server render so the value sticks and everything
+            // derived from it (steppers, badges, queues) updates immediately.
+            router.refresh();
           });
         }}
       >
@@ -157,6 +161,7 @@ export function BadgeSelect({
   const [isPending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useOptimistic(value);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
   return (
     <span
@@ -184,6 +189,9 @@ export function BadgeSelect({
             } catch {
               setError("Something went wrong. Please try again.");
             }
+            // Pull the fresh server render so the pill sticks and everything
+            // derived from it (steppers, badges, queues) updates immediately.
+            router.refresh();
           });
         }}
       >
@@ -210,6 +218,7 @@ export function ActionButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   return (
     <span className="relative inline-flex">
       <button
@@ -225,6 +234,8 @@ export function ActionButton({
             } catch {
               setError("Something went wrong. Please try again.");
             }
+            // Fresh server render so downstream state (stepper, badges) updates.
+            router.refresh();
           })
         }
       >

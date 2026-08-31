@@ -14,7 +14,10 @@ const SECTIONS: { label: string | null; items: { href: string; label: string }[]
   },
   {
     label: "Fulfill",
-    items: [{ href: "/orders", label: "Orders" }],
+    items: [
+      { href: "/orders", label: "Orders" },
+      { href: "/deliveries", label: "Deliveries" },
+    ],
   },
   {
     label: "Everyone",

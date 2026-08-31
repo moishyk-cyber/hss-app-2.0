@@ -10,8 +10,19 @@ export type QueueRow = {
 };
 
 /**
+ * Small muted count pill used next to every queue / section heading. Shared so
+ * the number never reads as a status badge and never sits bare against the
+ * title (Aug 31 feedback round 3).
+ */
+export function CountPill({ count }: { count: number }) {
+  return (
+    <span className="rounded bg-hover px-1.5 py-0.5 text-xs font-medium text-gray">{count}</span>
+  );
+}
+
+/**
  * One actionable dashboard queue (docs/UX_FLOW.md §C): a title + count, up to
- * `rows.length` items (callers pass at most 5), a "View all" link, and a
+ * `rows.length` items (callers pass at most 8), a real "View all" button, and a
  * one-line empty state that teaches where the queue's items come from.
  */
 export function QueueCard({
@@ -34,13 +45,11 @@ export function QueueCard({
       <div className="flex items-center justify-between gap-2">
         <h3 className="section-label flex items-center gap-2">
           {title}
-          <span className="badge badge-gray">{count}</span>
+          <CountPill count={count} />
         </h3>
-        {rows.length > 0 && (
-          <Link href={viewAllHref} className="shrink-0 text-xs font-medium text-blue transition-colors hover:underline">
-            {viewAllLabel}
-          </Link>
-        )}
+        <Link href={viewAllHref} className="btn btn-sm shrink-0">
+          {viewAllLabel}
+        </Link>
       </div>
       {rows.length === 0 ? (
         <div className="empty-state mt-2">{emptyText}</div>

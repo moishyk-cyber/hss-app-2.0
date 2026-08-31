@@ -61,3 +61,11 @@ export const PAYMENT_STATUS_COLORS: Record<string, string> = {
   invoiced: "badge-yellow",
   paid: "badge-green",
 };
+
+// Payment.type enum (deposit | final | full) - no shared source of truth for it in
+// lib/constants.ts, so it lives here alongside the other payment vocab for this module.
+export const PAYMENT_TYPES = [
+  { value: "deposit", label: "Deposit" },
+  { value: "final", label: "Final" },
+  { value: "full", label: "Full" },
+] as const;

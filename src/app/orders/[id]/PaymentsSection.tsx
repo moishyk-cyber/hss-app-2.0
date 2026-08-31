@@ -1,17 +1,18 @@
 "use client";
 
-// Invoice tab (Aug 31 feedback: "the whole QuickBooks invoice thing is very
-// complicated... make it extremely straightforward"). One summary line, plain
-// payment rows with a single next-step button each, and one clean QuickBooks
-// invoice-number row - the only place that field lives now (removed from the
-// order header meta grid).
+// Invoice tab (Aug 31 feedback #2: "when adding a QuickBooks invoice, ask for a
+// link and the amount and invoice type"). One "Add invoice" form up top creates
+// the Payment already invoiced (type + amount + optional QuickBooks link, all in
+// one shot) - no separate "record payment" then "mark invoiced" step, and no
+// separate order-level QuickBooks invoice # field anymore (that row is gone).
+// Legacy "pending" rows from before this change still get their own
+// "Mark invoiced" button so nothing already in flight gets stuck.
 
 import { useState } from "react";
 import type { PaymentGate } from "@/lib/flow";
-import { addPayment, markPaymentInvoiced, markPaymentPaid } from "../actions";
-import { fmtDate, PAYMENT_STATUS_COLORS } from "../utils";
+import { addInvoice, markPaymentInvoiced, markPaymentPaid } from "../actions";
+import { fmtDate, PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
-import { QbInvoiceEdit } from "./OrderHeaderControls";
 
 type Payment = {
   id: string;
@@ -26,25 +27,22 @@ export default function PaymentsSection({
   orderId,
   payments,
   gate,
-  quickbooksInvoiceNo,
 }: {
   orderId: string;
   payments: Payment[];
   gate: PaymentGate;
-  quickbooksInvoiceNo: string | null;
 }) {
-  const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(payments.length === 0);
 
-  async function handleAddPayment(formData: FormData) {
+  async function handleAddInvoice(formData: FormData) {
     const type = String(formData.get("type") ?? "deposit");
     const amt = String(formData.get("amount") ?? "");
+    const link = String(formData.get("quickbooksLink") ?? "");
     if (!amt) return;
     setError(null);
-    const result = await addPayment(orderId, type, parseFloat(amt));
+    const result = await addInvoice(orderId, type, parseFloat(amt), link);
     if (result.ok) {
-      setAmount("");
       setShowAdd(false);
     } else {
       setError(result.message);
@@ -65,16 +63,26 @@ export default function PaymentsSection({
 
       {payments.length === 0 ? (
         <div className="empty-state">
-          No payments recorded yet. Record the deposit or full payment below to unlock purchase orders.
+          No invoices recorded yet. Add one below to unlock purchase orders.
         </div>
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border">
           {payments.map((p) => (
             <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="w-16 shrink-0 capitalize text-sm text-ink">{p.type}</span>
                 <span className="text-sm text-gray-dark">${p.amount.toLocaleString()}</span>
                 <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
+                {p.quickbooksRef && (
+                  <a
+                    href={p.quickbooksRef}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue transition-colors hover:underline"
+                  >
+                    View in QuickBooks
+                  </a>
+                )}
               </div>
               <div>
                 {p.status === "pending" && (
@@ -100,47 +108,44 @@ export default function PaymentsSection({
       {error && <div className="banner-warn">{error}</div>}
 
       {showAdd ? (
-        <form action={handleAddPayment} className="flex flex-wrap items-end gap-2">
+        <form action={handleAddInvoice} className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-panel p-3">
           <label>
-            <span className="field-label">Type</span>
+            <span className="field-label">Invoice type</span>
             <select name="type" defaultValue="deposit" className="input-klyne">
-              <option value="deposit">Deposit</option>
-              <option value="final">Final</option>
-              <option value="full">Full</option>
+              {PAYMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
             </select>
           </label>
           <label>
             <span className="field-label">Amount</span>
+            <input type="number" step="0.01" min="0.01" required name="amount" className="input-klyne w-28" />
+          </label>
+          <label>
+            <span className="field-label">QuickBooks link</span>
             <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              required
-              name="amount"
-              className="input-klyne w-28"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              type="url"
+              name="quickbooksLink"
+              placeholder="https://…"
+              className="input-klyne w-56"
             />
           </label>
           <PendingButton className="btn btn-primary btn-sm active:scale-[0.99] disabled:opacity-50" pendingText="Adding…">
-            Add payment
+            Add invoice
           </PendingButton>
-          <button type="button" className="btn btn-sm" onClick={() => setShowAdd(false)}>
-            Cancel
-          </button>
+          {payments.length > 0 && (
+            <button type="button" className="btn btn-sm" onClick={() => setShowAdd(false)}>
+              Cancel
+            </button>
+          )}
         </form>
       ) : (
         <button type="button" className="btn btn-sm active:scale-[0.99]" onClick={() => setShowAdd(true)}>
-          + Add payment
+          + Add invoice
         </button>
       )}
-
-      <div className="flex items-center gap-3 border-t border-border pt-4">
-        <span className="field-label" style={{ marginBottom: 0 }}>
-          QuickBooks invoice #
-        </span>
-        <QbInvoiceEdit orderId={orderId} value={quickbooksInvoiceNo} />
-      </div>
     </div>
   );
 }

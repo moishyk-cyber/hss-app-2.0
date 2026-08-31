@@ -13,6 +13,7 @@ import type { PaymentGate } from "@/lib/flow";
 import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
 import { PO_STATUS_COLORS, fmtDate } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
+import { SearchCombobox } from "@/lib/Combobox";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
@@ -63,6 +64,14 @@ export default function PurchaseOrdersSection({
   const formVisible = hasUnassigned || showEmptyForm;
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Vendor field: search-or-create (Aug 31 feedback: "when selecting a vendor,
+  // do the same thing as business and creating a contact") - same combobox as
+  // intake, wired to hidden inputs since the surrounding form calls a client
+  // handler rather than the server action directly.
+  const [vendorQuery, setVendorQuery] = useState("");
+  const [vendorId, setVendorId] = useState("");
+  const [newVendorName, setNewVendorName] = useState("");
+
   async function handleAdvance(poId: string, blocked: boolean) {
     if (blocked) {
       setErrors((e) => ({ ...e, [poId]: gate.reason }));
@@ -82,12 +91,16 @@ export default function PurchaseOrdersSection({
 
   async function handleCreatePo(formData: FormData) {
     const supplierId = String(formData.get("supplierId") ?? "");
+    const newVendorName = String(formData.get("newVendorName") ?? "");
     const lineItemIds = formData.getAll("lineItemIds").map(String);
-    if (!supplierId || lineItemIds.length === 0) return;
+    if ((!supplierId && !newVendorName.trim()) || lineItemIds.length === 0) return;
     setCreateError(null);
-    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds);
+    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds, newVendorName);
     if (result.ok) {
       setShowEmptyForm(false);
+      setVendorQuery("");
+      setVendorId("");
+      setNewVendorName("");
     } else {
       setCreateError(result.message);
     }
@@ -98,16 +111,35 @@ export default function PurchaseOrdersSection({
       {formVisible ? (
         <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
           <div className="section-label">Create Purchase Order</div>
-          <div>
-            <span className="field-label">Vendor</span>
-            <select name="supplierId" required className="input-klyne w-full max-w-xs">
-              <option value="">Select vendor</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+          <div className="max-w-xs">
+            <SearchCombobox
+              label="Vendor"
+              placeholder="Search vendors…"
+              options={vendors.map((v) => ({ id: v.id, name: v.name }))}
+              query={vendorQuery}
+              setQuery={(next) => {
+                setVendorQuery(next);
+                // Typing again means they're re-searching - drop the old pick.
+                setVendorId("");
+                setNewVendorName("");
+              }}
+              selectedId={vendorId}
+              onPick={(o) => {
+                setVendorId(o.id);
+                setVendorQuery(o.name);
+                setNewVendorName("");
+              }}
+              onCreate={(name) => {
+                setVendorId("");
+                setNewVendorName(name);
+                setVendorQuery(name);
+              }}
+              required
+              emptyText="No vendors yet - type a name to create one."
+            />
+            {/* The combobox is a display control; these carry the real values. */}
+            <input type="hidden" name="supplierId" value={vendorId} />
+            <input type="hidden" name="newVendorName" value={newVendorName} />
           </div>
           <div>
             <span className="field-label">Items</span>
@@ -127,7 +159,16 @@ export default function PurchaseOrdersSection({
           {createError && <div className="banner-warn">{createError}</div>}
           <div className="flex justify-end gap-2">
             {!hasUnassigned && (
-              <button type="button" className="btn btn-sm" onClick={() => setShowEmptyForm(false)}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  setShowEmptyForm(false);
+                  setVendorQuery("");
+                  setVendorId("");
+                  setNewVendorName("");
+                }}
+              >
                 Cancel
               </button>
             )}

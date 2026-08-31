@@ -1,15 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, PendingButton, ActionButton } from "@/lib/ui";
+import { BadgeSelect, OptimisticSelect, ActionButton } from "@/lib/ui";
 import {
   markOrderStuck,
   reopenOrder,
   setOrderOwner,
   setOrderUrgency,
   unstickOrder,
-  updateOrderQbInvoice,
 } from "../actions";
 
 export function UrgencyStatusControls({
@@ -67,24 +65,5 @@ export function UrgencyStatusControls({
         />
       </label>
     </div>
-  );
-}
-
-export function QbInvoiceEdit({ orderId, value }: { orderId: string; value: string | null }) {
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSave(formData: FormData) {
-    const next = String(formData.get("qbInvoice") ?? "");
-    const result = await updateOrderQbInvoice(orderId, next);
-    setError(result.ok ? null : result.message);
-  }
-  return (
-    <form action={handleSave} className="flex items-center gap-1.5">
-      <input name="qbInvoice" className="input-klyne w-36" placeholder="QB invoice #" defaultValue={value ?? ""} />
-      <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-        Save
-      </PendingButton>
-      {error && <span role="alert" className="text-xs text-red">{error}</span>}
-    </form>
   );
 }

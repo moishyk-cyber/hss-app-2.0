@@ -220,12 +220,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <OrderTabs
           defaultTab={defaultTab}
           invoice={
-            <PaymentsSection
-              orderId={order.id}
-              payments={order.payments}
-              gate={gate}
-              quickbooksInvoiceNo={order.quickbooksInvoiceNo}
-            />
+            <PaymentsSection orderId={order.id} payments={order.payments} gate={gate} />
           }
           purchaseOrders={
             <PurchaseOrdersSection
