@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { URGENCY_COLORS } from "@/lib/constants";
+import { Avatar } from "@/lib/Avatar";
 import { fmtDate } from "../orders/utils";
 import { CountPill } from "../dashboard/QueueCard";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
@@ -68,74 +69,77 @@ function isUrgent(leg: DeliveryLeg): boolean {
 
 function LegTable({ legs }: { legs: DeliveryLeg[] }) {
   return (
-    <div className="card card-flush overflow-hidden overflow-x-auto">
-      <table className="table-klyne min-w-[980px]">
-        <thead>
-          <tr>
-            <th>PO / Order</th>
-            <th>Supplier</th>
-            <th>Trucker</th>
-            <th>Scheduled</th>
-            <th>Expected</th>
-            <th>Delivery Status</th>
-            <th>Tracking</th>
-          </tr>
-        </thead>
-        <tbody>
-          {legs.map((leg) => (
-            <tr key={leg.id} className={isUrgent(leg) ? "border-l-4 border-red transition-colors" : "transition-colors"}>
-              <td>
-                <Link
-                  href={`/orders/${leg.orderId}#delivery`}
-                  className="font-medium text-blue transition-colors hover:underline"
-                >
-                  {leg.poNumber ?? "(no PO#)"} - {leg.order.title}
-                </Link>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
-                  {isUrgent(leg) && (
-                    <span className={`badge ${URGENCY_COLORS[leg.order.urgency] ?? "badge-red"}`}>
-                      {leg.order.urgency.replace("_", " ")}
-                    </span>
-                  )}
-                  <span>{leg.shipTo === "client_direct" ? "ships direct to client" : "ships to HSS"}</span>
-                  {leg.order.neededByDate && <span>needed by {leg.order.neededByDate.toLocaleDateString()}</span>}
-                </div>
-              </td>
-              <td className="text-gray-dark">
+    <div className="card card-flush overflow-hidden">
+      <ul className="divide-y divide-border">
+        {legs.map((leg) => (
+          <li
+            key={leg.id}
+            className={`relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-hover ${
+              isUrgent(leg) ? "border-l-4 border-red" : ""
+            }`}
+          >
+            <span className="flex shrink-0 items-center gap-2">
+              <Avatar name={leg.supplier?.name ?? "?"} kind="business" size="sm" />
+              <span className="hidden max-w-[9rem] truncate text-[12px] text-gray-dark md:block">
                 {leg.supplier?.name ?? <span className="empty-value">no supplier</span>}
-              </td>
-              <td className="text-gray-dark">
-                {leg.trucker ?? <span className="empty-value">no trucker yet</span>}
-              </td>
-              <td className="text-gray-dark">
-                {leg.scheduledDeliveryDate ? (
-                  fmtDate(leg.scheduledDeliveryDate)
-                ) : (
-                  <span className="empty-value">not scheduled</span>
+              </span>
+            </span>
+
+            <Link
+              href={`/orders/${leg.orderId}#delivery`}
+              className="min-w-0 flex-[3] after:absolute after:inset-0 after:content-['']"
+            >
+              <div className="truncate text-[13.5px] font-semibold text-ink">
+                {leg.poNumber ?? "(no PO#)"} - {leg.order.title}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
+                {isUrgent(leg) && (
+                  <span className={`badge ${URGENCY_COLORS[leg.order.urgency] ?? "badge-red"}`}>
+                    {leg.order.urgency.replace("_", " ")}
+                  </span>
                 )}
-              </td>
-              <td className="text-gray-dark">{fmtDate(leg.expectedDelivery)}</td>
-              <td>
-                <DeliveryStatusPill poId={leg.id} value={leg.deliveryStatus} />
-              </td>
-              <td>
-                {leg.trackingUrl ? (
-                  <a
-                    href={leg.trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue transition-colors hover:underline"
-                  >
-                    Track
-                  </a>
-                ) : (
-                  <span className="empty-value">no link</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <span>{leg.shipTo === "client_direct" ? "ships direct to client" : "ships to HSS"}</span>
+                {leg.order.neededByDate && <span>needed by {leg.order.neededByDate.toLocaleDateString()}</span>}
+              </div>
+            </Link>
+
+            <span className="hidden min-w-0 flex-1 truncate text-[12px] text-gray-dark lg:block">
+              {leg.trucker ?? <span className="empty-value">no trucker yet</span>}
+            </span>
+
+            <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
+              {leg.scheduledDeliveryDate ? (
+                fmtDate(leg.scheduledDeliveryDate)
+              ) : (
+                <span className="empty-value">not scheduled</span>
+              )}
+            </span>
+
+            <span className="hidden shrink-0 text-[12px] text-gray-dark md:block">
+              {fmtDate(leg.expectedDelivery)}
+            </span>
+
+            <span className="relative z-10 shrink-0">
+              <DeliveryStatusPill poId={leg.id} value={leg.deliveryStatus} />
+            </span>
+
+            <span className="relative z-10 shrink-0 text-[12px]">
+              {leg.trackingUrl ? (
+                <a
+                  href={leg.trackingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue transition-colors hover:underline"
+                >
+                  Track
+                </a>
+              ) : (
+                <span className="empty-value">no link</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

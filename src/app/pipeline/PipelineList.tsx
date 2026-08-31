@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { Avatar } from "@/lib/Avatar";
 import { StageSelect } from "./StageSelect";
 import type { KanbanCard } from "./KanbanBoard";
 import { fmtMoney } from "./_ui";
@@ -33,52 +34,61 @@ export function PipelineList({ cards }: { cards: KanbanCard[] }) {
   }
 
   return (
-    <div className="card card-flush overflow-hidden overflow-x-auto">
-      <table className="table-klyne min-w-[900px]">
-        <thead>
-          <tr>
-            <th>Deal</th>
-            <th>Company</th>
-            <th>Stage</th>
-            <th>Value</th>
-            <th>Days in stage</th>
-            <th>Next follow-up</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((card) => (
-            <tr key={card.id}>
-              <td>
-                <Link
-                  href={`/pipeline/${card.id}`}
-                  className="font-medium text-ink hover:underline"
+    <div className="card card-flush overflow-hidden">
+      <ul className="divide-y divide-border">
+        {rows.map((card) => (
+          <li
+            key={card.id}
+            className="relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover"
+          >
+            {/* Square avatar: the deal belongs to a business (@/lib/Avatar rule). */}
+            <Avatar name={card.companyName ?? card.title} kind="business" size="sm" />
+
+            {/*
+              Stretched link: the whole row opens the deal, while the stage picker
+              sits above it (relative z-10) so clicking the pill still changes stage.
+            */}
+            <Link
+              href={`/pipeline/${card.id}`}
+              className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+            >
+              {card.title}
+            </Link>
+
+            <span className="hidden min-w-0 flex-[2] truncate text-[13px] text-gray-dark lg:block">
+              {card.companyName ?? <span className="empty-value">no company</span>}
+            </span>
+
+            <span
+              className="hidden w-28 shrink-0 truncate text-right text-[13px] tabular-nums text-gray-dark sm:block"
+              title="Deal value"
+            >
+              {fmtMoney(card.value) ?? <span className="empty-value">no value</span>}
+            </span>
+
+            <span className="relative z-10 shrink-0">
+              <StageSelect opportunityId={card.id} stage={card.stage} />
+            </span>
+
+            <span className="hidden w-24 shrink-0 text-right text-[13px] tabular-nums text-gray md:block">
+              {card.daysInStage}d in stage
+            </span>
+
+            <span className="hidden w-36 shrink-0 text-right md:block">
+              {card.followUpLabel ? (
+                <span
+                  className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}
+                  title={card.followUpOverdue ? "Follow-up overdue" : "Next follow-up"}
                 >
-                  {card.title}
-                </Link>
-              </td>
-              <td className="text-gray-dark">
-                {card.companyName ?? <span className="empty-value">no company</span>}
-              </td>
-              <td>
-                <StageSelect opportunityId={card.id} stage={card.stage} />
-              </td>
-              <td className="tabular-nums text-gray-dark">
-                {fmtMoney(card.value) ?? <span className="empty-value">no value</span>}
-              </td>
-              <td className="tabular-nums text-gray-dark">{card.daysInStage}d</td>
-              <td>
-                {card.followUpLabel ? (
-                  <span className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}>
-                    {card.followUpLabel}
-                  </span>
-                ) : (
-                  <span className="empty-value">not scheduled</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  {card.followUpLabel}
+                </span>
+              ) : (
+                <span className="empty-value">not scheduled</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

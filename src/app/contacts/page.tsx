@@ -2,7 +2,14 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { labelFor } from "@/lib/constants";
 import { InstantSearch } from "@/lib/ui";
-import { CONTACT_STATUSES, CONTACT_STATUS_BADGES, PageHeader } from "./_ui";
+import {
+  Avatar,
+  CONTACT_STATUSES,
+  CONTACT_STATUS_BADGES,
+  EmailLink,
+  PageHeader,
+  PhoneLink,
+} from "./_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +46,20 @@ export default async function ContactsPage({
         </Link>
       </PageHeader>
 
-      <div className="mb-5">
-        <label className="block">
-          <span className="field-label">Search</span>
-          <InstantSearch paramKey="q" placeholder="Name or email…" className="input-klyne w-72" />
-        </label>
+      {/* Search stays pinned - the list under it can run for pages. */}
+      <div className="sticky top-0 z-20 -mx-1 mb-4 px-1 pb-3 pt-1">
+        <div className="card bg-surface/95 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <InstantSearch
+              paramKey="q"
+              placeholder="Search name or email…"
+              className="input-klyne w-full sm:w-96"
+            />
+            <p className="text-[13px] text-gray">
+              {contacts.length} {contacts.length === 1 ? "person" : "people"}
+            </p>
+          </div>
+        </div>
       </div>
 
       {contacts.length === 0 ? (
@@ -61,64 +77,73 @@ export default async function ContactsPage({
           )}
         </div>
       ) : (
-        <div className="card card-flush overflow-hidden overflow-x-auto">
-          <table className="table-klyne min-w-[960px]">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Company</th>
-                <th>Title</th>
-                <th>Phone</th>
-                <th>Cell</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <Link
-                      href={`/contacts/${c.id}/edit`}
-                      className="font-medium text-ink hover:underline"
-                    >
-                      {[c.firstName, c.lastName].filter(Boolean).join(" ")}
-                    </Link>
-                  </td>
-                  <td>
+        <div className="card card-flush overflow-hidden">
+          <ul className="divide-y divide-border">
+            {contacts.map((c) => {
+              const name = [c.firstName, c.lastName].filter(Boolean).join(" ");
+              return (
+                <li
+                  key={c.id}
+                  className="relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover"
+                >
+                  {/* Circle: this row is led by a person's name. */}
+                  <Avatar name={name} kind="person" />
+
+                  {/*
+                    Stretched link: the whole row opens the contact, while the company,
+                    mail and tel anchors sit above it (relative z-10) so they still work.
+                  */}
+                  <Link
+                    href={`/contacts/${c.id}/edit`}
+                    className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                  >
+                    {name}
+                  </Link>
+
+                  <span className="relative z-10 hidden min-w-0 flex-[3] truncate text-[13px] lg:block">
                     {c.company ? (
                       <Link
                         href={`/companies/${c.company.id}`}
-                        className="text-primary hover:underline"
+                        className="text-gray-dark transition-colors hover:text-ink"
                       >
                         {c.company.name}
                       </Link>
                     ) : (
                       <span className="empty-value">no business</span>
                     )}
-                  </td>
-                  <td className="text-gray-dark">{c.title}</td>
-                  <td className="text-gray-dark tabular-nums">
-                    {c.phone}
-                    {c.phoneExt ? <span className="text-gray"> ext {c.phoneExt}</span> : null}
-                  </td>
-                  <td className="text-gray-dark tabular-nums">{c.cellPhone}</td>
-                  <td className="text-gray-dark">{c.email}</td>
-                  <td>
+                  </span>
+
+                  <span className="hidden min-w-0 flex-[2] truncate text-[13px] text-gray xl:block">
+                    {c.title}
+                  </span>
+
+                  <span className="relative z-10 hidden min-w-0 flex-[3] md:block">
+                    <EmailLink email={c.email} />
+                  </span>
+
+                  <span className="relative z-10 hidden min-w-0 flex-[2] sm:block">
+                    <PhoneLink
+                      phone={c.phone ?? c.cellPhone}
+                      ext={c.phone ? c.phoneExt : null}
+                      label={c.phone ? "Phone" : "Cell"}
+                    />
+                  </span>
+
+                  <span className="relative z-10 hidden min-w-0 flex-[2] 2xl:block">
+                    {c.phone && c.cellPhone ? (
+                      <PhoneLink phone={c.cellPhone} label="Cell" />
+                    ) : null}
+                  </span>
+
+                  <span className="shrink-0">
                     <span className={`badge ${CONTACT_STATUS_BADGES[c.status] ?? "badge-gray"}`}>
                       {labelFor(CONTACT_STATUSES, c.status)}
                     </span>
-                  </td>
-                  <td className="text-right">
-                    <Link href={`/contacts/${c.id}/edit`} className="btn btn-sm">
-                      Edit
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </div>

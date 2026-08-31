@@ -25,6 +25,13 @@ export function TypeBadge({ type }: { type: string }) {
   );
 }
 
+// One avatar component app-wide: rounded square for a business, circle for a
+// person. Re-exported here so the companies pages import from one place.
+export { Avatar } from "@/lib/Avatar";
+
+// Contact-detail links live in one shared file now (phonebook treatment app-wide).
+export { PhoneLink, EmailLink, AddressLine } from "@/lib/ContactLinks";
+
 /** labelFor() falls back to a bare dash - never let that reach the page (§2). */
 export function VerticalLabel({ vertical }: { vertical: string | null }) {
   if (!vertical) return <span className="empty-value">not categorised</span>;
@@ -63,6 +70,7 @@ export function DetailHeader({
   badges,
   action,
   secondary,
+  avatar,
 }: {
   backHref: string;
   backLabel: string;
@@ -71,6 +79,8 @@ export function DetailHeader({
   badges?: React.ReactNode;
   action?: React.ReactNode;
   secondary?: React.ReactNode;
+  /** Optional avatar that leads the title, so the name reads the same as in lists. */
+  avatar?: React.ReactNode;
 }) {
   return (
     <div className="mb-6">
@@ -79,6 +89,7 @@ export function DetailHeader({
       <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
+            {avatar}
             <h1 className="page-title">{title}</h1>
             {badges}
           </div>

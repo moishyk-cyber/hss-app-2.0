@@ -3,8 +3,31 @@
 import { useState, useTransition } from "react";
 import { USER_ROLES } from "@/lib/constants";
 import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
+import { Avatar } from "@/lib/Avatar";
 import type { ActionResult } from "@/lib/actionResult";
 import { updateUserField, setUserActive } from "./actions";
+
+/* --- glyphs (copied inline per this round's instructions - not imported
+   from phonebook/_ui, which is off-limits this round) -------------------- */
+
+function MailIcon() {
+  return (
+    <span className="field-icon" aria-hidden>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+      </svg>
+    </span>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
 
 const ACTIVE_STATES = [
   { value: "active", label: "Active" },
@@ -18,12 +41,16 @@ function InlineField({
   initial,
   placeholder,
   type = "text",
+  inputClassName = "",
+  autoFocus = false,
 }: {
   id: string;
   field: "name" | "email";
   initial: string;
   placeholder?: string;
   type?: string;
+  inputClassName?: string;
+  autoFocus?: boolean;
 }) {
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -42,12 +69,13 @@ function InlineField({
   }
 
   return (
-    <span className="relative inline-flex items-center gap-2">
+    <span className="relative inline-flex min-w-0 flex-1 items-center gap-2">
       <input
-        className="input-klyne w-full min-w-0"
+        className={`input-klyne w-full min-w-0 ${inputClassName}`}
         type={type}
         value={value}
         placeholder={placeholder}
+        autoFocus={autoFocus}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -67,6 +95,53 @@ function InlineField({
   );
 }
 
+/**
+ * Email as a mailto icon link, phonebook-style - clicking the address composes
+ * a message. A row still needs to be able to correct a typo'd address, so the
+ * small pencil control swaps in the same inline editor the name field uses.
+ */
+function EmailCell({ id, initial }: { id: string; initial: string }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <span onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setEditing(false);
+      }}>
+        <InlineField
+          id={id}
+          field="email"
+          initial={initial}
+          type="email"
+          placeholder="email@hsskitchens.com"
+          autoFocus
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <a
+        href={`mailto:${initial}`}
+        className="inline-flex min-w-0 items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-ink"
+        title={initial}
+      >
+        <MailIcon />
+        <span className="truncate">{initial}</span>
+      </a>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Edit ${initial}`}
+        className="shrink-0 text-gray transition-colors hover:text-ink"
+      >
+        <PencilIcon />
+      </button>
+    </span>
+  );
+}
+
 export function UserRow({
   user,
 }: {
@@ -74,11 +149,20 @@ export function UserRow({
 }) {
   return (
     <tr>
-      <td className="min-w-[160px]">
-        <InlineField id={user.id} field="name" initial={user.name} placeholder="Full name" />
+      <td className="min-w-[200px]">
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar name={user.name} kind="person" size="md" />
+          <InlineField
+            id={user.id}
+            field="name"
+            initial={user.name}
+            placeholder="Full name"
+            inputClassName="font-semibold text-ink"
+          />
+        </span>
       </td>
       <td className="min-w-[200px]">
-        <InlineField id={user.id} field="email" initial={user.email} type="email" placeholder="email@hsskitchens.com" />
+        <EmailCell id={user.id} initial={user.email} />
       </td>
       <td className="min-w-[140px]">
         <OptimisticSelect

@@ -2,6 +2,7 @@
 
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
 import { PendingButton, ActionButton, BadgeSelect, OptimisticSelect } from "@/lib/ui";
+import { Avatar } from "@/lib/Avatar";
 import { markLineItemRemoved, setLineItemAssignee, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
 
 /** Amber past this many days sitting in the RFQ queue without a status change. */
@@ -12,6 +13,7 @@ export default function RfqRow({
   users,
   parentHref,
   parentLabel,
+  parentCompany,
   daysWaiting,
 }: {
   item: {
@@ -29,6 +31,7 @@ export default function RfqRow({
   users: { id: string; name: string }[];
   parentHref: string | null;
   parentLabel: string;
+  parentCompany: string | null;
   daysWaiting: number;
 }) {
   async function handleSavePricing(formData: FormData) {
@@ -38,25 +41,26 @@ export default function RfqRow({
   }
 
   return (
-    <tr id={`li-${item.id}`} className="align-top scroll-mt-4 transition-colors">
-      <td>
-        <div className="font-medium text-ink">{item.name}</div>
+    <tr id={`li-${item.id}`} className="align-top scroll-mt-4 transition-colors hover:bg-hover">
+      <td className="!py-1.5">
+        <div className="text-[13.5px] font-semibold text-ink">{item.name}</div>
         {item.brand && <div className="text-xs text-gray">{item.brand}</div>}
       </td>
-      <td className="text-gray-dark">{item.qty}</td>
-      <td>
+      <td className="!py-1.5 text-gray-dark">{item.qty}</td>
+      <td className="!py-1.5">
         {parentHref ? (
-          <a href={parentHref} className="text-blue transition-colors hover:underline">
-            {parentLabel}
+          <a href={parentHref} className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-gray-dark transition-colors hover:text-ink">
+            {parentCompany && <Avatar name={parentCompany} kind="business" size="sm" />}
+            <span className="truncate">{parentLabel}</span>
           </a>
         ) : (
           <span className="empty-value">no parent</span>
         )}
       </td>
-      <td className={daysWaiting > RFQ_WAITING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray-dark"}>
+      <td className={`!py-1.5 ${daysWaiting > RFQ_WAITING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray-dark"}`}>
         {daysWaiting}d
       </td>
-      <td>
+      <td className="!py-1.5">
         <form action={handleSavePricing} className="flex items-center gap-1">
           <input
             type="number"
@@ -78,10 +82,10 @@ export default function RfqRow({
           <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]">Save</PendingButton>
         </form>
       </td>
-      <td className="text-gray-dark">
+      <td className="!py-1.5 text-gray-dark">
         {item.leadTimeDays != null ? item.leadTimeDays : <span className="text-gray/60">–</span>}
       </td>
-      <td>
+      <td className="!py-1.5">
         <OptimisticSelect
           value={item.assigneeId ?? ""}
           options={[{ value: "", label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))]}
@@ -89,7 +93,7 @@ export default function RfqRow({
           className="input-klyne px-1.5 py-1 text-xs"
         />
       </td>
-      <td>
+      <td className="!py-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <BadgeSelect
             value={item.rfqStatus}

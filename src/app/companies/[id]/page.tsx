@@ -9,10 +9,13 @@ import {
   labelFor,
 } from "@/lib/constants";
 import {
+  Avatar,
   Card,
   DetailHeader,
   DetailRow,
+  EmailLink,
   Empty,
+  PhoneLink,
   TypeBadge,
   VerticalLabel,
   fmtDate,
@@ -44,6 +47,7 @@ export default async function CompanyDetailPage({
         backLabel="Back to Phone Book"
         title={company.name}
         subtitle={company.locationName ?? undefined}
+        avatar={<Avatar name={company.name} kind="business" />}
         badges={
           <>
             <TypeBadge type={company.type} />
@@ -133,20 +137,45 @@ export default async function CompanyDetailPage({
                 so calls and intakes have someone to reach.
               </div>
             ) : (
-              <ul className="divide-y divide-border">
+              // Same dense directory rows as the phone book: circle avatar for a person.
+              <ul className="-mx-5 divide-y divide-border border-t border-border">
                 {company.contacts.map((c) => {
-                  const detail = [c.title, c.email, c.phone].filter(Boolean).join(" · ");
+                  const name = [c.firstName, c.lastName].filter(Boolean).join(" ");
+                  const hasDetails = Boolean(c.email || c.phone || c.cellPhone);
                   return (
-                    <li key={c.id} className="py-3 text-[13px] first:pt-0 last:pb-0">
+                    <li
+                      key={c.id}
+                      className="relative flex items-center gap-3 px-5 py-2 transition-colors hover:bg-hover"
+                    >
+                      <Avatar name={name} kind="person" />
+
+                      {/* Row-wide link; the mail and tel anchors sit above it (z-10). */}
                       <Link
                         href={`/contacts/${c.id}/edit`}
-                        className="font-medium text-ink hover:underline"
+                        className="min-w-0 flex-[2] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                       >
-                        {[c.firstName, c.lastName].filter(Boolean).join(" ")}
+                        {name}
                       </Link>
-                      <div className="mt-1 text-xs text-gray">
-                        {detail || <span className="empty-value">no contact details yet</span>}
-                      </div>
+
+                      <span className="hidden min-w-0 flex-1 truncate text-[13px] text-gray sm:block">
+                        {c.title}
+                      </span>
+
+                      <span className="relative z-10 hidden min-w-0 flex-[2] md:block">
+                        <EmailLink email={c.email} />
+                      </span>
+
+                      <span className="relative z-10 min-w-0 flex-[2]">
+                        <PhoneLink
+                          phone={c.phone ?? c.cellPhone}
+                          ext={c.phone ? c.phoneExt : null}
+                          label={c.phone ? "Phone" : "Cell"}
+                        />
+                      </span>
+
+                      {hasDetails ? null : (
+                        <span className="empty-value shrink-0">no contact details yet</span>
+                      )}
                     </li>
                   );
                 })}
@@ -167,19 +196,21 @@ export default async function CompanyDetailPage({
                 - projects and anything needing a price land in the pipeline.
               </div>
             ) : (
-              <ul className="divide-y divide-border">
+              <ul className="-mx-5 divide-y divide-border border-t border-border">
                 {company.opportunities.map((o) => (
                   <li
                     key={o.id}
-                    className="flex items-center justify-between gap-4 py-3 text-[13px] first:pt-0 last:pb-0"
+                    className="relative flex items-center gap-3 px-5 py-2 transition-colors hover:bg-hover"
                   >
+                    {/* Square avatar: a deal belongs to a business. */}
+                    <Avatar name={o.title} kind="business" size="sm" />
                     <Link
                       href={`/pipeline/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink hover:underline"
+                      className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                     >
                       {o.title}
                     </Link>
-                    <span className="shrink-0 text-gray-dark tabular-nums">
+                    <span className="shrink-0 text-[13px] tabular-nums text-gray-dark">
                       {fmtMoney(o.value) ?? <Empty>no value yet</Empty>}
                     </span>
                     <span className={`badge ${STAGE_COLORS[o.stage] ?? "badge-gray"}`}>
@@ -198,19 +229,21 @@ export default async function CompanyDetailPage({
                 Intake when the pricing is already known.
               </div>
             ) : (
-              <ul className="divide-y divide-border">
+              <ul className="-mx-5 divide-y divide-border border-t border-border">
                 {company.orders.map((o) => (
                   <li
                     key={o.id}
-                    className="flex items-center justify-between gap-4 py-3 text-[13px] first:pt-0 last:pb-0"
+                    className="relative flex items-center gap-3 px-5 py-2 transition-colors hover:bg-hover"
                   >
+                    {/* Square avatar: an order belongs to a business. */}
+                    <Avatar name={o.title} kind="business" size="sm" />
                     <Link
                       href={`/orders/${o.id}`}
-                      className="min-w-0 flex-1 truncate font-medium text-ink hover:underline"
+                      className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                     >
                       {o.title}
                     </Link>
-                    <span className="shrink-0 text-gray-dark tabular-nums">
+                    <span className="shrink-0 text-[13px] tabular-nums text-gray-dark">
                       {fmtMoney(o.orderValue) ?? <Empty>no value yet</Empty>}
                     </span>
                     <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>

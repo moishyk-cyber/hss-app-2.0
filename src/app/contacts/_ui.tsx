@@ -1,6 +1,13 @@
 // Local presentational helpers for the /contacts module.
 // Back navigation is NOT one of them - every page uses @/lib/BackLink.
 
+// One avatar component app-wide: circle for a person, rounded square for a
+// business. Re-exported here so the contacts pages import from one place.
+export { Avatar } from "@/lib/Avatar";
+
+// Contact-detail links live in one shared file now (phonebook treatment app-wide).
+export { PhoneLink, EmailLink } from "@/lib/ContactLinks";
+
 /** Visible required marker. The control's own `required` is what AT announces. */
 export function RequiredMark() {
   return (

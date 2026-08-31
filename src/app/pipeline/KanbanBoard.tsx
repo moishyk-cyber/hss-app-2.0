@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { STAGE_COLORS } from "@/lib/constants";
+import { Avatar } from "@/lib/Avatar";
 import type { ActionResult } from "@/lib/actionResult";
 import { BadgeSelect } from "@/lib/ui";
 import { changeOpportunityStage } from "./actions";
@@ -138,8 +139,16 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   >
                     {card.title}
                   </Link>
-                  <div className="mt-1.5 truncate text-xs text-gray">
-                    {card.companyName ?? <span className="empty-value">no company</span>}
+                  {/* Square avatar for the business, matching the directory rows. */}
+                  <div className="mt-1.5 flex items-center gap-2 text-xs text-gray">
+                    {card.companyName ? (
+                      <>
+                        <Avatar name={card.companyName} kind="business" size="sm" />
+                        <span className="truncate">{card.companyName}</span>
+                      </>
+                    ) : (
+                      <span className="empty-value">no company</span>
+                    )}
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-xs">

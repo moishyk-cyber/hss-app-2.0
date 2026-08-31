@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { Avatar } from "@/lib/Avatar";
 import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,11 @@ export default async function OrdersPage({
 
   const orders = await prisma.order.findMany({
     where,
-    include: { company: { select: { id: true, name: true } }, payments: { select: { status: true } } },
+    include: {
+      company: { select: { id: true, name: true } },
+      owner: { select: { id: true, name: true } },
+      payments: { select: { status: true } },
+    },
   });
 
   orders.sort((a, b) => {
@@ -73,63 +78,68 @@ export default async function OrdersPage({
           )}
         </div>
       ) : (
-        <div className="card card-flush overflow-hidden overflow-x-auto">
-          <table className="table-klyne min-w-[900px]">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Company</th>
-                <th>Status</th>
-                <th>Urgency</th>
-                <th>Type</th>
-                <th>Value</th>
-                <th>Needed By</th>
-                <th>Payment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => {
-                const accent =
-                  order.urgency === "emergency"
-                    ? "border-l-4 border-red"
-                    : order.urgency === "same_day"
-                    ? "border-l-4 border-orange"
-                    : "";
-                const ps = paymentState(order.payments);
-                return (
-                  <tr key={order.id} className={`transition-colors ${accent}`}>
-                    <td>
-                      <Link
-                        href={`/orders/${order.id}`}
-                        className="font-medium text-blue transition-colors hover:underline"
-                      >
-                        {order.title}
-                      </Link>
-                    </td>
-                    <td className="text-gray-dark">
-                      {order.company?.name ?? <span className="empty-value">no company</span>}
-                    </td>
-                    <td>
-                      <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
-                        {labelFor(ORDER_STATUSES, order.status)}
+        <div className="card card-flush overflow-hidden">
+          <ul className="divide-y divide-border">
+            {orders.map((order) => {
+              const accent =
+                order.urgency === "emergency"
+                  ? "border-l-4 border-red"
+                  : order.urgency === "same_day"
+                  ? "border-l-4 border-orange"
+                  : "";
+              const ps = paymentState(order.payments);
+              return (
+                <li
+                  key={order.id}
+                  className={`relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover ${accent}`}
+                >
+                  <Avatar name={order.company?.name ?? "?"} kind="business" size="sm" />
+
+                  <Link
+                    href={`/orders/${order.id}`}
+                    className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                  >
+                    {order.title}
+                    <span className="ml-2 truncate text-[12px] font-normal text-gray-dark">
+                      {order.company?.name ?? "no company"}
+                    </span>
+                  </Link>
+
+                  <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
+                    {fmtMoney(order.orderValue)}
+                  </span>
+
+                  <span className="hidden shrink-0 sm:block">
+                    <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
+                      {order.urgency.replace("_", " ")}
+                    </span>
+                  </span>
+
+                  <span className="shrink-0">
+                    <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
+                      {labelFor(ORDER_STATUSES, order.status)}
+                    </span>
+                  </span>
+
+                  <span className="hidden shrink-0 md:block">
+                    <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
+                  </span>
+
+                  <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
+                    {fmtDate(order.neededByDate)}
+                  </span>
+
+                  <span className="relative z-10 shrink-0">
+                    {order.owner ? (
+                      <span title={order.owner.name}>
+                        <Avatar name={order.owner.name} kind="person" size="sm" />
                       </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
-                        {order.urgency.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td className="text-gray-dark capitalize">{order.orderType}</td>
-                    <td className="text-gray-dark">{fmtMoney(order.orderValue)}</td>
-                    <td className="text-gray-dark">{fmtDate(order.neededByDate)}</td>
-                    <td>
-                      <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </div>

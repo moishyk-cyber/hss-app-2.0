@@ -12,8 +12,8 @@ const NEEDS_PRICING_EMPTY =
 
 type RfqLineItem = Prisma.LineItemGetPayload<{
   include: {
-    opportunity: { select: { id: true; title: true; stage: true } };
-    order: { select: { id: true; title: true } };
+    opportunity: { select: { id: true; title: true; stage: true; company: { select: { name: true } } } };
+    order: { select: { id: true; title: true; company: { select: { name: true } } } };
     assignee: { select: { name: true } };
   };
 }>;
@@ -25,8 +25,8 @@ export default async function RfqPage() {
     prisma.lineItem.findMany({
       where: { rfqStatus: { in: statusValues as string[] } },
       include: {
-        opportunity: { select: { id: true, title: true, stage: true } },
-        order: { select: { id: true, title: true } },
+        opportunity: { select: { id: true, title: true, stage: true, company: { select: { name: true } } } },
+        order: { select: { id: true, title: true, company: { select: { name: true } } } },
         assignee: { select: { name: true } },
       },
       orderBy: { createdAt: "asc" },
@@ -111,6 +111,7 @@ export default async function RfqPage() {
                         ? `/pipeline/${item.opportunity.id}`
                         : null;
                       const parentLabel = item.order?.title ?? item.opportunity?.title ?? "Unlinked item";
+                      const parentCompany = item.order?.company?.name ?? item.opportunity?.company?.name ?? null;
                       const daysWaiting = Math.floor((Date.now() - new Date(item.createdAt).getTime()) / 86_400_000);
                       return (
                         <RfqRow
@@ -119,6 +120,7 @@ export default async function RfqPage() {
                           users={users}
                           parentHref={parentHref}
                           parentLabel={parentLabel}
+                          parentCompany={parentCompany}
                           daysWaiting={daysWaiting}
                         />
                       );

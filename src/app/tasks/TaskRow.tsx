@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { TASK_PRIORITIES, labelFor } from "@/lib/constants";
+import { Avatar } from "@/lib/Avatar";
 import { TaskCheckbox } from "./TaskCheckbox";
 import TaskModal from "./TaskModal";
 import { TYPE_LABELS, linkedHref, isOverdue } from "./lib";
@@ -84,7 +85,14 @@ export default function TaskRow({
                 <span>{new Date(task.dueDate).toLocaleDateString()}</span>
               ))}
             <span className="capitalize">{labelFor(TASK_PRIORITIES, task.priority)}</span>
-            <span>{task.assigneeName ?? "Unassigned"}</span>
+            {task.assigneeName ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Avatar name={task.assigneeName} kind="person" size="sm" />
+                {task.assigneeName}
+              </span>
+            ) : (
+              <span>Unassigned</span>
+            )}
             {linkHref && task.linkedType && (
               <a
                 href={linkHref}
