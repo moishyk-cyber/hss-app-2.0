@@ -56,20 +56,24 @@ export function TruckerSelect({
   }
 
   return (
-    <span ref={boxRef} className="relative inline-block">
+    <span ref={boxRef} className="relative block w-full">
+      {/* Full column width with the caret pinned right, so the pills form one
+          straight, even column down the list. */}
       <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={isPending}
         onClick={() => setOpen((o) => !o)}
-        className={`inline-flex max-w-40 items-center gap-1 truncate rounded-full border border-border bg-hover px-2.5 py-1 text-[12px] transition-colors hover:text-ink ${
+        className={`flex w-full items-center justify-between gap-1 rounded-full border border-border bg-hover px-2.5 py-1 text-[12px] transition-colors hover:text-ink ${
           optimistic ? "text-ink" : "text-gray-dark"
         } ${isPending ? "opacity-60" : ""}`}
       >
-        {isPending ? <Spinner /> : null}
-        <span className="truncate">{optimistic || "No trucker yet"}</span>
-        <span aria-hidden className="text-[9px] opacity-70">
+        <span className="flex min-w-0 items-center gap-1">
+          {isPending ? <Spinner /> : null}
+          <span className="truncate">{optimistic || "No trucker yet"}</span>
+        </span>
+        <span aria-hidden className="shrink-0 text-[9px] opacity-70">
           ▾
         </span>
       </button>
