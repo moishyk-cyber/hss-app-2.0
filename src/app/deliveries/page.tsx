@@ -1,12 +1,27 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { URGENCY_COLORS } from "@/lib/constants";
+import { URGENCY_COLORS, ORDER_URGENCIES, PO_DELIVERY_STATUSES } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { fmtDate } from "../orders/utils";
 import { CountPill } from "../dashboard/QueueCard";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
 
 export const dynamic = "force-dynamic";
+
+const FIELDS: ListField[] = [
+  { key: "supplier", label: "Supplier", type: "text" },
+  { key: "trucker", label: "Trucker", type: "text" },
+  { key: "scheduledDate", label: "Scheduled Date", type: "date" },
+  { key: "expectedDate", label: "Expected Date", type: "date" },
+  { key: "deliveryStatus", label: "Delivery Status", type: "enum", options: PO_DELIVERY_STATUSES },
+  { key: "urgency", label: "Urgency", type: "enum", options: ORDER_URGENCIES },
+];
+
+type DeliveriesSearchParams = Record<string, string | string[] | undefined>;
 
 // Every delivery leg in flight, in one place (Aug 31 feedback round 3: "Add me
 // a place where I can see all of the deliveries so I can track all the
@@ -60,6 +75,32 @@ function sortLegs(legs: DeliveryLeg[], dateOf: (l: DeliveryLeg) => Date | null):
     const bd = dateOf(b)?.getTime() ?? FAR_FUTURE;
     if (ad !== bd) return ad - bd;
     return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+}
+
+/** Explicit Sort by choice from ListControls - overrides the urgency/date default within each group. */
+function sortLegsBy(legs: DeliveryLeg[], key: string, dir: "asc" | "desc"): DeliveryLeg[] {
+  const factor = dir === "desc" ? -1 : 1;
+  return [...legs].sort((a, b) => {
+    switch (key) {
+      case "supplier":
+        return factor * (a.supplier?.name ?? "").localeCompare(b.supplier?.name ?? "");
+      case "trucker":
+        return factor * (a.trucker ?? "").localeCompare(b.trucker ?? "");
+      case "scheduledDate":
+        return (
+          factor *
+          ((a.scheduledDeliveryDate?.getTime() ?? FAR_FUTURE) - (b.scheduledDeliveryDate?.getTime() ?? FAR_FUTURE))
+        );
+      case "expectedDate":
+        return factor * ((a.expectedDelivery?.getTime() ?? FAR_FUTURE) - (b.expectedDelivery?.getTime() ?? FAR_FUTURE));
+      case "deliveryStatus":
+        return factor * a.deliveryStatus.localeCompare(b.deliveryStatus);
+      case "urgency":
+        return factor * ((URGENCY_RANK[a.order.urgency] ?? 9) - (URGENCY_RANK[b.order.urgency] ?? 9));
+      default:
+        return 0;
+    }
   });
 }
 
@@ -164,29 +205,65 @@ function Section({
   );
 }
 
-export default async function DeliveriesPage() {
+export default async function DeliveriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<DeliveriesSearchParams>;
+}) {
+  const sp = await searchParams;
+  const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
+
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const fourteenDaysAgo = new Date(startOfToday.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+  // Sort by / Filter by (Aug 31 feedback: "select by any field" on every list).
+  // Both queries below share the same filter set so a filter applies across
+  // all three sections at once.
+  const filterAnd: Prisma.PurchaseOrderWhereInput[] = [];
+  if (filters.supplier) filterAnd.push({ supplier: { name: { contains: filters.supplier, mode: "insensitive" } } });
+  if (filters.trucker) filterAnd.push({ trucker: { contains: filters.trucker, mode: "insensitive" } });
+  if (filters.deliveryStatus) filterAnd.push({ deliveryStatus: filters.deliveryStatus });
+  if (filters.urgency) filterAnd.push({ order: { urgency: filters.urgency } });
+  if (filters.scheduledDate) {
+    const day = new Date(filters.scheduledDate);
+    const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+    filterAnd.push({ scheduledDeliveryDate: { gte: day, lt: nextDay } });
+  }
+  if (filters.expectedDate) {
+    const day = new Date(filters.expectedDate);
+    const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+    filterAnd.push({ expectedDelivery: { gte: day, lt: nextDay } });
+  }
 
   const [inFlightRaw, deliveredRaw] = await Promise.all([
     // A PO is "in flight" once it is out with the vendor, or while its delivery
     // leg still has to happen at all.
     prisma.purchaseOrder.findMany({
       where: {
-        OR: [
-          { status: { in: ["sent", "acknowledged", "shipped"] } },
-          { deliveryStatus: { in: ["pending", "scheduled"] } },
+        AND: [
+          {
+            OR: [
+              { status: { in: ["sent", "acknowledged", "shipped"] } },
+              { deliveryStatus: { in: ["pending", "scheduled"] } },
+            ],
+          },
+          ...filterAnd,
         ],
       },
       select: LEG_SELECT,
     }),
     prisma.purchaseOrder.findMany({
       where: {
-        deliveryStatus: { in: DELIVERED },
-        OR: [
-          { scheduledDeliveryDate: { gte: fourteenDaysAgo } },
-          { scheduledDeliveryDate: null, createdAt: { gte: fourteenDaysAgo } },
+        AND: [
+          {
+            deliveryStatus: { in: DELIVERED },
+            OR: [
+              { scheduledDeliveryDate: { gte: fourteenDaysAgo } },
+              { scheduledDeliveryDate: null, createdAt: { gte: fourteenDaysAgo } },
+            ],
+          },
+          ...filterAnd,
         ],
       },
       select: LEG_SELECT,
@@ -197,15 +274,18 @@ export default async function DeliveriesPage() {
   // it belongs in "recently delivered", not in the open work.
   const open = inFlightRaw.filter((l) => !DELIVERED.includes(l.deliveryStatus));
 
-  const needsAttention = sortLegs(
-    open.filter((l) => !l.scheduledDeliveryDate || l.scheduledDeliveryDate < startOfToday),
-    (l) => l.scheduledDeliveryDate ?? l.order.neededByDate
-  );
-  const scheduled = sortLegs(
-    open.filter((l) => l.scheduledDeliveryDate != null && l.scheduledDeliveryDate >= startOfToday),
-    (l) => l.scheduledDeliveryDate
-  );
-  const delivered = sortLegs(deliveredRaw, (l) => l.scheduledDeliveryDate ?? l.createdAt).reverse();
+  const needsAttentionRaw = open.filter((l) => !l.scheduledDeliveryDate || l.scheduledDeliveryDate < startOfToday);
+  const scheduledRaw = open.filter((l) => l.scheduledDeliveryDate != null && l.scheduledDeliveryDate >= startOfToday);
+
+  const needsAttention = sortKey
+    ? sortLegsBy(needsAttentionRaw, sortKey, sortDir)
+    : sortLegs(needsAttentionRaw, (l) => l.scheduledDeliveryDate ?? l.order.neededByDate);
+  const scheduled = sortKey
+    ? sortLegsBy(scheduledRaw, sortKey, sortDir)
+    : sortLegs(scheduledRaw, (l) => l.scheduledDeliveryDate);
+  const delivered = sortKey
+    ? sortLegsBy(deliveredRaw, sortKey, sortDir)
+    : sortLegs(deliveredRaw, (l) => l.scheduledDeliveryDate ?? l.createdAt).reverse();
 
   const totalOpen = needsAttention.length + scheduled.length;
 
@@ -217,6 +297,10 @@ export default async function DeliveriesPage() {
           Every delivery leg in flight - vendor, trucker, and the date it lands. {totalOpen} open.
         </p>
       </div>
+
+      <Suspense>
+        <ListControls fields={FIELDS} />
+      </Suspense>
 
       <Section title="Overdue / Needs Scheduling" count={needsAttention.length}>
         {needsAttention.length === 0 ? (

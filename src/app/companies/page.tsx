@@ -1,34 +1,85 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { COMPANY_TYPES } from "@/lib/constants";
+import { COMPANY_TYPES, COMPANY_VERTICALS } from "@/lib/constants";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { InstantSearch } from "@/lib/ui";
 import { Avatar, EmailLink, PageHeader, PhoneLink, TypeBadge, VerticalLabel } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
+const YES_NO = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+] as const;
+
+/**
+ * Sort by / Filter by columns for this list (Aug 31 feedback: every list, any field).
+ * Name and Type are sort-only on purpose: the pinned search box owns name text and
+ * the type chips own the `type` param, so a second control for either would be a
+ * duplicate that writes a different param and fights the first one.
+ */
+const COMPANY_FIELDS: ReadonlyArray<ListField> = [
+  { key: "name", label: "Name", type: "text", filterable: false },
+  { key: "type", label: "Type", type: "enum", options: COMPANY_TYPES, filterable: false },
+  { key: "vertical", label: "Vertical", type: "enum", options: COMPANY_VERTICALS },
+  { key: "priority", label: "Priority client", type: "enum", options: YES_NO },
+  { key: "created", label: "Created", type: "date", filterable: false },
+];
+
+/** sortKey to Prisma orderBy. Anything not listed falls back to the page default. */
+const COMPANY_ORDER: Record<
+  string,
+  (dir: "asc" | "desc") => Prisma.CompanyOrderByWithRelationInput[]
+> = {
+  name: (dir) => [{ name: dir }],
+  type: (dir) => [{ type: dir }, { name: "asc" }],
+  vertical: (dir) => [{ vertical: dir }, { name: "asc" }],
+  priority: (dir) => [{ priorityClient: dir }, { name: "asc" }],
+  created: (dir) => [{ createdAt: dir }],
+};
+
+const DEFAULT_ORDER: Prisma.CompanyOrderByWithRelationInput[] = [
+  { priorityClient: "desc" },
+  { name: "asc" },
+];
+
 export default async function CompaniesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { q, type } = await searchParams;
-  const search = (q ?? "").trim();
-  const typeFilter = (type ?? "").trim();
+  const params = await searchParams;
+  const search = typeof params.q === "string" ? params.q.trim() : "";
+  const typeFilter = typeof params.type === "string" ? params.type.trim() : "";
+  const { sortKey, sortDir, filters } = parseListQuery(COMPANY_FIELDS, params);
+
+  const filterWhere: Prisma.CompanyWhereInput = {};
+  if (filters.vertical) filterWhere.vertical = filters.vertical;
+  if (filters.priority) filterWhere.priorityClient = filters.priority === "yes";
+  const hasListFilter = Object.keys(filterWhere).length > 0;
 
   const companies = await prisma.company.findMany({
     where: {
-      ...(search ? { name: { contains: search } } : {}),
+      ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
       ...(typeFilter ? { type: typeFilter } : {}),
+      ...filterWhere,
     },
-    orderBy: [{ priorityClient: "desc" }, { name: "asc" }],
+    orderBy: sortKey && COMPANY_ORDER[sortKey] ? COMPANY_ORDER[sortKey](sortDir) : DEFAULT_ORDER,
     include: { _count: { select: { contacts: true, opportunities: true, orders: true } } },
   });
 
+  // Chips rewrite only `type` - search, sort and f_* params ride along untouched.
   const chipHref = (value: string) => {
-    const params = new URLSearchParams();
-    if (search) params.set("q", search);
-    if (value) params.set("type", value);
-    const query = params.toString();
+    const next = new URLSearchParams();
+    for (const [key, raw] of Object.entries(params)) {
+      if (key === "type") continue;
+      if (typeof raw === "string" && raw !== "") next.set(key, raw);
+    }
+    if (value) next.set("type", value);
+    const query = next.toString();
     return query ? `/companies?${query}` : "/companies";
   };
 
@@ -57,6 +108,11 @@ export default async function CompaniesPage({
             </p>
           </div>
 
+          {/* useSearchParams needs a boundary even on a force-dynamic page. */}
+          <Suspense fallback={<div className="h-8" />}>
+            <ListControls fields={COMPANY_FIELDS} />
+          </Suspense>
+
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={chipHref("")}
@@ -83,7 +139,7 @@ export default async function CompaniesPage({
 
       {companies.length === 0 ? (
         <div className="empty-state">
-          {search || typeFilter ? (
+          {search || typeFilter || hasListFilter ? (
             "No businesses match this filter."
           ) : (
             <>

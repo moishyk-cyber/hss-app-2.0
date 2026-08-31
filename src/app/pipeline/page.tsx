@@ -1,23 +1,110 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { KanbanBoard, type KanbanCard } from "./KanbanBoard";
 import { PipelineList } from "./PipelineList";
-import { PageHeader, StageBadge, daysSince, fmtDate, fmtMoney, isOverdue } from "./_ui";
+import {
+  ORDER_TYPES,
+  PageHeader,
+  StageBadge,
+  daysSince,
+  fmtDate,
+  fmtMoney,
+  isOverdue,
+} from "./_ui";
 
 export const dynamic = "force-dynamic";
 
 const CLOSED_STAGES = ["won", "lost"];
 
+/** sortKey to Prisma orderBy. Anything not listed falls back to the page default. */
+const PIPELINE_ORDER: Record<
+  string,
+  (dir: "asc" | "desc") => Prisma.OpportunityOrderByWithRelationInput[]
+> = {
+  stage: (dir) => [{ stage: dir }, { createdAt: "desc" }],
+  orderType: (dir) => [{ orderType: dir }, { createdAt: "desc" }],
+  value: (dir) => [{ value: dir }],
+  neededBy: (dir) => [{ neededByDate: dir }],
+  followUp: (dir) => [{ nextFollowUp: dir }],
+  company: (dir) => [{ company: { name: dir } }, { title: "asc" }],
+  salesperson: (dir) => [{ salesperson: { name: dir } }, { createdAt: "desc" }],
+  created: (dir) => [{ createdAt: dir }],
+};
+
+const DEFAULT_ORDER: Prisma.OpportunityOrderByWithRelationInput[] = [{ createdAt: "desc" }];
+
+/**
+ * Date filters read as "due on or before this day" - the useful question for a
+ * deadline column. An exact-day match would come back empty almost every time.
+ */
+function onOrBefore(value: string): Date | null {
+  const day = new Date(`${value}T23:59:59.999`);
+  return Number.isNaN(day.getTime()) ? null : day;
+}
+
 export default async function PipelinePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { view } = await searchParams;
-  const isList = view === "list";
+  const params = await searchParams;
+  const isList = params.view === "list";
+
+  // Salesperson options come from the real user list, so only the list view pays for it.
+  const users = isList
+    ? await prisma.user.findMany({
+        where: { active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
+
+  // Sort by / Filter by columns for the list view (Aug 31 feedback: every list,
+  // any field). The kanban board keeps its own fixed ordering.
+  const listFields: ReadonlyArray<ListField> = [
+    { key: "stage", label: "Stage", type: "enum", options: OPPORTUNITY_STAGES },
+    { key: "orderType", label: "Order type", type: "enum", options: ORDER_TYPES },
+    { key: "company", label: "Company", type: "text" },
+    {
+      key: "salesperson",
+      label: "Salesperson",
+      type: "enum",
+      options: users.map((u) => ({ value: u.id, label: u.name })),
+    },
+    { key: "value", label: "Value", type: "number", filterable: false },
+    { key: "neededBy", label: "Needed by", type: "date" },
+    { key: "followUp", label: "Next follow-up", type: "date" },
+    { key: "created", label: "Created", type: "date", filterable: false },
+  ];
+
+  const { sortKey, sortDir, filters } = parseListQuery(listFields, params);
+
+  const listWhere: Prisma.OpportunityWhereInput = {};
+  if (isList) {
+    if (filters.stage) listWhere.stage = filters.stage;
+    if (filters.orderType) listWhere.orderType = filters.orderType;
+    if (filters.salesperson) listWhere.salespersonId = filters.salesperson;
+    if (filters.company) {
+      listWhere.company = { name: { contains: filters.company, mode: "insensitive" } };
+    }
+    const neededBy = filters.neededBy ? onOrBefore(filters.neededBy) : null;
+    if (neededBy) listWhere.neededByDate = { lte: neededBy };
+    const followUp = filters.followUp ? onOrBefore(filters.followUp) : null;
+    if (followUp) listWhere.nextFollowUp = { lte: followUp };
+  }
+  const hasListFilter = Object.keys(listWhere).length > 0;
+  // The list falls back to its own stage-then-staleness order until a sort is picked.
+  const listOrder = isList && sortKey ? PIPELINE_ORDER[sortKey] : undefined;
+  const listSorted = !!listOrder;
 
   const opportunities = await prisma.opportunity.findMany({
-    orderBy: { createdAt: "desc" },
+    where: listWhere,
+    orderBy: listOrder ? listOrder(sortDir) : DEFAULT_ORDER,
     select: {
       id: true,
       title: true,
@@ -92,7 +179,16 @@ export default async function PipelinePage({
       </PageHeader>
 
       {isList ? (
-        <PipelineList cards={cards} />
+        <>
+          {/* Search-bar slot for this list: Sort by / Filter by over every column. */}
+          <div className="card mb-4 bg-surface/95 backdrop-blur">
+            {/* useSearchParams needs a boundary even on a force-dynamic page. */}
+            <Suspense fallback={<div className="h-8" />}>
+              <ListControls fields={listFields} />
+            </Suspense>
+          </div>
+          <PipelineList cards={cards} sorted={listSorted} filtered={hasListFilter} />
+        </>
       ) : cards.length === 0 ? (
         <div className="empty-state">
           <p className="text-gray-dark">No deals yet.</p>

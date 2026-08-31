@@ -9,26 +9,48 @@ const STAGE_ORDER = new Map<string, number>(
   OPPORTUNITY_STAGES.map((s, i) => [s.value, i])
 );
 
-/** Flat view of every deal: stage order first, then the most stale at the top. */
-export function PipelineList({ cards }: { cards: KanbanCard[] }) {
-  const rows = [...cards].sort((a, b) => {
-    const byStage =
-      (STAGE_ORDER.get(a.stage) ?? 99) - (STAGE_ORDER.get(b.stage) ?? 99);
-    if (byStage !== 0) return byStage;
-    return b.daysInStage - a.daysInStage;
-  });
+/**
+ * Flat view of every deal: stage order first, then the most stale at the top.
+ * Once the Sort by control picks a column the page hands the rows over already
+ * ordered by the database, so this default only applies while no sort is set.
+ */
+export function PipelineList({
+  cards,
+  sorted = false,
+  filtered = false,
+}: {
+  cards: KanbanCard[];
+  /** True when the page ordered the rows itself from a chosen sort field. */
+  sorted?: boolean;
+  /** True when a Filter by value is narrowing the list. */
+  filtered?: boolean;
+}) {
+  const rows = sorted
+    ? cards
+    : [...cards].sort((a, b) => {
+        const byStage =
+          (STAGE_ORDER.get(a.stage) ?? 99) - (STAGE_ORDER.get(b.stage) ?? 99);
+        if (byStage !== 0) return byStage;
+        return b.daysInStage - a.daysInStage;
+      });
 
   if (rows.length === 0) {
     return (
       <div className="empty-state">
-        <p className="text-gray-dark">No deals yet.</p>
-        <p className="mt-1">
-          Deals land here from{" "}
-          <Link href="/intake" className="text-primary transition-colors hover:underline">
-            Intake
-          </Link>{" "}
-          whenever a request is a project or still needs pricing.
-        </p>
+        {filtered ? (
+          <p className="text-gray-dark">No deals match this filter.</p>
+        ) : (
+          <>
+            <p className="text-gray-dark">No deals yet.</p>
+            <p className="mt-1">
+              Deals land here from{" "}
+              <Link href="/intake" className="text-primary transition-colors hover:underline">
+                Intake
+              </Link>{" "}
+              whenever a request is a project or still needs pricing.
+            </p>
+          </>
+        )}
       </div>
     );
   }

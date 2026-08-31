@@ -1,29 +1,85 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ORDER_STATUSES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { ORDER_STATUSES, ORDER_URGENCIES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 export const dynamic = "force-dynamic";
 
 const URGENCY_RANK: Record<string, number> = { emergency: 0, same_day: 1, standard: 2 };
 
+// Not a shared enum in lib/constants.ts (only two values, order-module local).
+const ORDER_TYPE_OPTIONS = [
+  { value: "order", label: "Order" },
+  { value: "project", label: "Project" },
+] as const;
+
+type OrdersSearchParams = { status?: string; due?: string } & Record<string, string | string[] | undefined>;
+
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; due?: string }>;
+  searchParams: Promise<OrdersSearchParams>;
 }) {
-  const { status, due } = await searchParams;
+  const sp = await searchParams;
+  const { status, due } = sp;
+
+  const users = await prisma.user.findMany({
+    where: { active: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
+  // Sort by / Filter by (Aug 31 feedback: "select by any field" on every list).
+  // Status keeps its own chips above (?status=) - filterable:false here so the
+  // two controls never fight over the same value.
+  const FIELDS: ListField[] = [
+    { key: "title", label: "Title", type: "text" },
+    { key: "company", label: "Company", type: "text" },
+    { key: "status", label: "Status", type: "enum", options: ORDER_STATUSES, filterable: false },
+    { key: "urgency", label: "Urgency", type: "enum", options: ORDER_URGENCIES },
+    { key: "orderType", label: "Order Type", type: "enum", options: ORDER_TYPE_OPTIONS },
+    { key: "value", label: "Value", type: "number", filterable: false },
+    { key: "neededBy", label: "Needed By", type: "date" },
+    { key: "owner", label: "Owner", type: "enum", options: users.map((u) => ({ value: u.id, label: u.name })) },
+  ];
+  const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
 
   const now = new Date();
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const where: Record<string, unknown> = {};
+  const where: Prisma.OrderWhereInput = {};
   if (status) where.status = status;
   if (due === "week") {
     where.neededByDate = { gte: now, lte: in7Days };
     where.status = { notIn: ["delivered", "complete"] };
   }
+  if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
+  if (filters.company) where.company = { name: { contains: filters.company, mode: "insensitive" } };
+  if (filters.urgency) where.urgency = filters.urgency;
+  if (filters.orderType) where.orderType = filters.orderType;
+  if (filters.owner) where.ownerId = filters.owner;
+  if (filters.neededBy) {
+    const day = new Date(filters.neededBy);
+    const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+    where.neededByDate = { gte: day, lt: nextDay };
+  }
+
+  const ORDER_BY: Record<string, Prisma.OrderOrderByWithRelationInput> = {
+    title: { title: sortDir },
+    company: { company: { name: sortDir } },
+    status: { status: sortDir },
+    urgency: { urgency: sortDir },
+    orderType: { orderType: sortDir },
+    value: { orderValue: sortDir },
+    neededBy: { neededByDate: sortDir },
+    owner: { owner: { name: sortDir } },
+  };
+  const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
 
   const orders = await prisma.order.findMany({
     where,
@@ -32,15 +88,19 @@ export default async function OrdersPage({
       owner: { select: { id: true, name: true } },
       payments: { select: { status: true } },
     },
+    ...(orderBy ? { orderBy } : {}),
   });
 
-  orders.sort((a, b) => {
-    const ur = (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9);
-    if (ur !== 0) return ur;
-    const ad = a.neededByDate ? new Date(a.neededByDate).getTime() : Infinity;
-    const bd = b.neededByDate ? new Date(b.neededByDate).getTime() : Infinity;
-    return ad - bd;
-  });
+  // Default view (no explicit sort chosen): urgent first, then soonest needed-by.
+  if (!orderBy) {
+    orders.sort((a, b) => {
+      const ur = (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9);
+      if (ur !== 0) return ur;
+      const ad = a.neededByDate ? new Date(a.neededByDate).getTime() : Infinity;
+      const bd = b.neededByDate ? new Date(b.neededByDate).getTime() : Infinity;
+      return ad - bd;
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -49,7 +109,7 @@ export default async function OrdersPage({
         <p className="page-sub">Fulfillment pipeline - payment, POs, delivery.</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Link href="/orders" className={!status && !due ? "chip chip-active" : "chip"}>
           All
         </Link>
@@ -62,6 +122,10 @@ export default async function OrdersPage({
           Due this week
         </Link>
       </div>
+
+      <Suspense>
+        <ListControls fields={FIELDS} />
+      </Suspense>
 
       {orders.length === 0 ? (
         <div className="empty-state">

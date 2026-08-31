@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { labelFor, RFQ_STATUS_COLORS } from "@/lib/constants";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "./queue-statuses";
 import RfqRow from "./RfqRow";
 
@@ -18,21 +21,69 @@ type RfqLineItem = Prisma.LineItemGetPayload<{
   };
 }>;
 
-export default async function RfqPage() {
+type RfqSearchParams = Record<string, string | string[] | undefined>;
+
+export default async function RfqPage({
+  searchParams,
+}: {
+  searchParams: Promise<RfqSearchParams>;
+}) {
+  const sp = await searchParams;
   const statusValues = RFQ_QUEUE_STATUSES.map((s) => s.value);
 
-  const [rawItems, users]: [RfqLineItem[], { id: string; name: string }[]] = await Promise.all([
-    prisma.lineItem.findMany({
-      where: { rfqStatus: { in: statusValues as string[] } },
-      include: {
-        opportunity: { select: { id: true, title: true, stage: true, company: { select: { name: true } } } },
-        order: { select: { id: true, title: true, company: { select: { name: true } } } },
-        assignee: { select: { name: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-  ]);
+  const users = await prisma.user.findMany({
+    where: { active: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
+  // Sort by / Filter by (Aug 31 feedback: "select by any field" on every list).
+  // Parent company spans two optional relations (order.company / opportunity.company)
+  // so its filter is an OR across both - handled in Prisma below, not punted to JS.
+  // Days waiting and lead time are sort-only per the client's spec.
+  const FIELDS: ListField[] = [
+    { key: "name", label: "Item Name", type: "text" },
+    { key: "brand", label: "Brand", type: "text" },
+    { key: "assignee", label: "Assignee", type: "enum", options: users.map((u) => ({ value: u.id, label: u.name })) },
+    { key: "parentCompany", label: "Parent Company", type: "text", sortable: false },
+    { key: "daysWaiting", label: "Days Waiting", type: "number", filterable: false },
+    { key: "leadTime", label: "Lead Time (days)", type: "number", filterable: false },
+  ];
+  const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
+
+  const whereAnd: Prisma.LineItemWhereInput[] = [{ rfqStatus: { in: statusValues as string[] } }];
+  if (filters.name) whereAnd.push({ name: { contains: filters.name, mode: "insensitive" } });
+  if (filters.brand) whereAnd.push({ brand: { contains: filters.brand, mode: "insensitive" } });
+  if (filters.assignee) whereAnd.push({ assigneeId: filters.assignee });
+  if (filters.parentCompany) {
+    whereAnd.push({
+      OR: [
+        { order: { company: { name: { contains: filters.parentCompany, mode: "insensitive" } } } },
+        { opportunity: { company: { name: { contains: filters.parentCompany, mode: "insensitive" } } } },
+      ],
+    });
+  }
+
+  const ORDER_BY: Record<string, Prisma.LineItemOrderByWithRelationInput> = {
+    name: { name: sortDir },
+    brand: { brand: sortDir },
+    assignee: { assignee: { name: sortDir } },
+    // "Days waiting" counts up from createdAt, so ascending days-waiting means
+    // most-recently-created first (i.e. createdAt descending).
+    daysWaiting: { createdAt: sortDir === "asc" ? "desc" : "asc" },
+    leadTime: { leadTimeDays: sortDir },
+  };
+  const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
+
+  const rawItems: RfqLineItem[] = await prisma.lineItem.findMany({
+    where: { AND: whereAnd },
+    include: {
+      opportunity: { select: { id: true, title: true, stage: true, company: { select: { name: true } } } },
+      order: { select: { id: true, title: true, company: { select: { name: true } } } },
+      assignee: { select: { name: true } },
+    },
+    orderBy: orderBy ?? { createdAt: "asc" },
+  });
 
   const items = rawItems.filter((i) => !isDeadDealItem(i));
 
@@ -60,6 +111,10 @@ export default async function RfqPage() {
           </div>
         ))}
       </div>
+
+      <Suspense>
+        <ListControls fields={FIELDS} />
+      </Suspense>
 
       {items.length === 0 ? (
         <div className="empty-state">

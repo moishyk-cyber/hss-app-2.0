@@ -1,12 +1,35 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { COMPANY_TYPES } from "@/lib/constants";
+import { ListControls } from "@/lib/ListControls";
+import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { InstantSearch } from "@/lib/ui";
 import { AssignCompanySelect } from "./AssignCompanySelect";
 import { Avatar, EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
 
 export const dynamic = "force-dynamic";
+
+const ROW_KINDS = [
+  { value: "business", label: "Business" },
+  { value: "person", label: "Person" },
+] as const;
+
+/**
+ * Sort by / Filter by columns for this list (Aug 31 feedback: every list, any
+ * field). Businesses and people are merged in JS here, so these are applied to
+ * the merged rows rather than to either Prisma query.
+ *
+ * Name is sort-only (the pinned search box already covers name text) and Type is
+ * sort-only (the type chips own the `type` param - a second control for the same
+ * column would write a different param and fight the chips).
+ */
+const PHONEBOOK_FIELDS: ReadonlyArray<ListField> = [
+  { key: "kind", label: "Business or person", type: "enum", options: ROW_KINDS },
+  { key: "name", label: "Name", type: "text", filterable: false },
+  { key: "type", label: "Type", type: "enum", options: COMPANY_TYPES, filterable: false },
+];
 
 /**
  * One line in the directory. Businesses and people share the same shape so they can
@@ -79,11 +102,12 @@ function DirectoryRowItem({ row }: { row: DirectoryRow }) {
 export default async function PhoneBookPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { q, type } = await searchParams;
-  const search = (q ?? "").trim();
-  const typeFilter = (type ?? "").trim();
+  const params = await searchParams;
+  const search = typeof params.q === "string" ? params.q.trim() : "";
+  const typeFilter = typeof params.type === "string" ? params.type.trim() : "";
+  const { sortKey, sortDir, filters } = parseListQuery(PHONEBOOK_FIELDS, params);
   // Stored numbers are digits-only, so a search of "(718) 871" should still hit.
   const digits = search.replace(/\D/g, "");
 
@@ -142,8 +166,6 @@ export default async function PhoneBookPage({
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const peopleCount = companies.reduce((sum, c) => sum + c.contacts.length, 0) + unassigned.length;
-
   // Businesses and their people flattened into one list, then alphabetised together.
   const rows: DirectoryRow[] = [];
   for (const company of companies) {
@@ -176,19 +198,53 @@ export default async function PhoneBookPage({
   }
   rows.sort((a, b) => a.name.localeCompare(b.name));
 
+  // Filter by, applied to the merged rows. Only `kind` is filterable here: name is
+  // covered by the search box and type by the chips.
+  const kindFilter = filters.kind ?? "";
+  const visibleRows = kindFilter ? rows.filter((r) => r.kind === kindFilter) : rows;
+
+  // Sort by, likewise on the merged rows. Rows arrive name-ascending already.
+  const dir = sortDir === "desc" ? -1 : 1;
+  const sortedRows =
+    sortKey === "name"
+      ? [...visibleRows].sort((a, b) => dir * a.name.localeCompare(b.name))
+      : sortKey === "kind"
+        ? [...visibleRows].sort(
+            (a, b) => dir * a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)
+          )
+        : sortKey === "type"
+          ? [...visibleRows].sort(
+              (a, b) => dir * a.type.localeCompare(b.type) || a.name.localeCompare(b.name)
+            )
+          : visibleRows;
+
+  // A-Z headers only make sense while the list is in its default A-Z order.
+  const grouped = !sortKey || (sortKey === "name" && sortDir === "asc");
+
   const groups: { letter: string; rows: DirectoryRow[] }[] = [];
-  for (const row of rows) {
-    const letter = groupLetter(row.name);
-    const last = groups[groups.length - 1];
-    if (last && last.letter === letter) last.rows.push(row);
-    else groups.push({ letter, rows: [row] });
+  if (grouped) {
+    for (const row of sortedRows) {
+      const letter = groupLetter(row.name);
+      const last = groups[groups.length - 1];
+      if (last && last.letter === letter) last.rows.push(row);
+      else groups.push({ letter, rows: [row] });
+    }
   }
 
+  // Orphan people are people too - a "businesses only" filter hides that section.
+  const shownUnassigned = kindFilter === "business" ? [] : unassigned;
+  const businessCount = visibleRows.filter((r) => r.kind === "business").length;
+  const peopleCount = visibleRows.length - businessCount + shownUnassigned.length;
+
+  // Chips rewrite only `type` - search, sort and f_* params ride along untouched.
   const chipHref = (value: string) => {
-    const params = new URLSearchParams();
-    if (search) params.set("q", search);
-    if (value) params.set("type", value);
-    const query = params.toString();
+    const next = new URLSearchParams();
+    for (const [key, raw] of Object.entries(params)) {
+      if (key === "type") continue;
+      if (typeof raw === "string" && raw !== "") next.set(key, raw);
+    }
+    if (value) next.set("type", value);
+    const query = next.toString();
     return query ? `/phonebook?${query}` : "/phonebook";
   };
 
@@ -213,10 +269,15 @@ export default async function PhoneBookPage({
               className="input-klyne w-full sm:w-96"
             />
             <p className="text-[13px] text-gray">
-              {companies.length} business{companies.length === 1 ? "" : "es"} · {peopleCount}{" "}
+              {businessCount} business{businessCount === 1 ? "" : "es"} · {peopleCount}{" "}
               {peopleCount === 1 ? "person" : "people"}
             </p>
           </div>
+
+          {/* useSearchParams needs a boundary even on a force-dynamic page. */}
+          <Suspense fallback={<div className="h-8" />}>
+            <ListControls fields={PHONEBOOK_FIELDS} />
+          </Suspense>
 
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -242,10 +303,12 @@ export default async function PhoneBookPage({
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {sortedRows.length === 0 ? (
         <div className="empty-state">
           {search ? (
             `Nothing in the phone book matches “${search}”.`
+          ) : kindFilter || typeFilter ? (
+            "Nothing in the phone book matches this filter."
           ) : (
             <>
               No businesses yet.{" "}
@@ -258,22 +321,31 @@ export default async function PhoneBookPage({
         </div>
       ) : (
         <div className="card card-flush overflow-hidden">
-          {groups.map((group) => (
-            <section key={group.letter}>
-              <h2 className="border-y border-border bg-panel px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-dark first:border-t-0">
-                {group.letter}
-              </h2>
-              <ul className="divide-y divide-border">
-                {group.rows.map((row) => (
-                  <DirectoryRowItem key={row.key} row={row} />
-                ))}
-              </ul>
-            </section>
-          ))}
+          {grouped ? (
+            groups.map((group) => (
+              <section key={group.letter}>
+                <h2 className="border-y border-border bg-panel px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-dark first:border-t-0">
+                  {group.letter}
+                </h2>
+                <ul className="divide-y divide-border">
+                  {group.rows.map((row) => (
+                    <DirectoryRowItem key={row.key} row={row} />
+                  ))}
+                </ul>
+              </section>
+            ))
+          ) : (
+            /* A chosen sort breaks the alphabet, so the letter headers come off. */
+            <ul className="divide-y divide-border">
+              {sortedRows.map((row) => (
+                <DirectoryRowItem key={row.key} row={row} />
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
-      {unassigned.length > 0 ? (
+      {shownUnassigned.length > 0 ? (
         <section className="mt-10">
           <h2 className="section-label">Unassigned people</h2>
           <div className="banner-warn mb-4">
@@ -282,7 +354,7 @@ export default async function PhoneBookPage({
           </div>
           <div className="card card-flush overflow-hidden">
             <ul className="divide-y divide-border">
-              {unassigned.map((contact) => {
+              {shownUnassigned.map((contact) => {
                 const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
                 return (
                   <li
