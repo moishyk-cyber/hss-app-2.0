@@ -11,20 +11,19 @@ export default async function IntakePage({
 }) {
   const { companyId, error, company } = await searchParams;
 
-  const [companies, salespeople] = await Promise.all([
+  const [companies, contacts, salespeople] = await Promise.all([
     prisma.company.findMany({
       where: { type: { in: ["customer", "lead"] } },
-      select: {
-        id: true,
-        name: true,
-        deliveryAddress: true,
-        locationName: true,
-        contacts: {
-          select: { id: true, firstName: true, lastName: true, title: true },
-          orderBy: { firstName: "asc" },
-        },
-      },
+      // deliveryAddress is shown read-only under the picked business — the intake
+      // reuses it unless the caller says the delivery goes somewhere else.
+      select: { id: true, name: true, deliveryAddress: true, locationName: true },
       orderBy: { name: "asc" },
+    }),
+    // Loaded whole and filtered client-side by the picked company, so the contact
+    // search behaves exactly like the business search (no round-trip per keystroke).
+    prisma.contact.findMany({
+      select: { id: true, firstName: true, lastName: true, companyId: true },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     }),
     prisma.user.findMany({
       where: { active: true },
@@ -53,6 +52,7 @@ export default async function IntakePage({
 
       <IntakeForm
         companies={companies}
+        contacts={contacts}
         salespeople={salespeople}
         initialCompanyId={preselected?.id}
         error={error}

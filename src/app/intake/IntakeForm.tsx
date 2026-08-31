@@ -1,5 +1,10 @@
 "use client";
 
+// Intake, rebuilt for the Aug 31 feedback round: ONE top-to-bottom column of
+// numbered sections that unlock as they're answered, instead of a two-column
+// wall of panels. Still a single <form> — progressive disclosure only hides
+// what hasn't been reached yet, so nothing is a separate route or a lost draft.
+
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { FormAlert, PendingButton } from "@/lib/ui";
@@ -8,6 +13,7 @@ import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
 
 const MAX_COMPANY_RESULTS = 8;
+const MAX_CONTACT_RESULTS = 8;
 
 function subscribeToStoredSalesperson(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -23,7 +29,7 @@ type IntakeContact = {
   id: string;
   firstName: string;
   lastName: string | null;
-  title: string | null;
+  companyId: string | null;
 };
 
 type IntakeCompany = {
@@ -31,7 +37,6 @@ type IntakeCompany = {
   name: string;
   deliveryAddress: string | null;
   locationName: string | null;
-  contacts: IntakeContact[];
 };
 
 type ItemRow = { key: number; name: string; details: string; qty: string };
@@ -39,27 +44,53 @@ type ItemRow = { key: number; name: string; details: string; qty: string };
 const inputClass = "input-klyne w-full";
 const labelClass = "field-label";
 
-function Panel({
+function contactName(contact: IntakeContact): string {
+  return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+}
+
+/**
+ * One numbered step of the call. A locked section shows its number and title so
+ * the whole shape of the form is visible from the start — it just can't be
+ * answered out of order.
+ */
+function Section({
+  index,
   title,
   hint,
+  locked,
+  lockedHint,
   children,
-  action,
 }: {
+  index: number;
   title: string;
   hint?: string;
+  locked?: boolean;
+  lockedHint?: string;
   children: React.ReactNode;
-  action?: React.ReactNode;
 }) {
   return (
-    <section className="card">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div>
+    <section className={`card ${locked ? "opacity-60" : ""}`}>
+      <header className="flex flex-wrap items-start gap-x-3 gap-y-1">
+        <span
+          aria-hidden
+          className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold ${
+            locked ? "bg-hover text-gray" : "bg-primary text-white"
+          }`}
+        >
+          {index}
+        </span>
+        <div className="min-w-0">
           <h2 className="section-label !mb-0">{title}</h2>
-          {hint ? <p className="mt-1 text-xs text-gray">{hint}</p> : null}
+          {locked ? (
+            lockedHint ? (
+              <p className="mt-1 text-xs text-gray">{lockedHint}</p>
+            ) : null
+          ) : hint ? (
+            <p className="mt-1 text-xs text-gray">{hint}</p>
+          ) : null}
         </div>
-        {action}
       </header>
-      {children}
+      {locked ? null : <div className="mt-5">{children}</div>}
     </section>
   );
 }
@@ -134,14 +165,48 @@ function InlineRadio({
   );
 }
 
+/** Quiet "move on" control at the foot of a section. */
+function NextButton({
+  onClick,
+  disabled,
+  disabledReason,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={`btn btn-sm active:scale-[0.99] ${
+          disabled ? "cursor-not-allowed opacity-50" : ""
+        }`}
+      >
+        {children}
+      </button>
+      {disabled && disabledReason ? (
+        <span className="text-xs text-gray">{disabledReason}</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function IntakeForm({
   companies,
+  contacts,
   salespeople,
   initialCompanyId,
   error,
   duplicateCompany,
 }: {
   companies: IntakeCompany[];
+  /** Every contact, filtered to the picked business client-side. */
+  contacts: IntakeContact[];
   salespeople: { id: string; name: string }[];
   initialCompanyId?: string;
   error?: string;
@@ -152,14 +217,21 @@ export function IntakeForm({
     ? companies.find((c) => c.id === initialCompanyId)
     : undefined;
 
+  // How far down the call we've got. Sections above this are answerable.
+  const [openSection, setOpenSection] = useState(initialCompany ? 2 : 1);
+
   const [clientMode, setClientMode] = useState<"existing" | "new">("existing");
   const [companyQuery, setCompanyQuery] = useState(initialCompany?.name ?? "");
   const [companyId, setCompanyId] = useState(initialCompany?.id ?? "");
   const [newCompanyName, setNewCompanyName] = useState("");
+  const [overrideDelivery, setOverrideDelivery] = useState(false);
   const [contactMode, setContactMode] = useState<"existing" | "new">("existing");
+  const [contactQuery, setContactQuery] = useState("");
+  const [contactId, setContactId] = useState("");
   // Tracked only so the form can say out loud that a blank name creates no contact —
   // the server stays permissive here, because mid-call speed beats a blocking error.
   const [newContactFirstName, setNewContactFirstName] = useState("");
+  const [showSalespersonPicker, setShowSalespersonPicker] = useState(false);
   const [salespersonOverride, setSalespersonOverride] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<"project" | "order">("project");
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
@@ -170,11 +242,11 @@ export function IntakeForm({
   ]);
   const [nextKey, setNextKey] = useState(2);
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
-  const [autoFocusKey, setAutoFocusKey] = useState(1);
+  const [autoFocusKey, setAutoFocusKey] = useState(0);
 
-  // No auth yet: remember the last salesperson locally and preselect them. This is the
-  // same identity the sidebar's "Working as" picker uses, so picking here also sets the
-  // cookie the activity log attributes entries to.
+  // No auth yet: the sidebar's "Working as" identity is who this intake belongs to.
+  // The salesperson dropdown is gone from the form — it was one more thing to fill in
+  // mid-call, and it always meant "me".
   const storedSalespersonId = useSyncExternalStore(
     subscribeToStoredSalesperson,
     readStoredUserId,
@@ -184,8 +256,9 @@ export function IntakeForm({
     storedSalespersonId && salespeople.some((u) => u.id === storedSalespersonId)
       ? storedSalespersonId
       : null;
-  // An explicit pick wins; otherwise fall back to whoever was remembered.
+  // An explicit pick wins; otherwise fall back to whoever the sidebar says we are.
   const salespersonId = salespersonOverride ?? rememberedSalespersonId ?? "";
+  const salespersonName = salespeople.find((u) => u.id === salespersonId)?.name ?? null;
 
   function rememberSalesperson(id: string) {
     // storeUserId also mirrors into the cookie Server Actions read for attribution.
@@ -198,16 +271,37 @@ export function IntakeForm({
   );
 
   const selectedCompany = companies.find((c) => c.id === companyId) ?? null;
+
+  // Contacts are loaded whole and filtered here — the picked business is client state.
+  const contactOptions = useMemo(
+    () =>
+      companyId
+        ? contacts
+            .filter((c) => c.companyId === companyId)
+            .map((c) => ({ id: c.id, name: contactName(c) }))
+        : [],
+    [contacts, companyId]
+  );
+
   const goesToPipeline = orderType === "project" || needsPricing === "yes";
 
-  // A deal without a client is not useful — keep the CTA closed until one is chosen.
-  const clientReady = clientMode === "new" || companyId !== "";
+  // A deal without a client is not useful — keep everything downstream closed
+  // until one is picked (or a new one is being typed).
+  const clientReady =
+    clientMode === "new" ? newCompanyName.trim() !== "" : companyId !== "";
 
   const namedItemCount = items.filter((i) => i.name.trim() !== "").length;
   const clientLabel =
     clientMode === "new"
       ? newCompanyName.trim() || "New client"
       : (selectedCompany?.name ?? "No client selected");
+
+  function resetContact() {
+    setContactMode("existing");
+    setContactQuery("");
+    setContactId("");
+    setNewContactFirstName("");
+  }
 
   function updateItem(key: number, patch: Partial<ItemRow>) {
     setItems((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -230,11 +324,18 @@ export function IntakeForm({
     if (isLastRow) addItem();
   }
 
+  const contactSummary =
+    clientMode === "new" || contactMode === "new"
+      ? newContactFirstName.trim() || "no contact"
+      : contactId
+        ? (contactOptions.find((o) => o.id === contactId)?.name ?? "contact")
+        : "no contact";
+
   return (
     <form
       action={submitIntake}
       onSubmit={() => rememberSalesperson(salespersonId)}
-      className="pb-4"
+      className="mx-auto max-w-3xl pb-4"
     >
       {error === "duplicate_company" ? (
         <FormAlert>
@@ -255,196 +356,290 @@ export function IntakeForm({
       <input type="hidden" name="contactMode" value={contactMode} />
       <input type="hidden" name="orderType" value={orderType} />
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {/* ---------------- LEFT: who / when ---------------- */}
-        <div className="space-y-6">
-          <Panel title="Who">
-            {clientMode === "existing" ? (
-              <div className="space-y-3">
-                <BusinessCombobox
-                  query={companyQuery}
-                  setQuery={(next) => {
-                    setCompanyQuery(next);
-                    // Typing again means they're re-searching — drop the old pick.
-                    if (companyId) setCompanyId("");
-                  }}
-                  options={companyOptions}
-                  maxResults={MAX_COMPANY_RESULTS}
-                  selectedId={companyId}
-                  onPick={(o) => {
-                    setCompanyId(o.id);
-                    setCompanyQuery(o.name);
-                    setContactMode("existing");
-                  }}
-                  onCreate={(name) => {
-                    setClientMode("new");
-                    setNewCompanyName(name);
+      <div className="space-y-5">
+        {/* ============ 1 — Who's calling ============ */}
+        <Section index={1} title="Who’s calling" hint="Find the business, then the person.">
+          {clientMode === "existing" ? (
+            <div className="space-y-4">
+              <BusinessCombobox
+                query={companyQuery}
+                setQuery={(next) => {
+                  setCompanyQuery(next);
+                  // Typing again means they're re-searching — drop the old pick.
+                  if (companyId) {
                     setCompanyId("");
-                    setContactMode("new");
-                  }}
-                />
-                {/* The combobox is a display control; this carries the real value. */}
-                <input type="hidden" name="companyId" value={companyId} />
+                    setOverrideDelivery(false);
+                    resetContact();
+                  }
+                }}
+                options={companyOptions}
+                maxResults={MAX_COMPANY_RESULTS}
+                selectedId={companyId}
+                onPick={(o) => {
+                  setCompanyId(o.id);
+                  setCompanyQuery(o.name);
+                  setOverrideDelivery(false);
+                  resetContact();
+                }}
+                onCreate={(name) => {
+                  setClientMode("new");
+                  setNewCompanyName(name);
+                  setCompanyId("");
+                  setOverrideDelivery(false);
+                  setContactMode("new");
+                  setContactId("");
+                  setContactQuery("");
+                }}
+              />
+              {/* The combobox is a display control; this carries the real value. */}
+              <input type="hidden" name="companyId" value={companyId} />
 
-                {selectedCompany ? (
-                  <>
-                    <p className="text-xs text-gray">
-                      {selectedCompany.locationName ? `${selectedCompany.locationName} · ` : ""}
-                      {selectedCompany.deliveryAddress ?? "No delivery address on file"}
-                    </p>
-
-                    <div className="rounded-[10px] border border-border bg-panel p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="section-label">Contact</span>
-                        <Segmented
-                          ariaLabel="Contact type"
-                          value={contactMode}
-                          onChange={(v) => setContactMode(v as "existing" | "new")}
-                          options={[
-                            { value: "existing", label: "Existing" },
-                            { value: "new", label: "New" },
-                          ]}
-                        />
-                      </div>
-
-                      {contactMode === "existing" ? (
-                        selectedCompany.contacts.length > 0 ? (
-                          <select name="contactId" className={inputClass} defaultValue="">
-                            <option value="">— none —</option>
-                            {selectedCompany.contacts.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {[c.firstName, c.lastName].filter(Boolean).join(" ")}
-                                {c.title ? ` (${c.title})` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="text-xs text-gray-dark">
-                            No contacts on file — switch to “New” to add one.
-                          </p>
-                        )
+              {selectedCompany ? (
+                <>
+                  {/* --- delivery address, straight off the business --- */}
+                  <div className="rounded-[10px] border border-border bg-panel p-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="section-label !mb-0">Delivery address</span>
+                      {overrideDelivery ? (
+                        <button
+                          type="button"
+                          onClick={() => setOverrideDelivery(false)}
+                          className="text-xs text-gray-dark transition-colors hover:text-ink"
+                        >
+                          Use the address on file
+                        </button>
                       ) : (
-                        <NewContactFields firstName={newContactFirstName} onFirstNameChange={setNewContactFirstName} />
+                        <button
+                          type="button"
+                          onClick={() => setOverrideDelivery(true)}
+                          className="text-xs text-primary transition-colors hover:underline"
+                        >
+                          Deliver somewhere else
+                        </button>
                       )}
                     </div>
-                  </>
-                ) : null}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="badge badge-blue">New business</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClientMode("existing");
-                      setContactMode("existing");
-                      setCompanyQuery(newCompanyName);
-                    }}
-                    className="text-xs text-gray-dark transition-colors hover:text-ink"
-                  >
-                    ← Search existing instead
-                  </button>
-                </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="block sm:col-span-2">
-                    <span className={labelClass}>Business name</span>
-                    <input
-                      name="newCompanyName"
-                      required
-                      autoFocus
-                      value={newCompanyName}
-                      onChange={(e) => setNewCompanyName(e.target.value)}
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Phone</span>
-                    <input name="newCompanyPhone" className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Extension</span>
-                    <input name="newCompanyPhoneExt" className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Cell phone</span>
-                    <input name="newCompanyCellPhone" className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Email</span>
-                    <input type="email" name="newCompanyEmail" className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Business address</span>
-                    <input name="newCompanyAddress" className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Delivery address</span>
-                    <input name="newCompanyDeliveryAddress" className={inputClass} />
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className={labelClass}>Name of location</span>
-                    <input name="newCompanyLocationName" className={inputClass} />
-                  </label>
-                </div>
+                    {overrideDelivery ? (
+                      <input
+                        name="deliveryAddress"
+                        autoFocus
+                        placeholder="Where is this going instead?"
+                        className={inputClass}
+                      />
+                    ) : (
+                      <p className="text-[13px] text-ink">
+                        {selectedCompany.locationName ? (
+                          <span className="text-gray-dark">
+                            {selectedCompany.locationName} ·{" "}
+                          </span>
+                        ) : null}
+                        {selectedCompany.deliveryAddress ?? (
+                          <span className="empty-value">No delivery address on file</span>
+                        )}
+                      </p>
+                    )}
+                  </div>
 
-                <div className="rounded-[10px] border border-border bg-panel p-3">
-                  <p className="section-label mb-2">Primary contact</p>
-                  <NewContactFields firstName={newContactFirstName} onFirstNameChange={setNewContactFirstName} />
-                </div>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="When & who owns it">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className={labelClass}>When do you need it?</span>
-                <input type="date" name="neededByDate" className={inputClass} />
-              </label>
-              <label className="block">
-                <span className={labelClass}>Salesperson</span>
-                <select
-                  name="salespersonId"
-                  className={inputClass}
-                  value={salespersonId}
-                  onChange={(e) => {
-                    setSalespersonOverride(e.target.value);
-                    rememberSalesperson(e.target.value);
-                  }}
-                >
-                  <option value="">— unassigned —</option>
-                  {salespeople.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                      {u.id === rememberedSalespersonId ? " (you)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block sm:col-span-2">
-                <span className={labelClass}>Delivery address (if different)</span>
-                <input name="deliveryAddress" className={inputClass} />
-              </label>
+                  {/* --- contact: same search-or-create pattern as the business --- */}
+                  <div className="rounded-[10px] border border-border bg-panel p-3">
+                    {contactMode === "existing" ? (
+                      <>
+                        <BusinessCombobox
+                          label="Contact"
+                          placeholder="Search this business’s people…"
+                          query={contactQuery}
+                          setQuery={(next) => {
+                            setContactQuery(next);
+                            if (contactId) setContactId("");
+                          }}
+                          options={contactOptions}
+                          maxResults={MAX_CONTACT_RESULTS}
+                          selectedId={contactId}
+                          onPick={(o) => {
+                            setContactId(o.id);
+                            setContactQuery(o.name);
+                          }}
+                          onCreate={(name) => {
+                            setContactMode("new");
+                            setContactId("");
+                            setNewContactFirstName(name);
+                          }}
+                        />
+                        <input type="hidden" name="contactId" value={contactId} />
+                        {contactId === "" ? (
+                          <p className="mt-2 text-xs text-gray">
+                            No contact will be created — leave this blank if you didn&rsquo;t catch
+                            a name.
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="section-label !mb-0">New contact</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setContactMode("existing");
+                              setContactQuery(newContactFirstName);
+                            }}
+                            className="text-xs text-gray-dark transition-colors hover:text-ink"
+                          >
+                            Search existing instead
+                          </button>
+                        </div>
+                        <NewContactFields
+                          firstName={newContactFirstName}
+                          onFirstNameChange={setNewContactFirstName}
+                        />
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : null}
             </div>
-          </Panel>
-        </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="badge badge-blue">New business</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClientMode("existing");
+                    setCompanyQuery(newCompanyName);
+                    resetContact();
+                  }}
+                  className="text-xs text-gray-dark transition-colors hover:text-ink"
+                >
+                  Search existing instead
+                </button>
+              </div>
 
-        {/* ---------------- RIGHT: items / type ---------------- */}
-        <div className="space-y-6">
-          <Panel
-            title="Items needed"
-            hint="Press Enter on the last row to add another."
-            action={<span className="badge badge-gray">{namedItemCount}</span>}
-          >
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className={labelClass}>Business name</span>
+                  <input
+                    name="newCompanyName"
+                    required
+                    autoFocus
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Phone</span>
+                  <input name="newCompanyPhone" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Extension</span>
+                  <input name="newCompanyPhoneExt" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Cell phone</span>
+                  <input name="newCompanyCellPhone" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Email</span>
+                  <input type="email" name="newCompanyEmail" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Business address</span>
+                  <input name="newCompanyAddress" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Delivery address</span>
+                  <input name="newCompanyDeliveryAddress" className={inputClass} />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className={labelClass}>Name of location</span>
+                  <input name="newCompanyLocationName" className={inputClass} />
+                </label>
+              </div>
+
+              <div className="rounded-[10px] border border-border bg-panel p-3">
+                <p className="section-label mb-2">Primary contact</p>
+                <NewContactFields
+                  firstName={newContactFirstName}
+                  onFirstNameChange={setNewContactFirstName}
+                />
+              </div>
+            </div>
+          )}
+
+          {openSection < 2 ? (
+            <NextButton
+              onClick={() => setOpenSection(2)}
+              disabled={!clientReady}
+              disabledReason="Pick or create a business first"
+            >
+              Next — what do they need?
+            </NextButton>
+          ) : null}
+        </Section>
+
+        {/* ============ 2 — What do they need ============ */}
+        <Section
+          index={2}
+          title="What do they need"
+          hint="Press Enter on the last item to add another."
+          locked={openSection < 2}
+          lockedHint="Answer step 1 first."
+        >
+          {/* Order type comes FIRST: it decides what the rest of this step asks for. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className={`${labelClass} !mb-0`}>Project or order?</span>
+            <Segmented
+              ariaLabel="Order type"
+              value={orderType}
+              onChange={(v) => setOrderType(v as "project" | "order")}
+              options={[
+                { value: "project", label: "Project" },
+                { value: "order", label: "Order" },
+              ]}
+            />
+          </div>
+
+          {orderType === "project" ? (
+            <>
+              {/* A project always goes out for pricing — keep the field honest and implicit. */}
+              <input type="hidden" name="needsPricing" value="yes" />
+              <p className="mt-2 text-[13px] text-gray-dark">
+                Bid / measurement work. Projects always go out for pricing, so this becomes an
+                opportunity in the pipeline.
+              </p>
+            </>
+          ) : (
+            <div className="mt-3">
+              <span className={labelClass}>Needs pricing?</span>
+              <div className="flex flex-wrap gap-2">
+                <InlineRadio
+                  name="needsPricing"
+                  value="yes"
+                  checked={needsPricing === "yes"}
+                  onChange={setNeedsPricing}
+                  label="Yes — send to pipeline"
+                />
+                <InlineRadio
+                  name="needsPricing"
+                  value="no"
+                  checked={needsPricing === "no"}
+                  onChange={setNeedsPricing}
+                  label="No — priced already"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 border-t border-border pt-5">
+            <span className={labelClass}>Items</span>
             <div className="space-y-2">
               {items.map((row, index) => {
                 const isLastRow = index === items.length - 1;
                 return (
                   <div key={row.key} className="flex items-end gap-2">
                     <label className="block flex-1">
-                      {index === 0 ? <span className={labelClass}>Item</span> : null}
+                      <span className="sr-only">Item name</span>
                       <input
                         name="itemName"
                         autoFocus={row.key === autoFocusKey}
@@ -456,7 +651,7 @@ export function IntakeForm({
                       />
                     </label>
                     <label className="block flex-1">
-                      {index === 0 ? <span className={labelClass}>Details</span> : null}
+                      <span className="sr-only">Item details</span>
                       <input
                         name="itemDetails"
                         value={row.details}
@@ -467,7 +662,7 @@ export function IntakeForm({
                       />
                     </label>
                     <label className="block w-16">
-                      {index === 0 ? <span className={labelClass}>Qty</span> : null}
+                      <span className="sr-only">Quantity</span>
                       <input
                         name="itemQty"
                         type="number"
@@ -504,60 +699,14 @@ export function IntakeForm({
               <span className={labelClass}>Notes for the team</span>
               <textarea name="notes" rows={2} className={inputClass} />
             </label>
-          </Panel>
-
-          <Panel
-            title="Order type"
-            action={
-              <Segmented
-                ariaLabel="Order type"
-                value={orderType}
-                onChange={(v) => setOrderType(v as "project" | "order")}
-                options={[
-                  { value: "project", label: "Project" },
-                  { value: "order", label: "Order" },
-                ]}
-              />
-            }
-          >
-            {orderType === "project" ? (
-              <>
-                {/* A project always goes out for pricing — keep the field honest and implicit. */}
-                <input type="hidden" name="needsPricing" value="yes" />
-                <p className="text-[13px] text-gray-dark">
-                  Bid / measurement work. Projects always go out for pricing, so this becomes an
-                  opportunity in the pipeline.
-                </p>
-              </>
-            ) : (
-              <div>
-                <span className={labelClass}>Needs pricing?</span>
-                <div className="flex flex-wrap gap-2">
-                  <InlineRadio
-                    name="needsPricing"
-                    value="yes"
-                    checked={needsPricing === "yes"}
-                    onChange={setNeedsPricing}
-                    label="Yes — send to pipeline"
-                  />
-                  <InlineRadio
-                    name="needsPricing"
-                    value="no"
-                    checked={needsPricing === "no"}
-                    onChange={setNeedsPricing}
-                    label="No — priced already"
-                  />
-                </div>
-              </div>
-            )}
-          </Panel>
+          </div>
 
           {orderType === "project" ? (
-            <details open className="card card-flush">
-              <summary className="cursor-pointer px-5 py-4 marker:text-gray">
+            <details className="card card-flush mt-5">
+              <summary className="cursor-pointer px-4 py-3 marker:text-gray">
                 <span className="section-label !mb-0 !inline">Project details</span>
               </summary>
-              <div className="grid grid-cols-1 gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-4 sm:grid-cols-2">
                 <label className="block">
                   <span className={labelClass}>Facility type</span>
                   <input name="facilityType" className={inputClass} />
@@ -623,11 +772,86 @@ export function IntakeForm({
               </div>
             </details>
           ) : null}
-        </div>
+
+          {openSection < 3 ? (
+            <NextButton onClick={() => setOpenSection(3)}>Next — when do they need it?</NextButton>
+          ) : null}
+        </Section>
+
+        {/* ============ 3 — When & submit ============ */}
+        <Section
+          index={3}
+          title="When & submit"
+          locked={openSection < 3}
+          lockedHint="Answer step 2 first."
+        >
+          <label className="block max-w-xs">
+            <span className={labelClass}>When do you need it?</span>
+            <input type="date" name="neededByDate" className={inputClass} />
+          </label>
+
+          {/* Salesperson is the sidebar identity, not a dropdown to fill in mid-call. */}
+          <div className="mt-4">
+            {showSalespersonPicker ? (
+              <label className="block max-w-xs">
+                <span className={labelClass}>Salesperson</span>
+                <select
+                  name="salespersonId"
+                  className={inputClass}
+                  value={salespersonId}
+                  onChange={(e) => {
+                    setSalespersonOverride(e.target.value);
+                    rememberSalesperson(e.target.value);
+                  }}
+                >
+                  <option value="">— unassigned —</option>
+                  {salespeople.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                      {u.id === rememberedSalespersonId ? " (you)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="text-[13px] text-gray-dark">
+                Submitting as{" "}
+                <span className="font-medium text-ink">
+                  {salespersonName ?? "whoever is signed in"}
+                </span>
+                <span className="mx-1.5 text-gray">·</span>
+                <button
+                  type="button"
+                  onClick={() => setShowSalespersonPicker(true)}
+                  className="text-primary transition-colors hover:underline"
+                >
+                  change
+                </button>
+                {/* The picker is hidden, so the value still has to reach the action. */}
+                <input type="hidden" name="salespersonId" value={salespersonId} />
+              </p>
+            )}
+          </div>
+
+          <div className="mt-5 rounded-[10px] border border-border bg-panel p-3 text-[13px] text-gray-dark">
+            <p>
+              <span className="font-medium text-ink">{clientLabel}</span>
+              <span className="mx-1.5 text-gray">·</span>
+              {contactSummary}
+            </p>
+            <p className="mt-1">
+              {orderType === "project" ? "Project" : "Order"}
+              <span className="mx-1.5 text-gray">·</span>
+              {namedItemCount} item{namedItemCount === 1 ? "" : "s"}
+              <span className="mx-1.5 text-gray">·</span>
+              {goesToPipeline ? "goes to the pipeline" : "becomes an order straight away"}
+            </p>
+          </div>
+        </Section>
       </div>
 
       {/* ---------------- sticky outcome bar ---------------- */}
-      <div className="sticky bottom-0 z-10 mt-6">
+      <div className="sticky bottom-0 z-10 mt-5">
         <div className="card flex flex-wrap items-center justify-between gap-4 bg-surface/90 backdrop-blur">
           <p className="text-[13px] text-gray-dark">
             <span className="font-medium text-ink">
@@ -636,11 +860,9 @@ export function IntakeForm({
             <span className="mx-1.5 text-gray">·</span>
             {orderType === "project" ? "Project" : "Order"}
             <span className="mx-1.5 text-gray">·</span>
-            <span className={selectedCompany || clientMode === "new" ? "" : "text-gray"}>
-              {clientLabel}
-            </span>
+            <span className={clientReady ? "" : "text-gray"}>{clientLabel}</span>
           </p>
-          {clientReady ? (
+          {clientReady && openSection >= 3 ? (
             <PendingButton
               className="btn btn-primary active:scale-[0.99]"
               pendingText={goesToPipeline ? "Creating opportunity…" : "Creating order…"}
@@ -651,13 +873,12 @@ export function IntakeForm({
             // Why the button is dead has to be readable, not just a hover tooltip.
             <div className="flex flex-wrap items-center gap-2.5">
               <p id="intake-cta-reason" className="text-[13px] font-medium text-ink">
-                Pick or create a business first
+                {clientReady ? "Work through the steps above" : "Pick or create a business first"}
               </p>
               <button
                 type="button"
                 disabled
                 aria-describedby="intake-cta-reason"
-                title="Pick or create a business first"
                 className="btn btn-primary cursor-not-allowed opacity-50"
               >
                 {goesToPipeline ? "Create opportunity" : "Create order"}

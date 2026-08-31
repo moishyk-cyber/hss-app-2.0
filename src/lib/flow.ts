@@ -14,6 +14,8 @@ type GateCompany = { requiresDeposit: boolean; depositPercent: number } | null;
 export type GateOrder = {
   orderType: string;
   orderValue: number | null;
+  /** Agreed gate amount from the close dialog; overrides the company-percent formula. */
+  depositRequired?: number | null;
   payments: GatePayment[];
   company: GateCompany;
 };
@@ -55,7 +57,8 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   }
 
   const value = order.orderValue ?? 0;
-  if (value <= 0) {
+  const agreed = order.depositRequired ?? null;
+  if (value <= 0 && agreed == null) {
     // Nothing to measure sufficiency against — fall back to "any paid payment".
     const open = paidTotal > 0;
     return {
@@ -72,9 +75,13 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
     };
   }
 
-  const requiredTotal = isProject
-    ? Math.round((value * depositPercent) / 100)
-    : Math.round(value);
+  // The close dialog's agreed deposit wins; otherwise the company-percent formula.
+  const requiredTotal =
+    agreed != null
+      ? Math.round(agreed)
+      : isProject
+        ? Math.round((value * depositPercent) / 100)
+        : Math.round(value);
   const shortfall = Math.max(0, requiredTotal - paidTotal);
   const open = shortfall <= GATE_TOLERANCE;
   return {

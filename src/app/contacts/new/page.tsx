@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { BackLink } from "@/lib/BackLink";
 import { createContact } from "../actions";
 import { ContactForm } from "../ContactForm";
-import { BackLink, PageHeader } from "../_ui";
+import { PageHeader } from "../_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,12 @@ export default async function NewContactPage({
 
   return (
     <div>
-      <BackLink
-        href={companyId ? `/companies/${companyId}` : "/phonebook"}
-        label={companyId ? "Back to business" : "Phone Book"}
-      />
+      <div className="mb-3">
+        <BackLink
+          href={companyId ? `/companies/${companyId}` : "/phonebook"}
+          label={companyId ? "Back to business" : "Back to Phone Book"}
+        />
+      </div>
       <PageHeader title="New contact" subtitle="Add a person at a business" />
       <ContactForm
         action={createContact}

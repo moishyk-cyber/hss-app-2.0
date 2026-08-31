@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
-import { addLineItem, markOpportunityLost, markOpportunityWon } from "../actions";
+import {
+  addLineItem,
+  markOpportunityLost,
+  markOpportunityWon,
+  moveStageFromStepper,
+} from "../actions";
 import { LineItemRow } from "../LineItemRow";
 import {
   Card,
@@ -19,19 +24,18 @@ import {
   isOverdue,
 } from "../_ui";
 
-/** Where this deal sits in the journey of UX_FLOW §2. */
-const FLOW_STEPS = ["Intake", "Estimating", "Proposal", "Negotiation", "Closed"] as const;
-
-const STEP_INDEX_BY_STAGE: Record<string, number> = {
-  new: 0,
-  info_missing: 0,
-  estimating: 1,
-  proposal_sent: 2,
-  revisions_needed: 2,
-  negotiation: 3,
-  won: 4,
-  lost: 4,
-};
+/**
+ * The sales process, and the control for driving it (Aug 31 feedback): each open
+ * step moves the deal to `target`; Close never writes a stage, it points at the
+ * Close panel where Won/Lost do their real work.
+ */
+const STEPPER: { label: string; stages: string[]; target: string | null }[] = [
+  { label: "Intake", stages: ["new", "info_missing"], target: "new" },
+  { label: "Estimating", stages: ["estimating"], target: "estimating" },
+  { label: "Proposal", stages: ["proposal_sent", "revisions_needed"], target: "proposal_sent" },
+  { label: "Negotiation", stages: ["negotiation"], target: "negotiation" },
+  { label: "Close", stages: ["won", "lost"], target: null },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -68,18 +72,11 @@ export default async function OpportunityDetailPage({
   const isProject = opportunity.orderType === "project";
   const linkedOrder = opportunity.orders[0] ?? null;
 
-  // Deposit terms come from the account (mirrors markOpportunityWon). A project for an
-  // account that takes no deposit stages nothing on win — payment follows delivery.
+  // Deposit terms come from the account, and prefill the Close panel — where the
+  // salesperson can override them with whatever was actually agreed on the call.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
-  const winPayment = isProject
-    ? requiresDeposit
-      ? {
-          label: `${depositPercent}% deposit`,
-          amount: Math.round(((opportunity.value ?? 0) * depositPercent) / 100),
-        }
-      : null
-    : { label: "full payment", amount: Math.round(opportunity.value ?? 0) };
+  const suggestedDeposit = Math.round(((opportunity.value ?? 0) * depositPercent) / 100);
 
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
@@ -102,36 +99,53 @@ export default async function OpportunityDetailPage({
       return `Chase ${awaitingQuoteCount} quote${awaitingQuoteCount === 1 ? "" : "s"}`;
     }
     if (stage === "revisions_needed") return "Send revised proposal";
-    if (stage === "proposal_sent") return "Awaiting client — mark won or lost";
+    if (stage === "proposal_sent") return "Awaiting client — then close it";
     if (stage === "negotiation") return "Close the deal";
     if (itemCount === 0) return "Add line items";
     if (pricedCount > 0) return "Send proposal";
     return "Move to estimating";
   })();
 
-  const currentStepIndex = STEP_INDEX_BY_STAGE[stage] ?? 0;
-  const steps: FlowStep[] = FLOW_STEPS.map((label, i) => {
+  const foundStepIndex = STEPPER.findIndex((s) => s.stages.includes(stage));
+  const currentStepIndex = foundStepIndex === -1 ? 0 : foundStepIndex;
+  const closeStepIndex = STEPPER.length - 1;
+
+  // A won deal that never got an order is only half-closed — the Close panel stays
+  // open as the recovery route (it reuses the same Won form).
+  const needsOrderRecovery = stage === "won" && !linkedOrder;
+  const showClosePanel = !closed || needsOrderRecovery;
+
+  const steps: FlowStep[] = STEPPER.map((step, i) => {
     // A closed deal has finished the whole journey, including the final step.
     const state: FlowStep["state"] =
       closed || i < currentStepIndex ? "done" : i === currentStepIndex ? "current" : "upcoming";
+    const isCloseStep = i === closeStepIndex;
     return {
-      label,
+      label: step.label,
       state,
       hint: i === currentStepIndex ? nextActionHint : undefined,
+      // Closed deals: the stepper is a record, not a control.
+      href: !closed && isCloseStep ? "#close" : undefined,
+      formAction:
+        closed || isCloseStep || i === currentStepIndex || !step.target
+          ? undefined
+          : moveStageFromStepper.bind(null, opportunity.id, step.target),
     };
   });
 
   // Exactly one contextual primary action (UX_FLOW §H).
   const primaryAction =
-    stage === "won" && linkedOrder
-      ? { href: `/orders/${linkedOrder.id}`, label: "View order" }
-      : closed
-        ? { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" }
-        : needsPricingCount > 0
-          ? { href: "/rfq", label: `Open RFQ items (${needsPricingCount})` }
-          : stage === "proposal_sent" || stage === "revisions_needed" || stage === "negotiation"
-            ? { href: "#close-deal", label: "Mark won or lost" }
-            : { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" };
+    needsOrderRecovery
+      ? { href: "#close", label: "Create the order" }
+      : stage === "won" && linkedOrder
+        ? { href: `/orders/${linkedOrder.id}`, label: "View order" }
+        : closed
+          ? { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" }
+          : needsPricingCount > 0
+            ? { href: "/rfq", label: `Open RFQ items (${needsPricingCount})` }
+            : stage === "proposal_sent" || stage === "revisions_needed" || stage === "negotiation"
+              ? { href: "#close", label: "Close this deal" }
+              : { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" };
 
   const followUpOverdue = isOverdue(opportunity.nextFollowUp);
 
@@ -139,7 +153,7 @@ export default async function OpportunityDetailPage({
     <div>
       <DetailHeader
         backHref="/pipeline"
-        backLabel="Pipeline"
+        backLabel="Back to Pipeline"
         title={opportunity.title}
         subtitle={opportunity.company?.name ?? "No company linked"}
         badges={
@@ -189,21 +203,15 @@ export default async function OpportunityDetailPage({
               ) : (
                 // Recovery path: the old stage dropdown could set "won" without ever
                 // running markOpportunityWon, leaving a closed deal with no order and
-                // no payment. Offer the missing half instead of a dead end.
+                // no payment. Point at the Close panel, which offers the missing half.
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <span>
                     Marked Won, but no order was ever created — the line items and the payment are
                     still sitting on the deal.
                   </span>
-                  <form action={markOpportunityWon}>
-                    <input type="hidden" name="id" value={opportunity.id} />
-                    <PendingButton
-                      className="btn btn-sm active:scale-[0.99]"
-                      pendingText="Creating order…"
-                    >
-                      Create the order
-                    </PendingButton>
-                  </form>
+                  <Link href="#close" className="text-primary transition-colors hover:underline">
+                    Create the order
+                  </Link>
                 </div>
               )
             ) : (
@@ -219,10 +227,9 @@ export default async function OpportunityDetailPage({
         </div>
       ) : error === "value_required" ? (
         <div className="banner-alert mb-4">
-          Add a deal value before marking won — the deposit and payment gate are calculated from
-          it.{" "}
-          <Link href={`/pipeline/${opportunity.id}/edit`} className="underline">
-            Set the value
+          A won deal needs a price — the deposit and the payment gate are both measured against it.{" "}
+          <Link href="#close" className="underline">
+            Enter the total in the Close panel
           </Link>
           .
         </div>
@@ -321,7 +328,6 @@ export default async function OpportunityDetailPage({
           <section className="card card-flush overflow-hidden">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <h2 className="section-label !mb-0">Line items</h2>
-              <span className="badge badge-gray">{opportunity.lineItems.length}</span>
             </div>
             {opportunity.lineItems.length === 0 ? (
               <div className="p-5">
@@ -333,11 +339,13 @@ export default async function OpportunityDetailPage({
               <div className="overflow-x-auto">
                 <table className="table-klyne">
                   <thead>
+                    {/*
+                      No Cost/Price here (Aug 31 feedback): pricing is the RFQ queue's
+                      job, and showing it on the deal invited edits in two places.
+                    */}
                     <tr>
                       <th>Item</th>
                       <th>Qty</th>
-                      <th>Cost</th>
-                      <th>Price</th>
                       <th>Assignee</th>
                       <th>RFQ status</th>
                       <th>Delivery</th>
@@ -409,60 +417,123 @@ export default async function OpportunityDetailPage({
             </Card>
           ) : null}
 
-          {closed ? null : (
-            <div id="close-deal" className="scroll-mt-6">
-              <Card title="Close this deal">
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <form action={markOpportunityWon}>
-                  <input type="hidden" name="id" value={opportunity.id} />
-                  <p className="mb-3 text-[13px] text-gray-dark">
-                    {winPayment ? (
-                      <>
-                        Creates an order, carries every non-removed line item across, and stages a{" "}
-                        {winPayment.label} of{" "}
-                        <span className="font-medium text-ink">{fmtMoney(winPayment.amount)}</span>.
-                      </>
-                    ) : (
-                      <>
-                        Creates an order and carries every non-removed line item across. No deposit
-                        is required for this account — full payment will be collected after
-                        delivery.
-                      </>
-                    )}
+          {/*
+            The Close panel replaces the old Mark Won / Mark Lost button pair: the
+            terms actually agreed on the call (price, and whether a deposit was
+            agreed) are typed HERE, and they become the order, the gate amount and
+            the staged payment. Nothing about closing is guessed from a formula.
+          */}
+          {showClosePanel ? (
+            <div id="close" className="scroll-mt-6">
+              <Card
+                title={needsOrderRecovery ? "Finish closing this deal" : "Close this deal"}
+              >
+                {needsOrderRecovery ? (
+                  <p className="mb-4 text-[13px] text-gray-dark">
+                    This deal is marked Won but has no order. Confirm the agreed terms and the
+                    order will be created with its line items and payment.
                   </p>
-                  {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
-                  <PendingButton
-                    className="btn active:scale-[0.99]"
-                    pendingText="Creating order…"
-                  >
-                    Mark Won
-                  </PendingButton>
-                </form>
+                ) : null}
 
-                <form action={markOpportunityLost}>
-                  <input type="hidden" name="id" value={opportunity.id} />
-                  <label className="block">
-                    <span className="field-label">Lost reason (required)</span>
-                    <input
-                      type="text"
-                      name="lostReason"
-                      required
-                      defaultValue={opportunity.lostReason ?? ""}
-                      placeholder="Why did we lose it?"
-                      className="input-klyne w-full"
-                    />
-                  </label>
-                  <PendingButton
-                    className="btn btn-danger mt-3 active:scale-[0.99]"
-                    pendingText="Closing…"
-                  >
-                    Mark Lost
-                  </PendingButton>
-                </form>
+                <div
+                  className={`grid grid-cols-1 gap-6 ${
+                    needsOrderRecovery ? "" : "md:grid-cols-2"
+                  }`}
+                >
+                  <form action={markOpportunityWon} className="space-y-3">
+                    <input type="hidden" name="id" value={opportunity.id} />
+                    {/* Tells the action these fields were really asked (an unticked box
+                        means "no deposit agreed", not "this form didn't ask"). */}
+                    <input type="hidden" name="closePanel" value="1" />
+
+                    <p className="section-label !mb-0">Won</p>
+
+                    <label className="block">
+                      <span className="field-label">Total price agreed</span>
+                      <input
+                        type="number"
+                        name="value"
+                        min="1"
+                        step="any"
+                        required
+                        defaultValue={opportunity.value ?? ""}
+                        placeholder="0"
+                        className="input-klyne w-full"
+                      />
+                    </label>
+
+                    {isProject ? (
+                      <div className="rounded-[10px] border border-border bg-panel p-3">
+                        <label className="flex items-center gap-2 text-[13px] text-ink">
+                          <input
+                            type="checkbox"
+                            name="requireDeposit"
+                            value="1"
+                            defaultChecked={requiresDeposit}
+                            className="h-4 w-4 rounded border-border accent-primary"
+                          />
+                          Deposit required?
+                        </label>
+                        <label className="mt-3 block">
+                          <span className="field-label">Deposit amount</span>
+                          <input
+                            type="number"
+                            name="depositAmount"
+                            min="0"
+                            step="any"
+                            defaultValue={suggestedDeposit || ""}
+                            placeholder="0"
+                            className="input-klyne w-full"
+                          />
+                        </label>
+                        <p className="mt-1.5 text-xs text-gray">
+                          Prefilled at {depositPercent}% for this account — change it to whatever
+                          was agreed. Untick the box and POs won&rsquo;t wait for a payment.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[13px] text-gray-dark">
+                        A straight order stages the full payment — POs go out once it&rsquo;s paid.
+                      </p>
+                    )}
+
+                    {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
+                    <PendingButton className="btn active:scale-[0.99]" pendingText="Creating order…">
+                      {needsOrderRecovery ? "Create the order" : "Mark won — create the order"}
+                    </PendingButton>
+                  </form>
+
+                  {needsOrderRecovery ? null : (
+                    <form action={markOpportunityLost} className="space-y-3">
+                      <input type="hidden" name="id" value={opportunity.id} />
+                      <p className="section-label !mb-0">Lost</p>
+                      <label className="block">
+                        <span className="field-label">Lost reason (required)</span>
+                        <input
+                          type="text"
+                          name="lostReason"
+                          required
+                          defaultValue={opportunity.lostReason ?? ""}
+                          placeholder="Why did we lose it?"
+                          className="input-klyne w-full"
+                        />
+                      </label>
+                      <p className="text-[13px] text-gray-dark">
+                        Closes the deal and drops it out of the follow-up queue. No order is
+                        created.
+                      </p>
+                      <PendingButton
+                        className="btn btn-danger active:scale-[0.99]"
+                        pendingText="Closing…"
+                      >
+                        Mark lost
+                      </PendingButton>
+                    </form>
+                  )}
                 </div>
               </Card>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

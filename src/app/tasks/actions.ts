@@ -39,6 +39,23 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
   }, "Could not create the task. Please try again.");
 }
 
+/**
+ * Google-Tasks-style quick add (Aug 31 feedback): a single "Add a task" input up
+ * top. Assignee comes from the caller's "Working as" identity (readStoredUserId
+ * on the client) rather than a form field — the full CreateTaskPanel stays
+ * available for anything more detailed (due date, priority, type, linking).
+ */
+export async function quickAddTask(title: string, assigneeId: string | null): Promise<ActionResult> {
+  const trimmed = title.trim();
+  if (!trimmed) return { ok: false, message: "Enter a title for the task." };
+  return safeAction(async () => {
+    const task = await prisma.task.create({ data: { title: trimmed, assigneeId: assigneeId || null } });
+    await log(task.id, "task_created", `Task "${trimmed}" created`);
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+  }, "Could not create the task. Please try again.");
+}
+
 export async function setTaskStatus(taskId: string, status: string): Promise<ActionResult> {
   if (!isValidValue(TASK_STATUSES, status)) {
     return { ok: false, message: "Not a valid status." };

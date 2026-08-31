@@ -1,6 +1,7 @@
+import { BackLink } from "@/lib/BackLink";
 import { createCompany } from "../actions";
 import { CompanyForm } from "../CompanyForm";
-import { BackLink, PageHeader } from "../_ui";
+import { PageHeader } from "../_ui";
 
 export default async function NewCompanyPage({
   searchParams,
@@ -10,7 +11,9 @@ export default async function NewCompanyPage({
   const { error, company } = await searchParams;
   return (
     <div>
-      <BackLink href="/phonebook" label="Phone Book" />
+      <div className="mb-3">
+        <BackLink href="/phonebook" label="Back to Phone Book" />
+      </div>
       <PageHeader title="New business" subtitle="Add a customer, supplier or partner" />
       <CompanyForm
         action={createCompany}

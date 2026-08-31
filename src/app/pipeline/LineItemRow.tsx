@@ -6,7 +6,6 @@ import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import type { ActionResult } from "@/lib/actionResult";
 import {
   updateLineItemAssignee,
-  updateLineItemPricing,
   updateLineItemQty,
   updateLineItemRfqStatus,
 } from "./actions";
@@ -22,13 +21,6 @@ export type EditableLineItem = {
   deliveryStatus: string;
   assigneeId: string | null;
 };
-
-function toNumberOrNull(raw: string): number | null {
-  const trimmed = raw.trim();
-  if (trimmed === "") return null;
-  const n = Number(trimmed.replace(/[^0-9.\-]/g, ""));
-  return Number.isFinite(n) ? n : null;
-}
 
 /** Small inline field that saves on blur (or Enter) and shows a spinner while it does. */
 function InlineNumber({
@@ -110,7 +102,7 @@ export function LineItemRow({
   return (
     <tr>
       <td>
-        <div className="font-medium text-ink">{item.name}</div>
+        <div className="font-semibold text-ink">{item.name}</div>
         {item.description ? (
           <div className="text-xs text-gray">{item.description}</div>
         ) : null}
@@ -126,21 +118,7 @@ export function LineItemRow({
         />
       </td>
 
-      <td>
-        <InlineNumber
-          label={`Cost for ${item.name}`}
-          initial={item.unitCost == null ? "" : String(item.unitCost)}
-          onSave={(raw) => updateLineItemPricing(item.id, toNumberOrNull(raw), item.unitPrice)}
-        />
-      </td>
-
-      <td>
-        <InlineNumber
-          label={`Price for ${item.name}`}
-          initial={item.unitPrice == null ? "" : String(item.unitPrice)}
-          onSave={(raw) => updateLineItemPricing(item.id, item.unitCost, toNumberOrNull(raw))}
-        />
-      </td>
+      {/* Cost and Price deliberately absent — pricing is edited in the RFQ queue. */}
 
       <td>
         <OptimisticSelect

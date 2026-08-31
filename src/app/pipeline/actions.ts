@@ -16,7 +16,7 @@ import {
 
 /** Won/Lost never move through a dropdown — they are side-effectful closes. */
 const CLOSED_STAGE_MESSAGE =
-  "Use Mark Won / Mark Lost on the deal page — they create the order and payment.";
+  "Use the Close panel on the deal page — it creates the order and stages the payment.";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -216,6 +216,55 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
   }, "Could not move the deal. Please try again.");
 }
 
+/**
+ * The FlowStepper on the deal page IS the stage control (Aug 31 feedback) — each
+ * open step is a form button bound to this. Same guard as changeOpportunityStage:
+ * open stages only, so Won/Lost can never be written without their side effects.
+ *
+ * Bind the first two args at the call site: moveStageFromStepper.bind(null, id, stage).
+ */
+export async function moveStageFromStepper(
+  id: string,
+  stage: string,
+  // The stepper's form carries no fields — everything it needs is bound above.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _formData: FormData
+): Promise<void> {
+  if (!id) throw new Error("Missing opportunity id");
+  if (!isValidValue(OPPORTUNITY_STAGES, stage) || CLOSED_STAGES.includes(stage)) {
+    // Won/Lost live behind the Close panel; anything else is a tampered payload.
+    redirect(`/pipeline/${id}`);
+  }
+
+  try {
+    const before = await prisma.opportunity.findUnique({
+      where: { id },
+      select: { stage: true },
+    });
+    if (!before) throw new Error("Opportunity not found");
+    // Closed deals render a non-clickable stepper; refuse a reopen through the back door.
+    if (before.stage !== stage && !CLOSED_STAGES.includes(before.stage)) {
+      await prisma.opportunity.update({ where: { id }, data: { stage } });
+      await logActivity(
+        "opportunity",
+        id,
+        "stage_changed",
+        `Stage moved from ${labelFor(OPPORTUNITY_STAGES, before.stage)} to ${labelFor(
+          OPPORTUNITY_STAGES,
+          stage
+        )}`
+      );
+    }
+  } catch (err) {
+    console.error(err);
+    redirect(`/pipeline/${id}?error=save_failed`);
+  }
+
+  revalidatePath("/pipeline");
+  revalidatePath(`/pipeline/${id}`);
+  redirect(`/pipeline/${id}`);
+}
+
 export async function updateOpportunity(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing opportunity id");
@@ -340,12 +389,13 @@ export async function markOpportunityLost(formData: FormData) {
 }
 
 /**
- * Mark Won: promote the opportunity into an Order, carry its line items over,
- * and stage the first payment.
+ * Mark Won — driven by the Close panel on the deal page (Aug 31 feedback): the
+ * salesperson types the price they actually agreed and, for a project, whether a
+ * deposit was agreed and how much. Those answers ARE the order: they set the order
+ * value, the Order.depositRequired gate amount, and the staged payment.
  *
- * Deposit terms are per-account (Company.requiresDeposit / depositPercent), not a
- * flat 30%. When the account takes no deposit, nothing is staged at Won time — HSS
- * collects the full amount after delivery instead.
+ * Without those fields (the pre-panel recovery path, or a tampered payload) it
+ * falls back to the per-account terms: Company.requiresDeposit / depositPercent.
  */
 export async function markOpportunityWon(formData: FormData) {
   const id = str(formData, "id");
@@ -368,27 +418,57 @@ export async function markOpportunityWon(formData: FormData) {
     redirect(`/pipeline/${opportunity.id}`);
   }
 
-  // The deposit and the payment gate are both percentages of this number. Winning at
-  // $0 stages a $0 payment and opens the gate on an unpaid order — refuse instead.
-  if (!opportunity.value || opportunity.value <= 0) {
+  // Marks a submission from the Close panel, so an unchecked deposit box reads as
+  // "no deposit agreed" instead of "this form didn't ask".
+  const fromClosePanel = formData.get("closePanel") === "1";
+  const submittedValue = num(formData, "value");
+
+  // The gate and the deposit are both measured against this number. Winning at $0
+  // stages a $0 payment and opens the gate on an unpaid order — refuse instead.
+  // The Close panel requires it client-side; this is the server-side backstop.
+  const value =
+    fromClosePanel && submittedValue != null && submittedValue > 0
+      ? submittedValue
+      : opportunity.value;
+  if (!value || value <= 0) {
     redirect(`/pipeline/${opportunity.id}?error=value_required`);
   }
 
-  const value = opportunity.value;
   const isProject = opportunity.orderType === "project";
   // No company on the deal — fall back to the old house default rather than skipping the deposit.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
 
-  const payment = isProject
-    ? requiresDeposit
+  /** Agreed gate amount stored on the order. Null = derive from the company percent. */
+  let depositRequired: number | null = null;
+  let payment: { type: string; amount: number; notes: string } | null;
+
+  if (!isProject) {
+    // A straight order is paid in full before POs go out — nothing to negotiate.
+    payment = { type: "full", amount: Math.round(value), notes: "Full payment generated on win" };
+  } else if (fromClosePanel) {
+    if (formData.get("requireDeposit") === "1") {
+      const typed = num(formData, "depositAmount");
+      const amount =
+        typed != null && typed > 0
+          ? Math.round(typed)
+          : Math.round((value * depositPercent) / 100);
+      depositRequired = amount;
+      payment = { type: "deposit", amount, notes: `Deposit of $${amount} agreed at close` };
+    } else {
+      // Explicitly no deposit: record the zero so the gate stays open on purpose.
+      depositRequired = 0;
+      payment = null;
+    }
+  } else {
+    payment = requiresDeposit
       ? {
           type: "deposit",
           amount: Math.round((value * depositPercent) / 100),
           notes: `${depositPercent}% deposit generated on win`,
         }
-      : null
-    : { type: "full", amount: Math.round(value), notes: "Full payment generated on win" };
+      : null;
+  }
 
   let order;
   try {
@@ -402,7 +482,8 @@ export async function markOpportunityWon(formData: FormData) {
           ownerId: opportunity.salespersonId,
           orderType: opportunity.orderType,
           status: "new",
-          orderValue: opportunity.value,
+          orderValue: value,
+          depositRequired,
           deliveryAddress: opportunity.deliveryAddress,
           neededByDate: opportunity.neededByDate,
         },
@@ -417,7 +498,9 @@ export async function markOpportunityWon(formData: FormData) {
       await tx.opportunity.update({
         where: { id: opportunity.id },
         // Clearing the follow-up keeps closed deals out of the overdue chips.
-        data: { stage: "won", nextFollowUp: null },
+        // The price agreed in the Close panel is the deal's real value — write it
+        // back so the deal and its order never disagree about the number.
+        data: { stage: "won", nextFollowUp: null, value },
       });
 
       if (payment) {
@@ -455,7 +538,7 @@ export async function markOpportunityWon(formData: FormData) {
     `Order created from opportunity "${opportunity.title}" (${
       payment
         ? `${payment.type} payment of $${payment.amount} pending`
-        : "no deposit required for this account — full payment due after delivery"
+        : "no deposit agreed — full payment due after delivery"
     })`
   );
 

@@ -1,5 +1,5 @@
 // Local presentational helpers for the /companies module.
-import Link from "next/link";
+import { BackLink } from "@/lib/BackLink";
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
 // Company type has no colour map in constants — map onto the shared badge palette.
@@ -74,13 +74,9 @@ export function DetailHeader({
 }) {
   return (
     <div className="mb-6">
-      <Link
-        href={backHref}
-        className="inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
-      >
-        <span aria-hidden>←</span> {backLabel}
-      </Link>
-      <div className="mt-1.5 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      {/* One back control everywhere — @/lib/BackLink (Aug 31 feedback). */}
+      <BackLink href={backHref} label={backLabel} />
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="page-title">{title}</h1>
@@ -94,18 +90,6 @@ export function DetailHeader({
         </div>
       </div>
     </div>
-  );
-}
-
-/** Back link for sub-pages (edit forms) where the form's own submit is the one primary. */
-export function BackLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
-    >
-      <span aria-hidden>←</span> {label}
-    </Link>
   );
 }
 

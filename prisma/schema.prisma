@@ -191,6 +191,7 @@ model Order {
   jobId          String?
   quickbooksInvoiceNo String?
   orderValue     Float?
+  depositRequired Float? // agreed gate amount from the close dialog; null = derive from company depositPercent
   deliveryAddress String?
   neededByDate   DateTime?
   nextFollowUp   DateTime?

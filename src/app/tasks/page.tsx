@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { TASK_STATUSES } from "@/lib/constants";
 import CreateTaskPanel from "./CreateTaskPanel";
+import QuickAddTask from "./QuickAddTask";
 import TaskListClient from "./TaskListClient";
 import type { TaskRowData } from "./TaskRow";
 
@@ -44,6 +45,7 @@ async function resolveLinkedLabels(pairs: { type: string; id: string }[]): Promi
 type TaskWithRelations = {
   id: string;
   title: string;
+  notes: string | null;
   assigneeId: string | null;
   assignee: { id: string; name: string } | null;
   dueDate: Date | null;
@@ -91,6 +93,7 @@ export default async function TasksPage({
     return {
       id: t.id,
       title: t.title,
+      notes: t.notes,
       assigneeId: t.assigneeId,
       assigneeName: t.assignee?.name ?? null,
       dueDate: t.dueDate,
@@ -115,7 +118,6 @@ export default async function TasksPage({
   for (const t of allTasksFlat) counts[t.status] = (counts[t.status] ?? 0) + 1;
 
   const validStatus = status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
-  const visibleStatuses = validStatus ? [validStatus] : TASK_STATUSES.map((s) => s.value);
 
   return (
     <div className="space-y-8 pb-24">
@@ -141,7 +143,9 @@ export default async function TasksPage({
         })}
       </div>
 
-      <TaskListClient tasks={rows} visibleStatuses={visibleStatuses} users={users} />
+      <QuickAddTask />
+
+      <TaskListClient tasks={rows} statusFilter={validStatus} users={users} />
 
       <CreateTaskPanel users={users} />
     </div>

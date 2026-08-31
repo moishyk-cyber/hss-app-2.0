@@ -1,17 +1,18 @@
 "use client";
 
+// Purchase Orders tab (Aug 31 feedback: creating POs is "very not
+// streamlined"). While any line item still needs a PO, the create form sits
+// at the top with nothing to click through — no toggle to find. Shipment/
+// trucking/scheduled-delivery details and the PO's own delivery-status pill
+// now live on the Delivery tab (see DeliverySection.tsx); this tab keeps the
+// PO status ladder, sent-aging, gate blocking, and carrier tracking info.
+
 import { useState } from "react";
-import { PO_STATUSES, PO_DELIVERY_STATUSES, PO_DELIVERY_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { PO_STATUSES, labelFor } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
-import {
-  advancePoStatus,
-  createPurchaseOrder,
-  setPoDeliveryStatus,
-  updatePoShipmentDetails,
-  updatePoTracking,
-} from "../actions";
+import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
 import { PO_STATUS_COLORS, fmtDate } from "../utils";
-import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
+import { PendingButton, ActionButton } from "@/lib/ui";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
@@ -24,13 +25,6 @@ type Po = {
   trackingUrl: string | null;
   trackingCarrier: string | null;
   expectedDelivery: Date | null;
-  trucker: string | null;
-  pickupAddress: string | null;
-  scheduledDeliveryDate: Date | null;
-  shipCost: number | null;
-  chargedToCustomer: boolean;
-  deliveryContactPhone: string | null;
-  deliveryStatus: string;
   supplier: { name: string; deliveryAddress: string | null } | null;
   lineItems: PoLineItem[];
 };
@@ -61,7 +55,12 @@ export default function PurchaseOrdersSection({
   gate: PaymentGate;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [creating, setCreating] = useState(false);
+  // Once anything still needs a PO, the form stays up — there's nothing to
+  // toggle. The "+ Create PO" reveal only applies once everything's assigned
+  // (an edge case: creating an extra PO with no items left to attach).
+  const hasUnassigned = unassignedLineItems.length > 0;
+  const [showEmptyForm, setShowEmptyForm] = useState(false);
+  const formVisible = hasUnassigned || showEmptyForm;
   const [createError, setCreateError] = useState<string | null>(null);
 
   async function handleAdvance(poId: string, blocked: boolean) {
@@ -88,7 +87,7 @@ export default function PurchaseOrdersSection({
     setCreateError(null);
     const result = await createPurchaseOrder(orderId, supplierId, lineItemIds);
     if (result.ok) {
-      setCreating(false);
+      setShowEmptyForm(false);
     } else {
       setCreateError(result.message);
     }
@@ -96,23 +95,25 @@ export default function PurchaseOrdersSection({
 
   return (
     <div className="space-y-4">
-      {unassignedLineItems.length > 0 &&
-        (creating ? (
-          <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
-            <div className="section-label">Create Purchase Order</div>
-            <div>
-              <span className="field-label">Vendor</span>
-              <select name="supplierId" required className="input-klyne w-full max-w-xs">
-                <option value="">— select vendor —</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <span className="field-label">Items</span>
+      {formVisible ? (
+        <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
+          <div className="section-label">Create Purchase Order</div>
+          <div>
+            <span className="field-label">Vendor</span>
+            <select name="supplierId" required className="input-klyne w-full max-w-xs">
+              <option value="">— select vendor —</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <span className="field-label">Items</span>
+            {unassignedLineItems.length === 0 ? (
+              <div className="text-xs text-gray">No unassigned items on this order right now.</div>
+            ) : (
               <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface p-2">
                 {unassignedLineItems.map((li) => (
                   <label key={li.id} className="flex items-center gap-2 text-sm text-ink">
@@ -121,27 +122,34 @@ export default function PurchaseOrdersSection({
                   </label>
                 ))}
               </div>
-            </div>
-            {createError && <div className="banner-warn">{createError}</div>}
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn btn-sm" onClick={() => setCreating(false)}>
+            )}
+          </div>
+          {createError && <div className="banner-warn">{createError}</div>}
+          <div className="flex justify-end gap-2">
+            {!hasUnassigned && (
+              <button type="button" className="btn btn-sm" onClick={() => setShowEmptyForm(false)}>
                 Cancel
               </button>
-              <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Creating PO…">
-                Create PO
-              </PendingButton>
-            </div>
-          </form>
-        ) : (
-          <button type="button" className="btn btn-primary btn-sm active:scale-[0.99]" onClick={() => setCreating(true)}>
-            Create PO
-          </button>
-        ))}
+            )}
+            <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Creating PO…">
+              Create PO
+            </PendingButton>
+          </div>
+        </form>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-primary btn-sm active:scale-[0.99]"
+          onClick={() => setShowEmptyForm(true)}
+        >
+          + Create PO
+        </button>
+      )}
 
       {purchaseOrders.length === 0 ? (
         <div className="empty-state">
-          {unassignedLineItems.length > 0
-            ? "No purchase orders yet — use the Create PO button above."
+          {hasUnassigned
+            ? "No purchase orders yet — use the form above."
             : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (
@@ -158,17 +166,9 @@ export default function PurchaseOrdersSection({
                     <div className="font-medium text-ink">{po.poNumber ?? "(no PO#)"}</div>
                     <div className="text-xs text-gray-dark">{po.supplier?.name ?? "No vendor"}</div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
-                      {labelFor(PO_STATUSES, po.status)}
-                    </span>
-                    <BadgeSelect
-                      value={po.deliveryStatus}
-                      options={PO_DELIVERY_STATUSES}
-                      action={(next) => setPoDeliveryStatus(po.id, next)}
-                      colorMap={PO_DELIVERY_STATUS_COLORS}
-                    />
-                  </div>
+                  <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
+                    {labelFor(PO_STATUSES, po.status)}
+                  </span>
                 </div>
 
                 <div className="mt-2 text-xs text-gray-dark">
@@ -214,17 +214,6 @@ export default function PurchaseOrdersSection({
                   trackingUrl={po.trackingUrl}
                   trackingCarrier={po.trackingCarrier}
                   expectedDelivery={po.expectedDelivery}
-                />
-
-                <ShipmentDetailsEdit
-                  poId={po.id}
-                  trucker={po.trucker}
-                  pickupAddress={po.pickupAddress}
-                  supplierDeliveryAddress={po.supplier?.deliveryAddress ?? null}
-                  scheduledDeliveryDate={po.scheduledDeliveryDate}
-                  shipCost={po.shipCost}
-                  chargedToCustomer={po.chargedToCustomer}
-                  deliveryContactPhone={po.deliveryContactPhone}
                 />
               </div>
             );
@@ -295,133 +284,6 @@ function TrackingEdit({
           </a>
         )}
       </div>
-    </form>
-  );
-}
-
-/**
- * Real-world delivery/trucking fields, modeled 1:1 on the client's Delivery
- * Sheet: trucker (free text — a mix of couriers and named drivers, not a
- * fixed list), pickup address, scheduled delivery date, ship cost, whether
- * that cost was billed back to the customer, and the delivery-day contact
- * phone. All batched behind one "Save shipment details" button, matching the
- * TrackingEdit form above rather than saving each field individually.
- */
-function ShipmentDetailsEdit({
-  poId,
-  trucker,
-  pickupAddress,
-  supplierDeliveryAddress,
-  scheduledDeliveryDate,
-  shipCost,
-  chargedToCustomer,
-  deliveryContactPhone,
-}: {
-  poId: string;
-  trucker: string | null;
-  pickupAddress: string | null;
-  supplierDeliveryAddress: string | null;
-  scheduledDeliveryDate: Date | null;
-  shipCost: number | null;
-  chargedToCustomer: boolean;
-  deliveryContactPhone: string | null;
-}) {
-  // Prefill pickup address from the supplier's on-file address as a starting
-  // point when nothing's been entered for this PO yet — still freely editable,
-  // since real pickup legs vary shipment to shipment.
-  const pickupDefault = pickupAddress ?? supplierDeliveryAddress ?? "";
-  const scheduledDefault = scheduledDeliveryDate
-    ? new Date(scheduledDeliveryDate).toISOString().slice(0, 10)
-    : "";
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSave(formData: FormData) {
-    const truckerVal = String(formData.get("trucker") ?? "");
-    const pickupVal = String(formData.get("pickupAddress") ?? "");
-    const scheduledVal = String(formData.get("scheduledDeliveryDate") ?? "");
-    const shipCostVal = String(formData.get("shipCost") ?? "");
-    const chargedVal = formData.get("chargedToCustomer") === "1";
-    const phoneVal = String(formData.get("deliveryContactPhone") ?? "");
-    const result = await updatePoShipmentDetails(
-      poId,
-      truckerVal,
-      pickupVal,
-      scheduledVal,
-      shipCostVal,
-      chargedVal,
-      phoneVal
-    );
-    setError(result.ok ? null : result.message);
-  }
-
-  return (
-    <form action={handleSave} className="mt-3 space-y-2 border-t border-border pt-2">
-      <div className="section-label">Shipment / Trucking</div>
-      {error && <div className="banner-warn">{error}</div>}
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="field-label">Trucker</span>
-          <input
-            name="trucker"
-            className="input-klyne w-full px-2 py-1 text-xs"
-            placeholder="e.g. ANDY, UBER, UPS DROPSHIP"
-            defaultValue={trucker ?? ""}
-          />
-        </label>
-        <label className="block">
-          <span className="field-label">Delivery contact phone</span>
-          <input
-            type="tel"
-            name="deliveryContactPhone"
-            className="input-klyne w-full px-2 py-1 text-xs"
-            placeholder="Delivery-day contact #"
-            defaultValue={deliveryContactPhone ?? ""}
-          />
-        </label>
-        <label className="col-span-2 block">
-          <span className="field-label">Pickup address</span>
-          <input
-            name="pickupAddress"
-            className="input-klyne w-full px-2 py-1 text-xs"
-            placeholder="Pickup address"
-            defaultValue={pickupDefault}
-          />
-        </label>
-        <label className="block">
-          <span className="field-label">Scheduled delivery date</span>
-          <input
-            type="date"
-            name="scheduledDeliveryDate"
-            className="input-klyne w-full px-2 py-1 text-xs"
-            defaultValue={scheduledDefault}
-          />
-        </label>
-        <label className="block">
-          <span className="field-label">Ship cost</span>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            name="shipCost"
-            className="input-klyne w-full px-2 py-1 text-xs"
-            placeholder="$0.00"
-            defaultValue={shipCost ?? ""}
-          />
-        </label>
-        <label className="col-span-2 flex items-center gap-2 pt-1 text-xs text-ink">
-          <input
-            type="checkbox"
-            name="chargedToCustomer"
-            value="1"
-            defaultChecked={chargedToCustomer}
-            className="h-4 w-4 rounded border-border accent-accent"
-          />
-          Charged to customer?
-        </label>
-      </div>
-      <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-        Save shipment details
-      </PendingButton>
     </form>
   );
 }

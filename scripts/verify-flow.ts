@@ -134,10 +134,47 @@ async function main() {
   });
   check("simple order at trusted co: gate still closed", evaluatePaymentGate(ts).open, false);
 
+  // 8. Close-dialog override: order.depositRequired beats the company-percent formula
+  const custom = await prisma.order.create({
+    data: {
+      title: `${TAG} custom deposit`,
+      companyId: company.id,
+      orderType: "project",
+      status: "new",
+      orderValue: 10000,
+      depositRequired: 500,
+    },
+  });
+  const co = await prisma.order.findUniqueOrThrow({
+    where: { id: custom.id },
+    include: {
+      payments: true,
+      purchaseOrders: true,
+      lineItems: true,
+      company: { select: { requiresDeposit: true, depositPercent: true } },
+    },
+  });
+  check("custom deposit: required is the agreed amount", evaluatePaymentGate(co).requiredTotal, 500);
+  await prisma.payment.create({
+    data: { orderId: custom.id, type: "deposit", amount: 500, status: "paid" },
+  });
+  const co2 = await prisma.order.findUniqueOrThrow({
+    where: { id: custom.id },
+    include: {
+      payments: true,
+      purchaseOrders: true,
+      lineItems: true,
+      company: { select: { requiresDeposit: true, depositPercent: true } },
+    },
+  });
+  check("custom deposit: paying the agreed amount opens the gate", evaluatePaymentGate(co2).open, true);
+
   // --- cleanup ---
   await prisma.lineItem.deleteMany({ where: { name: { startsWith: TAG } } });
   await prisma.purchaseOrder.deleteMany({ where: { poNumber: { startsWith: TAG } } });
-  await prisma.payment.deleteMany({ where: { orderId: { in: [order.id, trustedOrder.id, trustedSimple.id] } } });
+  await prisma.payment.deleteMany({
+    where: { orderId: { in: [order.id, trustedOrder.id, trustedSimple.id, custom.id] } },
+  });
   await prisma.order.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.company.deleteMany({ where: { name: { startsWith: TAG } } });
   console.log("cleanup done");

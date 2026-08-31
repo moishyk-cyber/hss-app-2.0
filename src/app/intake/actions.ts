@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
+import { currentUserId } from "@/lib/identityServer";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 
 function str(formData: FormData, key: string): string | null {
@@ -77,6 +78,24 @@ export async function submitIntake(formData: FormData) {
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
+  // The salesperson dropdown is gone from the form (feedback: one more thing to fill
+  // in mid-call, and it always meant "me"). Fall back to the sidebar identity — and
+  // if there isn't one either, save it unassigned rather than blocking a live call.
+  const salespersonId = await resolveSalesperson();
+
+  async function resolveSalesperson(): Promise<string | null> {
+    const picked = str(formData, "salespersonId");
+    if (picked) return picked;
+    const cookieId = await currentUserId();
+    if (!cookieId) return null;
+    // A cookie can outlive the user it names — an unknown id would break the insert.
+    const user = await prisma.user.findUnique({
+      where: { id: cookieId },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  }
+
   // Duplicate-business guard, BEFORE the transaction: redirect() throws, and a throw
   // inside runIntakeTransaction would be caught below and reported as save_failed.
   // Matching is on the normalized name across ALL company types — the duplicate is as
@@ -126,6 +145,8 @@ export async function submitIntake(formData: FormData) {
     // --- client -----------------------------------------------------------
     let companyId: string | null = null;
     let companyName = "New client";
+    /** Address on file for the picked business — the default destination. */
+    let companyDeliveryAddress: string | null = null;
 
     if (clientMode === "new") {
       const company = await tx.company.create({
@@ -143,11 +164,13 @@ export async function submitIntake(formData: FormData) {
       });
       companyId = company.id;
       companyName = company.name;
+      companyDeliveryAddress = company.deliveryAddress;
     } else {
       companyId = str(formData, "companyId");
       if (companyId) {
         const company = await tx.company.findUnique({ where: { id: companyId } });
         companyName = company?.name ?? companyName;
+        companyDeliveryAddress = company?.deliveryAddress ?? null;
       }
     }
 
@@ -177,8 +200,11 @@ export async function submitIntake(formData: FormData) {
     }
 
     const title = `${companyName} - ${new Date().toISOString().slice(0, 10)}`;
+    // "Deliver somewhere else" wins; otherwise inherit the business's own address.
     const deliveryAddress =
-      str(formData, "deliveryAddress") ?? str(formData, "newCompanyDeliveryAddress");
+      str(formData, "deliveryAddress") ??
+      companyDeliveryAddress ??
+      str(formData, "newCompanyDeliveryAddress");
 
     // --- opportunity or order --------------------------------------------
     if (goesToPipeline) {
@@ -187,7 +213,7 @@ export async function submitIntake(formData: FormData) {
           title,
           companyId,
           primaryContactId: contactId,
-          salespersonId: str(formData, "salespersonId"),
+          salespersonId,
           stage: "new",
           orderType,
           // Carry the form's real answer. Hard-coding true told the RFQ queue every
@@ -237,7 +263,7 @@ export async function submitIntake(formData: FormData) {
         title,
         companyId,
         contactId,
-        ownerId: str(formData, "salespersonId"),
+        ownerId: salespersonId,
         orderType,
         status: "new",
         neededByDate,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { BackLink } from "@/lib/BackLink";
 import { PendingButton } from "@/lib/ui";
 import { updateOpportunity } from "../../actions";
 import {
@@ -49,21 +50,21 @@ export default async function EditOpportunityPage({
 
   return (
     <div>
-      <Link
-        href={`/pipeline/${opportunity.id}`}
-        className="mb-1.5 inline-flex items-center gap-1 text-xs text-gray-dark transition-colors hover:text-ink"
-      >
-        <span aria-hidden>←</span> {opportunity.title}
-      </Link>
+      <div className="mb-3">
+        <BackLink
+          href={`/pipeline/${opportunity.id}`}
+          label={`Back to ${opportunity.title}`}
+        />
+      </div>
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
       <form action={updateOpportunity} className="card max-w-4xl space-y-8">
         {error === "stage_locked" ? (
           <div className="banner-alert">
             Won and Lost can&rsquo;t be set from this form — they create the order, carry the line
-            items across and stage the payment. Use Mark Won or Mark Lost on the{" "}
-            <Link href={`/pipeline/${opportunity.id}`} className="underline">
-              deal page
+            items across and stage the payment. Use the{" "}
+            <Link href={`/pipeline/${opportunity.id}#close`} className="underline">
+              Close panel on the deal page
             </Link>{" "}
             instead. Nothing else was saved.
           </div>

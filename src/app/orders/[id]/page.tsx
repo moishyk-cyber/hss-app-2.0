@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { UrgencyStatusControls, QbInvoiceEdit } from "./OrderHeaderControls";
+import { UrgencyStatusControls } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
-import LineItemsSection from "./LineItemsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
+import DeliverySection from "./DeliverySection";
+import { OrderTabs } from "./OrderTabs";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
+import { BackLink } from "@/lib/BackLink";
 import { evaluatePaymentGate, canCompleteOrder } from "@/lib/flow";
 import { ActionButton } from "@/lib/ui";
 import { acknowledgeAllSentPos, markOrderComplete } from "../actions";
@@ -71,11 +73,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const phaseIdx = PHASE_ORDER.indexOf(phase);
 
+  // Steps double as the tab navigator (Aug 31 feedback): clicking one jumps to
+  // the matching tab's hash, same interaction language as the pipeline stepper.
   const steps: FlowStep[] = [
     {
       label: "Payment",
       state: phase === "payment" ? "blocked" : "done",
       hint: phase === "payment" ? "Record deposit/full payment" : undefined,
+      href: "#invoice",
     },
     {
       label: "POs",
@@ -88,16 +93,19 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             ? "Send draft POs"
             : "Awaiting supplier acknowledgment"
           : undefined,
+      href: "#purchase-orders",
     },
     {
       label: "In Transit",
       state: phaseIdx < 2 ? "upcoming" : phaseIdx === 2 ? "current" : "done",
       hint: phaseIdx === 2 ? "Track shipments to delivery" : undefined,
+      href: "#delivery",
     },
     {
       label: "Delivery",
       state: phaseIdx < 3 ? "upcoming" : phaseIdx === 3 ? "current" : "done",
       hint: phaseIdx === 3 ? "Confirm delivery-day check" : undefined,
+      href: "#delivery",
     },
     { label: "Complete", state: phase === "complete" ? "done" : "upcoming" },
   ];
@@ -106,7 +114,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   let primaryAction: React.ReactNode = null;
   if (order.status !== "complete" && !gate.open) {
     primaryAction = (
-      <a href="#payments" className="btn btn-primary active:scale-[0.99]">
+      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
         Record payment
       </a>
     );
@@ -132,67 +140,15 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     );
   }
 
-  // ---- Sections in flow order (spec §G); current phase's section gets an accent border ----
-  const accentTarget: "payments" | "lineItems" | "purchaseOrders" | null =
-    phase === "payment"
-      ? "payments"
-      : phase === "pos" || phase === "in_transit"
-      ? "purchaseOrders"
-      : phase === "delivery"
-      ? "lineItems"
-      : null;
-
-  function sectionStyle(name: typeof accentTarget): React.CSSProperties | undefined {
-    // Inline style, not the border-l-4 utility: .card's own border shorthand
-    // is unlayered custom CSS and beats a layered Tailwind utility for the
-    // same longhand (border-left-width), so a utility class here would be a
-    // silent no-op. Width AND color both need to be set inline to win.
-    if (accentTarget !== name) return undefined;
-    // Payments is a blocking gate but not an emergency — "needs attention"
-    // (amber), matching FlowStepper's "blocked" state. Red stays reserved for
-    // true urgency (same-day/emergency orders, overdue). POs/line items mark
-    // the current step in the flow, an active state, not a warning — Charcoal.
-    const color = name === "payments" ? "var(--orange)" : "var(--primary)";
-    return { borderLeftWidth: 4, borderLeftColor: color };
-  }
-
-  const paymentsSection = (
-    <section key="payments" id="payments" className="card" style={sectionStyle("payments")}>
-      <h2 className="section-label">Payments</h2>
-      <PaymentsSection orderId={order.id} payments={order.payments} gate={gate} />
-    </section>
-  );
-  const lineItemsSection = (
-    <section key="line-items" className="card" style={sectionStyle("lineItems")}>
-      <h2 className="section-label">Line Items</h2>
-      <LineItemsSection orderId={order.id} items={order.lineItems} users={users} />
-    </section>
-  );
-  const purchaseOrdersSection = (
-    <section key="purchase-orders" id="purchase-orders" className="card" style={sectionStyle("purchaseOrders")}>
-      <h2 className="section-label">Purchase Orders</h2>
-      <PurchaseOrdersSection
-        orderId={order.id}
-        purchaseOrders={order.purchaseOrders}
-        unassignedLineItems={unassignedLineItems}
-        vendors={vendors}
-        gate={gate}
-      />
-    </section>
-  );
-
-  // Payment section leads while unpaid (it's blocking); otherwise it moves to the back as a reference section.
-  const orderedSections =
-    phase === "payment"
-      ? [paymentsSection, lineItemsSection, purchaseOrdersSection]
-      : [lineItemsSection, purchaseOrdersSection, paymentsSection];
+  // Tabs replace the old stacked sections (Aug 31 feedback: "create tabs...
+  // Invoice tab, PO tab, delivery tab"). Default tab follows the derived phase.
+  const defaultTab: "invoice" | "purchase-orders" | "delivery" =
+    phase === "payment" ? "invoice" : phase === "pos" ? "purchase-orders" : "delivery";
 
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/orders" className="text-xs text-blue transition-colors hover:underline">
-          ← Back to Orders
-        </Link>
+        <BackLink href="/orders" label="Back to Orders" />
       </div>
 
       <div className="card">
@@ -230,7 +186,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm md:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm md:grid-cols-3">
           <div>
             <div className="field-label">Job ID</div>
             <div className="text-ink">{order.jobId || <span className="empty-value">not set</span>}</div>
@@ -242,10 +198,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
           <div>
-            <div className="field-label">QuickBooks Invoice #</div>
-            <QbInvoiceEdit orderId={order.id} value={order.quickbooksInvoiceNo} />
-          </div>
-          <div>
             <div className="field-label">Needed By</div>
             <div className="text-ink">
               {order.neededByDate ? (
@@ -255,7 +207,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               )}
             </div>
           </div>
-          <div className="col-span-2 md:col-span-4">
+          <div className="col-span-2 md:col-span-3">
             <div className="field-label">Delivery Address</div>
             <div className="text-ink">
               {order.deliveryAddress || <span className="empty-value">not set</span>}
@@ -264,7 +216,36 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      {orderedSections}
+      <div className="card">
+        <OrderTabs
+          defaultTab={defaultTab}
+          invoice={
+            <PaymentsSection
+              orderId={order.id}
+              payments={order.payments}
+              gate={gate}
+              quickbooksInvoiceNo={order.quickbooksInvoiceNo}
+            />
+          }
+          purchaseOrders={
+            <PurchaseOrdersSection
+              orderId={order.id}
+              purchaseOrders={order.purchaseOrders}
+              unassignedLineItems={unassignedLineItems}
+              vendors={vendors}
+              gate={gate}
+            />
+          }
+          delivery={
+            <DeliverySection
+              orderId={order.id}
+              items={order.lineItems}
+              users={users}
+              purchaseOrders={order.purchaseOrders}
+            />
+          }
+        />
+      </div>
     </div>
   );
 }

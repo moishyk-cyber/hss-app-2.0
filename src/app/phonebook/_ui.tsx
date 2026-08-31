@@ -23,6 +23,28 @@ export function TypeBadge({ type }: { type: string }) {
   );
 }
 
+/**
+ * Initial avatar, Google-Contacts style. The colour is derived from the name so a
+ * person keeps the same one on every render — it's a recognition aid, not decoration.
+ * Businesses get a rounded square so the two kinds of row are told apart at a glance.
+ */
+export function Avatar({ name, kind }: { name: string; kind: "business" | "person" }) {
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 360;
+  return (
+    <span
+      aria-hidden
+      className={`flex h-8 w-8 shrink-0 items-center justify-center text-[13px] font-semibold text-white ${
+        kind === "business" ? "rounded-[9px]" : "rounded-full"
+      }`}
+      style={{ backgroundColor: `hsl(${hash} 42% 45%)` }}
+    >
+      {initial}
+    </span>
+  );
+}
+
 export function PageHeader({
   title,
   subtitle,

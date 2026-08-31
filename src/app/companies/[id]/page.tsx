@@ -41,7 +41,7 @@ export default async function CompanyDetailPage({
     <div>
       <DetailHeader
         backHref="/phonebook"
-        backLabel="Phone Book"
+        backLabel="Back to Phone Book"
         title={company.name}
         subtitle={company.locationName ?? undefined}
         badges={

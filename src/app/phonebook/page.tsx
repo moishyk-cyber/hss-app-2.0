@@ -1,13 +1,80 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { COMPANY_TYPES, labelFor } from "@/lib/constants";
+import { COMPANY_TYPES } from "@/lib/constants";
 import { InstantSearch } from "@/lib/ui";
-import { CONTACT_TITLES } from "../contacts/_ui";
 import { AssignCompanySelect } from "./AssignCompanySelect";
-import { AddressLine, EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
+import { Avatar, EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * One line in the directory. Businesses and people share the same shape so they can
+ * be sorted into a single alphabetical list (Aug 31 feedback: the card grid buried
+ * people inside their business — a phone book should be one dense scannable list).
+ */
+type DirectoryRow = {
+  key: string;
+  kind: "business" | "person";
+  /** Alphabetised on this — the same string that's displayed. */
+  name: string;
+  /** Second column: the person's business, or the site the business sits at. */
+  subtitle: string | null;
+  email: string | null;
+  phone: string | null;
+  phoneExt: string | null;
+  /** Company type, for the chip — a person inherits their business's. */
+  type: string;
+  href: string;
+  priority: boolean;
+};
+
+/** A-Z buckets; everything that doesn't start with a letter falls into "#". */
+function groupLetter(name: string): string {
+  const first = name.trim().charAt(0).toUpperCase();
+  return first >= "A" && first <= "Z" ? first : "#";
+}
+
+function DirectoryRowItem({ row }: { row: DirectoryRow }) {
+  return (
+    <li className="relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover">
+      <Avatar name={row.name} kind={row.kind} />
+
+      {/*
+        Stretched link: the whole row is clickable, but the email/phone anchors sit
+        above it (relative z-10) so they still dial and compose. Nesting real <a>
+        tags inside one another would be invalid HTML.
+      */}
+      <Link
+        href={row.href}
+        className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+      >
+        {row.priority ? (
+          <span className="mr-1 text-ink" title="Priority client" aria-label="Priority client">
+            ★
+          </span>
+        ) : null}
+        {row.name}
+      </Link>
+
+      <span className="hidden min-w-0 flex-[3] truncate text-[13px] text-gray-dark lg:block">
+        {row.subtitle}
+      </span>
+
+      <span className="relative z-10 hidden min-w-0 flex-[3] md:block">
+        <EmailLink email={row.email} />
+      </span>
+
+      <span className="relative z-10 hidden min-w-0 flex-[2] sm:block">
+        <PhoneLink phone={row.phone} ext={row.phoneExt} />
+      </span>
+
+      <span className="shrink-0">
+        <TypeBadge type={row.type} />
+      </span>
+    </li>
+  );
+}
 
 export default async function PhoneBookPage({
   searchParams,
@@ -60,7 +127,7 @@ export default async function PhoneBookPage({
   const [companies, unassigned, allCompanies] = await Promise.all([
     prisma.company.findMany({
       where: companyWhere,
-      orderBy: [{ priorityClient: "desc" }, { name: "asc" }],
+      orderBy: { name: "asc" },
       include: {
         contacts: { orderBy: [{ firstName: "asc" }, { lastName: "asc" }] },
       },
@@ -75,8 +142,47 @@ export default async function PhoneBookPage({
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const peopleCount =
-    companies.reduce((sum, c) => sum + c.contacts.length, 0) + unassigned.length;
+  const peopleCount = companies.reduce((sum, c) => sum + c.contacts.length, 0) + unassigned.length;
+
+  // Businesses and their people flattened into one list, then alphabetised together.
+  const rows: DirectoryRow[] = [];
+  for (const company of companies) {
+    rows.push({
+      key: `company-${company.id}`,
+      kind: "business",
+      name: company.name,
+      subtitle: company.locationName ?? company.deliveryAddress ?? company.billingAddress,
+      email: company.email,
+      phone: company.phone,
+      phoneExt: company.phoneExt,
+      type: company.type,
+      href: `/companies/${company.id}`,
+      priority: company.priorityClient,
+    });
+    for (const contact of company.contacts) {
+      rows.push({
+        key: `contact-${contact.id}`,
+        kind: "person",
+        name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+        subtitle: company.name,
+        email: contact.email,
+        phone: contact.phone ?? contact.cellPhone,
+        phoneExt: contact.phone ? contact.phoneExt : null,
+        type: company.type,
+        href: `/contacts/${contact.id}/edit`,
+        priority: false,
+      });
+    }
+  }
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+
+  const groups: { letter: string; rows: DirectoryRow[] }[] = [];
+  for (const row of rows) {
+    const letter = groupLetter(row.name);
+    const last = groups[groups.length - 1];
+    if (last && last.letter === letter) last.rows.push(row);
+    else groups.push({ letter, rows: [row] });
+  }
 
   const chipHref = (value: string) => {
     const params = new URLSearchParams();
@@ -88,10 +194,7 @@ export default async function PhoneBookPage({
 
   return (
     <div>
-      <PageHeader
-        title="Phone Book"
-        subtitle="Every business and every person — one directory."
-      >
+      <PageHeader title="Phone Book" subtitle="Every business and every person — one directory.">
         <Link href="/companies/new" className="btn">
           New business
         </Link>
@@ -100,45 +203,46 @@ export default async function PhoneBookPage({
         </Link>
       </PageHeader>
 
-      <div className="mb-5">
-        <label className="block">
-          <span className="field-label">Search</span>
-          <InstantSearch
-            paramKey="q"
-            placeholder="Business, person, phone or email…"
-            className="input-klyne w-80"
-          />
-        </label>
+      {/* Search and filters stay pinned — the list under them can run for pages. */}
+      <div className="sticky top-0 z-20 -mx-1 mb-4 px-1 pb-3 pt-1">
+        <div className="card space-y-3 bg-surface/95 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <InstantSearch
+              paramKey="q"
+              placeholder="Search business, person, phone or email…"
+              className="input-klyne w-full sm:w-96"
+            />
+            <p className="text-[13px] text-gray">
+              {companies.length} business{companies.length === 1 ? "" : "es"} · {peopleCount}{" "}
+              {peopleCount === 1 ? "person" : "people"}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={chipHref("")}
+              className={`chip transition-colors active:scale-[0.98] ${
+                typeFilter ? "" : "chip-active"
+              }`}
+            >
+              All
+            </Link>
+            {COMPANY_TYPES.map((t) => (
+              <Link
+                key={t.value}
+                href={chipHref(t.value)}
+                className={`chip transition-colors active:scale-[0.98] ${
+                  typeFilter === t.value ? "chip-active" : ""
+                }`}
+              >
+                {t.label}
+              </Link>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <Link
-          href={chipHref("")}
-          className={`chip transition-colors active:scale-[0.98] ${
-            typeFilter ? "" : "chip-active"
-          }`}
-        >
-          All
-        </Link>
-        {COMPANY_TYPES.map((t) => (
-          <Link
-            key={t.value}
-            href={chipHref(t.value)}
-            className={`chip transition-colors active:scale-[0.98] ${
-              typeFilter === t.value ? "chip-active" : ""
-            }`}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </div>
-
-      <p className="page-sub mb-5">
-        {companies.length} business{companies.length === 1 ? "" : "es"} · {peopleCount} person
-        {peopleCount === 1 ? "" : "s"}
-      </p>
-
-      {companies.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="empty-state">
           {search ? (
             `Nothing in the phone book matches “${search}”.`
@@ -153,84 +257,17 @@ export default async function PhoneBookPage({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          {companies.map((company) => (
-            <section key={company.id} className="card card-interactive">
-              {/* Header: identity first, reach-the-business details underneath. */}
-              <header className="border-b border-border pb-4">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  {company.priorityClient ? (
-                    <span
-                      className="text-[15px] leading-none text-ink"
-                      title="Priority client"
-                      aria-label="Priority client"
-                    >
-                      ★
-                    </span>
-                  ) : null}
-                  <Link
-                    href={`/companies/${company.id}`}
-                    className="font-heading text-[16px] font-semibold text-ink hover:underline"
-                  >
-                    {company.name}
-                  </Link>
-                  <TypeBadge type={company.type} />
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-                  <PhoneLink phone={company.phone} ext={company.phoneExt} label="Main line" />
-                  <EmailLink email={company.email} />
-                  <AddressLine address={company.deliveryAddress ?? company.billingAddress} />
-                </div>
-              </header>
-
-              {company.contacts.length === 0 ? (
-                <p className="pt-4 text-[13px] text-gray">
-                  <span className="empty-value">No people yet.</span>{" "}
-                  <Link
-                    href={`/contacts/new?companyId=${company.id}`}
-                    className="text-primary transition-colors hover:underline"
-                  >
-                    Add the first contact
-                  </Link>
-                </p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {company.contacts.map((contact) => (
-                    <li key={contact.id} className="py-3.5 first:pt-4 last:pb-0">
-                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <Link
-                          href={`/contacts/${contact.id}/edit`}
-                          className="font-medium text-ink hover:underline"
-                        >
-                          {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
-                        </Link>
-                        {contact.title ? (
-                          <span className="text-[12.5px] text-gray">
-                            {labelFor(CONTACT_TITLES, contact.title)}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {contact.phone || contact.cellPhone || contact.email ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
-                          <PhoneLink
-                            phone={contact.phone}
-                            ext={contact.phoneExt}
-                            label="Direct line"
-                          />
-                          <PhoneLink phone={contact.cellPhone} label="Cell" />
-                          <EmailLink email={contact.email} />
-                        </div>
-                      ) : (
-                        <p className="mt-1.5 text-[13px]">
-                          <span className="empty-value">No phone or email on file</span>
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+        <div className="card card-flush overflow-hidden">
+          {groups.map((group) => (
+            <section key={group.letter}>
+              <h2 className="border-y border-border bg-panel px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-gray-dark first:border-t-0">
+                {group.letter}
+              </h2>
+              <ul className="divide-y divide-border">
+                {group.rows.map((row) => (
+                  <DirectoryRowItem key={row.key} row={row} />
+                ))}
+              </ul>
             </section>
           ))}
         </div>
@@ -243,28 +280,32 @@ export default async function PhoneBookPage({
             Every contact should belong to a business. Pick one for each person below to file them
             correctly.
           </div>
-          <div className="card">
+          <div className="card card-flush overflow-hidden">
             <ul className="divide-y divide-border">
-              {unassigned.map((contact) => (
-                <li
-                  key={contact.id}
-                  className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3.5 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
+              {unassigned.map((contact) => {
+                const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+                return (
+                  <li
+                    key={contact.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 transition-colors hover:bg-hover"
+                  >
+                    <Avatar name={name} kind="person" />
                     <Link
                       href={`/contacts/${contact.id}/edit`}
-                      className="font-medium text-ink hover:underline"
+                      className="min-w-0 flex-[2] truncate text-[13.5px] font-semibold text-ink hover:underline"
                     >
-                      {[contact.firstName, contact.lastName].filter(Boolean).join(" ")}
+                      {name}
                     </Link>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
-                      <PhoneLink phone={contact.phone} ext={contact.phoneExt} />
+                    <span className="min-w-0 flex-[2]">
                       <EmailLink email={contact.email} />
-                    </div>
-                  </div>
-                  <AssignCompanySelect contactId={contact.id} companies={allCompanies} />
-                </li>
-              ))}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <PhoneLink phone={contact.phone ?? contact.cellPhone} ext={contact.phoneExt} />
+                    </span>
+                    <AssignCompanySelect contactId={contact.id} companies={allCompanies} />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
