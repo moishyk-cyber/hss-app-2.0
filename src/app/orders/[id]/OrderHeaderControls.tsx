@@ -3,13 +3,7 @@
 import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
 import { BadgeSelect, ActionButton } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
-import {
-  markOrderStuck,
-  reopenOrder,
-  setOrderOwner,
-  setOrderUrgency,
-  unstickOrder,
-} from "../actions";
+import { reopenOrder, setOrderOwner, setOrderUrgency, unstickOrder } from "../actions";
 
 export function UrgencyStatusControls({
   orderId,
@@ -44,16 +38,18 @@ export function UrgencyStatusControls({
           Status
         </span>
         {/* Status is derived from payments/POs/items (see @/lib/flow) - no longer a
-            manual dropdown. The only manual overrides are the stuck toggle below. */}
+            manual dropdown. "Reopen"/"Resume" below are the only manual overrides. */}
         <span className={`badge ${ORDER_STATUS_COLORS[status] ?? "badge-gray"}`}>
           {labelFor(ORDER_STATUSES, status)}
         </span>
-        <ActionButton
-          action={() => (isComplete ? reopenOrder(orderId) : isStuck ? unstickOrder(orderId) : markOrderStuck(orderId))}
-          className="btn btn-sm active:scale-[0.99]"
-        >
-          {isComplete ? "Reopen" : isStuck ? "Resume" : "Mark stuck"}
-        </ActionButton>
+        {(isComplete || isStuck) && (
+          <ActionButton
+            action={() => (isComplete ? reopenOrder(orderId) : unstickOrder(orderId))}
+            className="btn btn-sm active:scale-[0.99]"
+          >
+            {isComplete ? "Reopen" : "Resume"}
+          </ActionButton>
+        )}
       </label>
       <label className="flex items-center gap-2">
         <span className="field-label" style={{ marginBottom: 0 }}>

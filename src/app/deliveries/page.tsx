@@ -120,7 +120,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               isUrgent(leg) ? "border-l-4 border-red" : ""
             }`}
           >
-            <span className="flex shrink-0 items-center gap-2">
+            <span className="flex w-40 shrink-0 items-center gap-2">
               <Avatar name={leg.supplier?.name ?? "?"} kind="business" size="sm" />
               <span className="hidden max-w-[9rem] truncate text-[12px] text-gray-dark md:block">
                 {leg.supplier?.name ?? <span className="empty-value">no supplier</span>}

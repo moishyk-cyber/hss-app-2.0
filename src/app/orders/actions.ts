@@ -89,18 +89,6 @@ export async function setOrderUrgency(orderId: string, urgency: string): Promise
 }
 
 /**
- * Explicit "Mark stuck" - a manual override the derived-status recompute never
- * clears (see MANUAL_STATUSES in @/lib/flow).
- */
-export async function markOrderStuck(orderId: string): Promise<ActionResult> {
-  return safeAction(async () => {
-    await prisma.order.update({ where: { id: orderId }, data: { status: "stuck" } });
-    await log(orderId, "order_marked_stuck", "Order marked stuck");
-    revalidateOrder(orderId);
-  }, "Could not mark the order stuck. Please try again.");
-}
-
-/**
  * Leaves "stuck": derives the true status from payments/POs/items right now.
  * Can't just call recomputeOrderStatus() here - it intentionally no-ops on
  * "stuck"/"complete" so routine mutations never silently clear a manual flag.
