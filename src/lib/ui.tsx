@@ -154,10 +154,10 @@ export function DropMenu({
   const [pos, setPos] = useState<{ top: number; left: number; minWidth: number; up: boolean } | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
+    // No cleanup needed here: `open` alone already gates the render bail-out
+    // below, and the moment `open` flips true again `update()` runs before
+    // anything reads `pos` - so there's nothing to reset while closed.
+    if (!open) return;
     const update = () => {
       const r = anchorRef.current?.getBoundingClientRect();
       if (!r) return;
