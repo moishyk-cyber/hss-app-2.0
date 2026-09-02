@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { COMPANY_TYPES, COMPANY_VERTICALS, isValidValue } from "@/lib/constants";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { findCompanyByNormalizedName } from "./nameMatch";
 
 function str(formData: FormData, key: string): string | null {
@@ -55,9 +56,18 @@ function companyEnumsValid(data: ReturnType<typeof readCompanyFields>): boolean 
   return true;
 }
 
+/** Server-side backstop for whatever the Settings tab currently requires (native `required` is client-only). */
+async function companyMeetsRequirements(data: ReturnType<typeof readCompanyFields>): Promise<boolean> {
+  const req = await getFieldRequirements();
+  if (req["company.phone"] && !data.phone) return false;
+  if (req["company.email"] && !data.email) return false;
+  return true;
+}
+
 export async function createCompany(formData: FormData) {
   const data = readCompanyFields(formData);
   if (!companyEnumsValid(data)) redirect("/companies/new?error=invalid_value");
+  if (!(await companyMeetsRequirements(data))) redirect("/companies/new?error=missing_required");
 
   // Same guard as intake: one kitchen, one record. Checked across all types, since a
   // duplicate is as likely to be filed as a supplier or a lost lead as a customer.
@@ -90,6 +100,7 @@ export async function updateCompany(formData: FormData) {
   if (!id) throw new Error("Missing company id");
   const data = readCompanyFields(formData);
   if (!companyEnumsValid(data)) redirect(`/companies/${id}/edit?error=invalid_value`);
+  if (!(await companyMeetsRequirements(data))) redirect(`/companies/${id}/edit?error=missing_required`);
 
   try {
     const company = await prisma.company.update({ where: { id }, data });

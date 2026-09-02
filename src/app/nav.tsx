@@ -24,7 +24,7 @@ const SECTIONS: { label: string | null; items: { href: string; label: string }[]
     items: [
       { href: "/phonebook", label: "Phone Book" },
       { href: "/tasks", label: "Tasks" },
-      { href: "/team", label: "Team" },
+      { href: "/admin", label: "Admin" },
     ],
   },
 ];

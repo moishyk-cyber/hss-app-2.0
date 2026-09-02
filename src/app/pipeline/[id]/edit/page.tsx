@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { BackLink } from "@/lib/BackLink";
 import { PendingButton } from "@/lib/ui";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { updateOpportunity } from "../../actions";
 import {
   Checkbox,
@@ -29,7 +30,7 @@ export default async function EditOpportunityPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
-  const [opportunity, companies, contacts, users] = await Promise.all([
+  const [opportunity, companies, contacts, users, req] = await Promise.all([
     prisma.opportunity.findUnique({ where: { id } }),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.contact.findMany({
@@ -37,8 +38,11 @@ export default async function EditOpportunityPage({
       orderBy: { firstName: "asc" },
     }),
     prisma.user.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getFieldRequirements(),
   ]);
   if (!opportunity) notFound();
+  const companyRequired = req["opportunity.companyId"];
+  const neededByRequired = req["opportunity.neededByDate"];
 
   const closed = CLOSED_STAGES.includes(opportunity.stage);
   const companyOptions = companies.map((c) => ({ value: c.id, label: c.name }));
@@ -72,6 +76,14 @@ export default async function EditOpportunityPage({
           <div className="banner-alert">
             One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved -
             please re-pick and try again.
+          </div>
+        ) : error === "missing_required" ? (
+          <div className="banner-alert">
+            Company and/or needed-by date is required (set in{" "}
+            <Link href="/admin/settings" className="underline">
+              Admin → Settings
+            </Link>
+            ). Please fill it in and save again.
           </div>
         ) : error === "save_failed" ? (
           <div className="banner-alert">Something went wrong while saving. Please try again.</div>
@@ -109,6 +121,7 @@ export default async function EditOpportunityPage({
             options={companyOptions}
             defaultValue={opportunity.companyId}
             includeBlank="None"
+            required={companyRequired}
           />
           <Select
             label="Primary contact"
@@ -149,6 +162,7 @@ export default async function EditOpportunityPage({
             name="neededByDate"
             type="date"
             defaultValue={dateInputValue(opportunity.neededByDate)}
+            required={neededByRequired}
           />
           <Field
             label="Est./order due date"
