@@ -144,7 +144,7 @@ export default async function ContactsPage({
                     mail and tel anchors sit above it (relative z-10) so they still work.
                   */}
                   <Link
-                    href={`/contacts/${c.id}/edit`}
+                    href={`/contacts/${c.id}`}
                     className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                   >
                     {name}
