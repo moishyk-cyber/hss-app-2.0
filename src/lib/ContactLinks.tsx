@@ -34,6 +34,22 @@ function PinIcon() {
   );
 }
 
+/**
+ * Renders a phone number the way a person expects to read it: a 10-digit US
+ * number becomes "(347) 806-9034". A leading "1" country-code digit - present
+ * on some numbers from the Monday.com import and not others - is dropped first,
+ * so the same kind of number never displays at two different lengths. Anything
+ * that isn't a clean 10 (or 11-with-leading-1) digit run is left as-is rather
+ * than mangled. Display only - never touches the stored value or `tel:` href.
+ */
+export function formatPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
+  const tenDigit = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (tenDigit.length !== 10) return raw;
+  return `(${tenDigit.slice(0, 3)}) ${tenDigit.slice(3, 6)}-${tenDigit.slice(6)}`;
+}
+
 /** Dialable phone link. Renders nothing when there's no number (no bare dashes). */
 export function PhoneLink({
   phone,
@@ -46,14 +62,15 @@ export function PhoneLink({
 }) {
   if (!phone) return null;
   const dial = phone.replace(/[^\d+]/g, "");
+  const display = formatPhone(phone);
   return (
     <a
       href={`tel:${dial}${ext ? `,${ext}` : ""}`}
       className="inline-flex items-center gap-2 text-[13px] text-gray-dark transition-colors hover:text-ink"
-      title={label ? `${label}: ${phone}` : phone}
+      title={label ? `${label}: ${display}` : (display ?? undefined)}
     >
       <PhoneIcon />
-      <span className="tabular-nums">{phone}</span>
+      <span className="tabular-nums">{display}</span>
       {ext ? <span className="text-gray">ext {ext}</span> : null}
     </a>
   );

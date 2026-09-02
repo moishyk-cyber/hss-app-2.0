@@ -191,7 +191,7 @@ export default async function PhoneBookPage({
         phone: contact.phone ?? contact.cellPhone,
         phoneExt: contact.phone ? contact.phoneExt : null,
         type: company.type,
-        href: `/contacts/${contact.id}/edit`,
+        href: `/contacts/${contact.id}`,
         priority: false,
       });
     }
@@ -363,7 +363,7 @@ export default async function PhoneBookPage({
                   >
                     <Avatar name={name} kind="person" />
                     <Link
-                      href={`/contacts/${contact.id}/edit`}
+                      href={`/contacts/${contact.id}`}
                       className="min-w-0 flex-[2] truncate text-[13.5px] font-semibold text-ink hover:underline"
                     >
                       {name}

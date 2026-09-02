@@ -8,6 +8,7 @@ import {
   STAGE_COLORS,
   labelFor,
 } from "@/lib/constants";
+import { formatPhone } from "@/lib/ContactLinks";
 import {
   Avatar,
   Card,
@@ -95,12 +96,12 @@ export default async function CompanyDetailPage({
               label="Phone"
               value={
                 company.phone
-                  ? `${company.phone}${company.phoneExt ? ` ext ${company.phoneExt}` : ""}`
+                  ? `${formatPhone(company.phone)}${company.phoneExt ? ` ext ${company.phoneExt}` : ""}`
                   : null
               }
               emptyLabel="no number on file"
             />
-            <DetailRow label="Cell phone" value={company.cellPhone} />
+            <DetailRow label="Cell phone" value={formatPhone(company.cellPhone)} />
             <DetailRow label="Email" value={company.email} emptyLabel="no email on file" />
             <DetailRow label="Website" value={company.website} />
             <DetailRow
@@ -111,9 +112,20 @@ export default async function CompanyDetailPage({
             <DetailRow label="Billing address" value={company.billingAddress} />
             <DetailRow label="Zip" value={company.zip} />
             <DetailRow label="Notes" value={company.notes} />
-            <DetailRow label="monday id" value={company.mondayId} />
             <DetailRow label="Created" value={fmtDate(company.createdAt)} />
           </Card>
+
+          {company.mondayId ? (
+            <details className="mt-3 rounded-lg border border-border/70 px-3 py-2 text-gray">
+              <summary className="cursor-pointer select-none text-[11px] font-semibold uppercase tracking-[0.06em] text-gray">
+                Sync info
+              </summary>
+              <div className="mt-2 flex gap-4 text-[12px]">
+                <div className="w-28 shrink-0">Monday.com ID</div>
+                <div className="min-w-0 break-words font-mono text-[11px]">{company.mondayId}</div>
+              </div>
+            </details>
+          ) : null}
         </div>
 
         <div className="space-y-6 lg:col-span-2">
@@ -151,7 +163,7 @@ export default async function CompanyDetailPage({
 
                       {/* Row-wide link; the mail and tel anchors sit above it (z-10). */}
                       <Link
-                        href={`/contacts/${c.id}/edit`}
+                        href={`/contacts/${c.id}`}
                         className="min-w-0 flex-[2] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                       >
                         {name}
