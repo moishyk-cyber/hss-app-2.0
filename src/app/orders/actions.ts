@@ -13,7 +13,8 @@ import {
   FLOW_ORDER_INCLUDE,
 } from "@/lib/flow";
 import { isValidValue, ORDER_URGENCIES, DELIVERY_STATUSES, PO_DELIVERY_STATUSES } from "@/lib/constants";
-import { PAYMENT_TYPES } from "./utils";
+import { roundCents } from "@/lib/money";
+import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 
 async function log(linkedId: string, action: string, detail: string) {
@@ -179,11 +180,12 @@ export async function addInvoice(
   if (link && !/^https?:\/\//i.test(link)) {
     return { ok: false, message: "The QuickBooks link should start with http:// or https://." };
   }
+  const cents = roundCents(amount);
   return safeAction(async () => {
     await prisma.payment.create({
-      data: { orderId, type, amount, status: "invoiced", quickbooksRef: link || null },
+      data: { orderId, type, amount: cents, status: "invoiced", quickbooksRef: link || null },
     });
-    await log(orderId, "invoice_added", `Invoice added: ${type} $${amount}${link ? " (QuickBooks link attached)" : ""}`);
+    await log(orderId, "invoice_added", `Invoice added: ${type} $${cents}${link ? " (QuickBooks link attached)" : ""}`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not add the invoice. Please try again.");
@@ -201,16 +203,74 @@ export async function markPaymentInvoiced(paymentId: string): Promise<ActionResu
   }, "Could not mark the payment invoiced. Please try again.");
 }
 
-export async function markPaymentPaid(paymentId: string): Promise<ActionResult> {
+/**
+ * Marks a payment paid. No longer a bare one-click write (Sep 2 QA P0: a
+ * $2,500 payment got fired off by a single stray click): the UI fronts this
+ * with a review dialog, the received date and method are recorded, the
+ * activity log narrates the full amount, and undoMarkPaymentPaid reverses it.
+ */
+export async function markPaymentPaid(
+  paymentId: string,
+  paidDate?: string,
+  method?: string
+): Promise<ActionResult> {
+  if (method && !PAYMENT_METHODS.some((m) => m.value === method)) {
+    return { ok: false, message: "Pick a payment method from the list." };
+  }
+  let date = new Date();
+  if (paidDate) {
+    const parsed = new Date(`${paidDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return { ok: false, message: "Enter a valid received date." };
+    }
+    date = parsed;
+  }
+  const methodLabel = PAYMENT_METHODS.find((m) => m.value === method)?.label ?? null;
   return safeAction(async () => {
+    const existing = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!existing) throw new Error("Payment not found");
+    if (existing.status === "paid") return; // double-submit guard - already done
+    const methodNote = methodLabel ? `Paid via ${methodLabel}` : null;
     const payment = await prisma.payment.update({
       where: { id: paymentId },
-      data: { status: "paid", date: new Date() },
+      data: {
+        status: "paid",
+        date,
+        ...(methodNote
+          ? { notes: existing.notes ? `${existing.notes}\n${methodNote}` : methodNote }
+          : {}),
+      },
     });
-    await log(payment.orderId, "payment_paid", `Payment (${payment.type}) marked paid`);
+    await log(
+      payment.orderId,
+      "payment_paid",
+      `Payment (${payment.type}) of $${payment.amount} marked paid${
+        methodLabel ? ` via ${methodLabel}` : ""
+      }`
+    );
     await recomputeOrderStatus(payment.orderId);
     revalidateOrder(payment.orderId);
   }, "Could not mark the payment paid. Please try again.");
+}
+
+/** Reverses markPaymentPaid: back to invoiced, date cleared, logged. */
+export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const existing = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!existing) throw new Error("Payment not found");
+    if (existing.status !== "paid") return;
+    const payment = await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: "invoiced", date: null },
+    });
+    await log(
+      payment.orderId,
+      "payment_unpaid",
+      `Payment (${payment.type}) of $${payment.amount} reverted to invoiced (paid was undone)`
+    );
+    await recomputeOrderStatus(payment.orderId);
+    revalidateOrder(payment.orderId);
+  }, "Could not undo the payment. Please try again.");
 }
 
 export async function setLineItemDeliveryStatus(
@@ -399,6 +459,15 @@ export async function updatePoTracking(
   trackingCarrier: string,
   expectedDelivery: string
 ): Promise<ActionResult> {
+  // Free-text field with a history of junk ("gewryher", a chat link saved as
+  // tracking). Only a real absolute link gets stored from here on.
+  const url = trackingUrl.trim();
+  if (url && !/^https?:\/\/\S+\.\S+/i.test(url)) {
+    return {
+      ok: false,
+      message: "That doesn't look like a link - paste the carrier's full tracking URL (https://…).",
+    };
+  }
   return safeAction(async () => {
     const po = await prisma.purchaseOrder.update({
       where: { id: poId },
@@ -459,6 +528,7 @@ export async function updatePoShipmentDetails(
   if (cost != null && !Number.isFinite(cost)) {
     return { ok: false, message: "Enter a valid ship cost." };
   }
+  const costCents = cost == null ? null : roundCents(cost);
   return safeAction(async () => {
     const po = await prisma.purchaseOrder.update({
       where: { id: poId },
@@ -466,7 +536,7 @@ export async function updatePoShipmentDetails(
         trucker: trucker || null,
         pickupAddress: pickupAddress || null,
         scheduledDeliveryDate: scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : null,
-        shipCost: cost,
+        shipCost: costCents,
         chargedToCustomer,
         deliveryContactPhone: deliveryContactPhone || null,
       },

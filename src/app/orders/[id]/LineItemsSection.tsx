@@ -8,7 +8,7 @@ import {
   setLineItemBackorderExpected,
   setLineItemDeliveryStatus,
 } from "../actions";
-import { DELIVERY_STATUS_COLORS, fmtDate, fmtMoney, isValidTrackingUrl } from "../utils";
+import { DELIVERY_STATUS_COLORS, fmtDate, fmtMoney, isLikelyTrackingUrl } from "../utils";
 import { BadgeSelect, PendingButton } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
 
@@ -84,23 +84,19 @@ export default function LineItemsSection({
                 <div>Client: {fmtDate(item.dateArrivedClient)}</div>
               </td>
               <td>
-                {item.trackingUrl ? (
-                  isValidTrackingUrl(item.trackingUrl) ? (
-                    <a
-                      href={item.trackingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue transition-colors hover:underline"
-                    >
-                      Track
-                    </a>
-                  ) : (
-                    <span className="text-gray-dark" title="Not a valid tracking link">
-                      {item.trackingUrl}
-                    </span>
-                  )
+                {item.trackingUrl && isLikelyTrackingUrl(item.trackingUrl) ? (
+                  <a
+                    href={item.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue transition-colors hover:underline"
+                  >
+                    Track
+                  </a>
                 ) : (
-                  <span className="empty-value">not tracked</span>
+                  <span className="empty-value" title={item.trackingUrl ?? undefined}>
+                    not tracked
+                  </span>
                 )}
               </td>
             </tr>

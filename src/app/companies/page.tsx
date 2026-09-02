@@ -98,11 +98,14 @@ export default async function CompaniesPage({
       <div className="sticky top-0 z-20 -mx-1 mb-4 px-1 pb-3 pt-1">
         <div className="card space-y-3 bg-surface/95 backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <InstantSearch
-              paramKey="q"
-              placeholder="Search company name…"
-              className="input-klyne w-full sm:w-96"
-            />
+            <Suspense fallback={<div className="input-klyne h-9 w-full animate-pulse sm:w-96" />}>
+              <InstantSearch
+                paramKey="q"
+                placeholder="Search company name…"
+                className="input-klyne w-full sm:w-96"
+                ariaLabel="Search businesses"
+              />
+            </Suspense>
             <p className="text-[13px] text-gray">
               {companies.length} business{companies.length === 1 ? "" : "es"}
             </p>

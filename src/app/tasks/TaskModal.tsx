@@ -21,7 +21,7 @@ function SubtaskRow({ task }: { task: TaskRowData }) {
   const done = task.status === "done";
   return (
     <div className="flex items-center gap-2.5 px-3 py-2">
-      <TaskCheckbox taskId={task.id} done={done} />
+      <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
       <span className={`min-w-0 flex-1 truncate text-sm ${done ? "text-gray line-through" : "text-ink"}`}>
         {task.title}
       </span>
@@ -82,7 +82,7 @@ export default function TaskModal({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
-            <TaskCheckbox taskId={task.id} done={done} />
+            <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
             <h2
               id="task-modal-title"
               className={`min-w-0 text-base font-semibold ${done ? "text-gray line-through" : "text-ink"}`}

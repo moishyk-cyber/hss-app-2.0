@@ -8,6 +8,8 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
+import { currentUserId } from "@/lib/identityServer";
+import { roundCents } from "@/lib/money";
 import {
   CLOSED_STAGES,
   DELIVERY_TYPES,
@@ -106,10 +108,19 @@ export async function updateLineItemPricing(
   unitCost: number | null,
   unitPrice: number | null
 ): Promise<ActionResult> {
+  if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
+    return { ok: false, message: "Enter a price greater than $0." };
+  }
+  if (unitCost != null && !Number.isFinite(unitCost)) {
+    return { ok: false, message: "Enter a valid cost." };
+  }
   return safeAction(async () => {
     const item = await prisma.lineItem.update({
       where: { id: lineItemId },
-      data: { unitCost, unitPrice },
+      data: {
+        unitCost: unitCost == null ? null : roundCents(unitCost),
+        unitPrice: unitPrice == null ? null : roundCents(unitPrice),
+      },
     });
     await logActivity(
       "line_item",
@@ -439,12 +450,35 @@ export async function markOpportunityWon(formData: FormData) {
   // The gate and the deposit are both measured against this number. Winning at $0
   // stages a $0 payment and opens the gate on an unpaid order - refuse instead.
   // The Close panel requires it client-side; this is the server-side backstop.
-  const value =
+  const rawValue =
     fromClosePanel && submittedValue != null && submittedValue > 0
       ? submittedValue
       : opportunity.value;
-  if (!value || value <= 0) {
+  if (!rawValue || rawValue <= 0) {
     redirect(`/pipeline/${opportunity.id}?error=value_required`);
+  }
+  // Money always lands rounded to cents (Sep 2 QA: floats were drifting).
+  const value = roundCents(rawValue);
+
+  // Sep 2 QA: winning used to spawn an order with no destination, no date and
+  // no owner - already in fulfillment asking for POs. The Close panel now asks
+  // for both; this is the server-side backstop.
+  const closeDeliveryAddress = str(formData, "deliveryAddress");
+  const closeNeededByDate = date(formData, "neededByDate");
+  if (fromClosePanel && (!closeDeliveryAddress || !closeNeededByDate)) {
+    redirect(`/pipeline/${opportunity.id}?error=destination_required`);
+  }
+  const orderDeliveryAddress = closeDeliveryAddress ?? opportunity.deliveryAddress;
+  const orderNeededByDate = closeNeededByDate ?? opportunity.neededByDate;
+
+  // Owner: the deal's salesperson, or whoever is signed in via "Working as".
+  let ownerId: string | null = opportunity.salespersonId;
+  if (!ownerId) {
+    const cookieId = await currentUserId();
+    if (cookieId) {
+      const user = await prisma.user.findUnique({ where: { id: cookieId }, select: { id: true } });
+      ownerId = user?.id ?? null;
+    }
   }
 
   const isProject = opportunity.orderType === "project";
@@ -458,14 +492,14 @@ export async function markOpportunityWon(formData: FormData) {
 
   if (!isProject) {
     // A straight order is paid in full before POs go out - nothing to negotiate.
-    payment = { type: "full", amount: Math.round(value), notes: "Full payment generated on win" };
+    payment = { type: "full", amount: value, notes: "Full payment generated on win" };
   } else if (fromClosePanel) {
     if (formData.get("requireDeposit") === "1") {
       const typed = num(formData, "depositAmount");
       const amount =
         typed != null && typed > 0
-          ? Math.round(typed)
-          : Math.round((value * depositPercent) / 100);
+          ? roundCents(typed)
+          : roundCents((value * depositPercent) / 100);
       depositRequired = amount;
       payment = { type: "deposit", amount, notes: `Deposit of $${amount} agreed at close` };
     } else {
@@ -477,7 +511,7 @@ export async function markOpportunityWon(formData: FormData) {
     payment = requiresDeposit
       ? {
           type: "deposit",
-          amount: Math.round((value * depositPercent) / 100),
+          amount: roundCents((value * depositPercent) / 100),
           notes: `${depositPercent}% deposit generated on win`,
         }
       : null;
@@ -492,13 +526,13 @@ export async function markOpportunityWon(formData: FormData) {
           opportunityId: opportunity.id,
           companyId: opportunity.companyId,
           contactId: opportunity.primaryContactId,
-          ownerId: opportunity.salespersonId,
+          ownerId,
           orderType: opportunity.orderType,
           status: "new",
           orderValue: value,
           depositRequired,
-          deliveryAddress: opportunity.deliveryAddress,
-          neededByDate: opportunity.neededByDate,
+          deliveryAddress: orderDeliveryAddress,
+          neededByDate: orderNeededByDate,
         },
       });
 
@@ -511,9 +545,15 @@ export async function markOpportunityWon(formData: FormData) {
       await tx.opportunity.update({
         where: { id: opportunity.id },
         // Clearing the follow-up keeps closed deals out of the overdue chips.
-        // The price agreed in the Close panel is the deal's real value - write it
-        // back so the deal and its order never disagree about the number.
-        data: { stage: "won", nextFollowUp: null, value },
+        // The price/destination/date agreed in the Close panel are the deal's
+        // real terms - write them back so deal and order never disagree.
+        data: {
+          stage: "won",
+          nextFollowUp: null,
+          value,
+          ...(closeDeliveryAddress ? { deliveryAddress: closeDeliveryAddress } : {}),
+          ...(closeNeededByDate ? { neededByDate: closeNeededByDate } : {}),
+        },
       });
 
       if (payment) {

@@ -11,8 +11,9 @@ import { useEffect, useRef, useState } from "react";
 import { PO_STATUSES, labelFor } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
 import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
-import { PO_STATUS_COLORS, fmtDate, isValidTrackingUrl } from "../utils";
+import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
+import { useToast } from "@/lib/toast";
 import { SearchCombobox } from "@/lib/Combobox";
 import { Avatar } from "@/lib/Avatar";
 
@@ -76,6 +77,7 @@ export default function PurchaseOrdersSection({
   // "Make it list": rows stay compact, the full detail + tracking form pop up.
   const [openPoId, setOpenPoId] = useState<string | null>(null);
   const openPo = purchaseOrders.find((po) => po.id === openPoId) ?? null;
+  const { toast } = useToast();
 
   async function handleAdvance(poId: string, blocked: boolean) {
     if (blocked) {
@@ -96,16 +98,38 @@ export default function PurchaseOrdersSection({
 
   async function handleCreatePo(formData: FormData) {
     const supplierId = String(formData.get("supplierId") ?? "");
-    const newVendorName = String(formData.get("newVendorName") ?? "");
     const lineItemIds = formData.getAll("lineItemIds").map(String);
-    if ((!supplierId && !newVendorName.trim()) || lineItemIds.length === 0) return;
+    // Sep 2 QA P0: typing "CKitchen" without clicking a result left BOTH the
+    // picked id and the create-new name empty, and this handler returned with
+    // no error, no toast, nothing - a buyer walked away thinking the PO went
+    // out. Whatever is sitting in the search box now counts as the vendor
+    // (the server matches it to an existing vendor by normalized name, or
+    // creates one), and every reject path says so out loud.
+    const typedVendor = String(formData.get("newVendorName") ?? "").trim() || vendorQuery.trim();
+    if (!supplierId && !typedVendor) {
+      setCreateError("Pick a vendor first - or type a name to create one.");
+      return;
+    }
+    if (lineItemIds.length === 0) {
+      setCreateError("Tick at least one item to put on this PO.");
+      return;
+    }
     setCreateError(null);
-    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds, newVendorName);
+    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds, supplierId ? "" : typedVendor);
     if (result.ok) {
       setShowEmptyForm(false);
       setVendorQuery("");
       setVendorId("");
       setNewVendorName("");
+      const vendorLabel = supplierId
+        ? vendors.find((v) => v.id === supplierId)?.name ?? "the vendor"
+        : typedVendor;
+      toast({
+        kind: "success",
+        message: `PO created for ${vendorLabel} with ${lineItemIds.length} item${
+          lineItemIds.length === 1 ? "" : "s"
+        }`,
+      });
     } else {
       setCreateError(result.message);
     }
@@ -397,16 +421,22 @@ function TrackingEdit({
         <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
           Save
         </PendingButton>
-        {trackingUrl && isValidTrackingUrl(trackingUrl) && (
-          <a
-            href={trackingUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-blue transition-colors hover:underline"
-          >
-            Open tracking
-          </a>
-        )}
+        {trackingUrl ? (
+          isLikelyTrackingUrl(trackingUrl) ? (
+            <a
+              href={trackingUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-blue transition-colors hover:underline"
+            >
+              Open tracking
+            </a>
+          ) : (
+            <span className="text-xs text-gray" title={trackingUrl}>
+              saved link doesn&rsquo;t look like tracking
+            </span>
+          )
+        ) : null}
       </div>
     </form>
   );

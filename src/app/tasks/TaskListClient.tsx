@@ -49,9 +49,12 @@ export default function TaskListClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {!hasIdentity && (
+        {/* The hint only appears once it's relevant: "My tasks" was clicked but
+            nobody is signed in via the sidebar (Sep 2 QA: it used to lecture
+            before a task was even opened). */}
+        {mineOnly && !hasIdentity && (
           <span id="mine-tasks-hint" className="text-xs text-gray">
-            Pick yourself once in any assignee field
+            Pick your name under &ldquo;Working as&rdquo; in the sidebar to see just your tasks
           </span>
         )}
         <button type="button" className={!mineOnly ? "chip chip-active" : "chip"} onClick={() => setMineOnly(false)}>
@@ -60,8 +63,7 @@ export default function TaskListClient({
         <button
           type="button"
           className={mineOnly ? "chip chip-active" : "chip"}
-          title={!hasIdentity ? "Pick yourself once in any assignee field" : undefined}
-          aria-describedby={!hasIdentity ? "mine-tasks-hint" : undefined}
+          aria-describedby={mineOnly && !hasIdentity ? "mine-tasks-hint" : undefined}
           onClick={() => setMineOnly(true)}
         >
           My tasks

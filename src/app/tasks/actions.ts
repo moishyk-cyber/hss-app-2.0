@@ -45,15 +45,38 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
  * on the client) rather than a form field - the full CreateTaskPanel stays
  * available for anything more detailed (due date, priority, type, linking).
  */
-export async function quickAddTask(title: string, assigneeId: string | null): Promise<ActionResult> {
+export async function quickAddTask(
+  title: string,
+  assigneeId: string | null
+): Promise<{ ok: true; id: string; assigneeName: string | null } | { ok: false; message: string }> {
   const trimmed = title.trim();
   if (!trimmed) return { ok: false, message: "Enter a title for the task." };
-  return safeAction(async () => {
-    const task = await prisma.task.create({ data: { title: trimmed, assigneeId: assigneeId || null } });
+  try {
+    const task = await prisma.task.create({
+      data: { title: trimmed, assigneeId: assigneeId || null },
+      include: { assignee: { select: { name: true } } },
+    });
     await log(task.id, "task_created", `Task "${trimmed}" created`);
     revalidatePath("/tasks");
     revalidatePath("/dashboard");
-  }, "Could not create the task. Please try again.");
+    return { ok: true, id: task.id, assigneeName: task.assignee?.name ?? null };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: "Could not create the task. Please try again." };
+  }
+}
+
+/** Hard-deletes a task (used by quick-add's Undo). Comments cascade with it. */
+export async function deleteTask(taskId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    // Subtasks would orphan on a hard delete - only leaf/new tasks qualify.
+    const subtaskCount = await prisma.task.count({ where: { parentTaskId: taskId } });
+    if (subtaskCount > 0) throw new Error("Task has subtasks");
+    await prisma.task.delete({ where: { id: taskId } });
+    await log(taskId, "task_deleted", "Task deleted");
+    revalidatePath("/tasks");
+    revalidatePath("/dashboard");
+  }, "Could not delete the task.");
 }
 
 export async function setTaskStatus(taskId: string, status: string): Promise<ActionResult> {

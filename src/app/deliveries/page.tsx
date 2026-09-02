@@ -6,7 +6,7 @@ import { URGENCY_COLORS, ORDER_URGENCIES, PO_DELIVERY_STATUSES } from "@/lib/con
 import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import { fmtDate, isValidTrackingUrl } from "../orders/utils";
+import { fmtDate, isLikelyTrackingUrl } from "../orders/utils";
 import { CountPill } from "../dashboard/QueueCard";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
 import { TruckerSelect } from "./TruckerSelect";
@@ -120,9 +120,12 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               isUrgent(leg) ? "border-l-4 border-red" : ""
             }`}
           >
-            <span className="flex w-40 shrink-0 items-center gap-2">
+            <span className="flex w-40 shrink-0 items-center gap-2 xl:w-56">
               <Avatar name={leg.supplier?.name ?? "?"} kind="business" size="sm" />
-              <span className="hidden max-w-[9rem] truncate text-[12px] text-gray-dark md:block">
+              <span
+                className="hidden min-w-0 truncate text-[12px] text-gray-dark md:block"
+                title={leg.supplier?.name ?? undefined}
+              >
                 {leg.supplier?.name ?? <span className="empty-value">no supplier</span>}
               </span>
             </span>
@@ -131,7 +134,10 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               href={`/orders/${leg.orderId}#delivery`}
               className="min-w-0 flex-[3] after:absolute after:inset-0 after:content-['']"
             >
-              <div className="truncate text-[13.5px] font-semibold text-ink">
+              <div
+                className="truncate text-[13.5px] font-semibold text-ink xl:whitespace-normal"
+                title={`${leg.poNumber ?? "(no PO#)"} - ${leg.order.title}`}
+              >
                 {leg.poNumber ?? "(no PO#)"} - {leg.order.title}
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
@@ -141,7 +147,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
                   </span>
                 )}
                 <span>{leg.shipTo === "client_direct" ? "ships direct to client" : "ships to HSS"}</span>
-                {leg.order.neededByDate && <span>needed by {leg.order.neededByDate.toLocaleDateString()}</span>}
+                {leg.order.neededByDate && <span>needed by {fmtDate(leg.order.neededByDate)}</span>}
               </div>
             </Link>
 
@@ -166,23 +172,20 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
             </span>
 
             <span className="relative z-10 block w-20 shrink-0 truncate text-[12px]">
-              {leg.trackingUrl ? (
-                isValidTrackingUrl(leg.trackingUrl) ? (
-                  <a
-                    href={leg.trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue transition-colors hover:underline"
-                  >
-                    Track
-                  </a>
-                ) : (
-                  <span className="text-gray-dark" title={leg.trackingUrl}>
-                    {leg.trackingUrl}
-                  </span>
-                )
+              {leg.trackingUrl && isLikelyTrackingUrl(leg.trackingUrl) ? (
+                <a
+                  href={leg.trackingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue transition-colors hover:underline"
+                >
+                  Track
+                </a>
               ) : (
-                <span className="empty-value">no link</span>
+                // Junk on file (not a carrier link) reads as missing, per Sep 2 QA.
+                <span className="empty-value" title={leg.trackingUrl ?? undefined}>
+                  no link
+                </span>
               )}
             </span>
           </li>

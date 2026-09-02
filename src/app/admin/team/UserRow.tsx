@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { USER_ROLES } from "@/lib/constants";
+import { USER_ROLES, labelFor } from "@/lib/constants";
 import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
 import type { ActionResult } from "@/lib/actionResult";
@@ -43,6 +43,7 @@ function InlineField({
   type = "text",
   inputClassName = "",
   autoFocus = false,
+  ariaLabel,
 }: {
   id: string;
   field: "name" | "email";
@@ -51,6 +52,8 @@ function InlineField({
   type?: string;
   inputClassName?: string;
   autoFocus?: boolean;
+  /** Accessible name - the same-looking inputs repeat down the table. */
+  ariaLabel?: string;
 }) {
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -75,6 +78,7 @@ function InlineField({
         type={type}
         value={value}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         autoFocus={autoFocus}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
@@ -100,7 +104,7 @@ function InlineField({
  * a message. A row still needs to be able to correct a typo'd address, so the
  * small pencil control swaps in the same inline editor the name field uses.
  */
-function EmailCell({ id, initial }: { id: string; initial: string }) {
+function EmailCell({ id, initial, name }: { id: string; initial: string; name: string }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -114,6 +118,7 @@ function EmailCell({ id, initial }: { id: string; initial: string }) {
           initial={initial}
           type="email"
           placeholder="email@hsskitchens.com"
+          ariaLabel={`Email for ${name}`}
           autoFocus
         />
       </span>
@@ -157,18 +162,30 @@ export function UserRow({
             field="name"
             initial={user.name}
             placeholder="Full name"
+            ariaLabel={`Full name for ${user.email}`}
             inputClassName="font-semibold text-ink"
           />
         </span>
       </td>
       <td className="min-w-[200px]">
-        <EmailCell id={user.id} initial={user.email} />
+        <EmailCell id={user.id} initial={user.email} name={user.name} />
       </td>
       <td className="min-w-[140px]">
+        {/* Role changes apply everywhere at once - a stray click shouldn't
+            escalate anyone, so the pick is confirmed first (Sep 2 QA P2). */}
         <OptimisticSelect
           value={user.role}
           options={USER_ROLES}
           action={(next) => updateUserField(user.id, "role", next)}
+          ariaLabel={`Role for ${user.name}: ${labelFor(USER_ROLES, user.role)}`}
+          confirm={(next) => ({
+            title: `Change ${user.name}'s role?`,
+            body: `${user.name} goes from ${labelFor(USER_ROLES, user.role)} to ${labelFor(
+              USER_ROLES,
+              next
+            )}. The change applies immediately and is logged.`,
+            confirmLabel: "Change role",
+          })}
         />
       </td>
       <td>
@@ -177,6 +194,21 @@ export function UserRow({
           options={ACTIVE_STATES}
           colorMap={ACTIVE_COLORS}
           action={(next) => setUserActive(user.id, next)}
+          ariaLabel={`Status for ${user.name}: ${user.active ? "Active" : "Inactive"}`}
+          confirm={(next) =>
+            next === "inactive"
+              ? {
+                  title: `Deactivate ${user.name}?`,
+                  body: `${user.name} disappears from every assignee and owner picker. Nothing they currently own is reassigned, and they can be reactivated here any time.`,
+                  confirmLabel: "Deactivate",
+                  danger: true,
+                }
+              : {
+                  title: `Reactivate ${user.name}?`,
+                  body: `${user.name} shows up again in every assignee and owner picker.`,
+                  confirmLabel: "Reactivate",
+                }
+          }
         />
       </td>
     </tr>

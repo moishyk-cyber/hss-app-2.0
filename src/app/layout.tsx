@@ -4,6 +4,7 @@ import Link from "next/link";
 import Nav from "./nav";
 import WhoAmI from "./who-am-i";
 import { prisma } from "@/lib/prisma";
+import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -35,6 +36,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <a href="#main" className="skip-link">
           Skip to content
         </a>
+        <ToastProvider>
         <div className="flex min-h-screen">
           <aside className="w-64 shrink-0 bg-panel flex flex-col border-r border-border">
             <div className="px-6 py-6">
@@ -59,6 +61,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </aside>
           <main id="main" className="flex-1 min-w-0 px-10 py-9">{children}</main>
         </div>
+        </ToastProvider>
       </body>
     </html>
   );

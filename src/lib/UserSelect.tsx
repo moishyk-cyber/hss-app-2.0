@@ -9,7 +9,7 @@
 import { useRef, useState, useTransition, useOptimistic } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "./Avatar";
-import { DropMenu, useDismiss } from "./ui";
+import { DropMenu, menuArrowNav, useDismiss, useMenuFocusOnOpen } from "./ui";
 import type { ActionResult } from "./actionResult";
 
 type UserOption = { id: string; name: string };
@@ -39,6 +39,7 @@ export function UserSelect({
   const current = users.find((u) => u.id === optimistic) ?? null;
 
   useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
+  useMenuFocusOnOpen(open, menuRef);
 
   function pick(nextId: string) {
     setOpen(false);
@@ -59,11 +60,16 @@ export function UserSelect({
   const rows: UserOption[] = allowUnassigned ? [{ id: "", name: "Unassigned" }, ...users] : users;
 
   return (
-    <div ref={boxRef} className={`relative inline-block ${className}`}>
+    <div
+      ref={boxRef}
+      className={`relative inline-block ${className}`}
+      onKeyDown={(e) => menuArrowNav(e, menuRef)}
+    >
       <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label="Change assignee"
         disabled={isPending}
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1.5 rounded-full border border-border bg-panel py-0.5 pl-0.5 pr-2 text-xs font-medium text-gray-dark transition-colors hover:bg-hover hover:text-ink ${
