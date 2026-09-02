@@ -30,6 +30,7 @@ export function CompanyForm({
   cancelHref,
   error,
   duplicateCompany,
+  requiredFields,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   company?: CompanyFormValues;
@@ -38,6 +39,8 @@ export function CompanyForm({
   error?: string;
   /** Name of the existing business that blocked this save. */
   duplicateCompany?: string;
+  /** Which optional fields the Settings tab currently requires (see @/lib/fieldRequirements). */
+  requiredFields?: { phone?: boolean; email?: boolean };
 }) {
   return (
     <form action={action} className="card max-w-3xl">
@@ -54,6 +57,14 @@ export function CompanyForm({
         <FormAlert>
           One of the dropdowns held a value this app doesn&rsquo;t recognise. Nothing was saved -
           please re-pick and try again.
+        </FormAlert>
+      ) : error === "missing_required" ? (
+        <FormAlert>
+          Phone and/or email is required (set in{" "}
+          <Link href="/admin/settings" className="underline">
+            Admin → Settings
+          </Link>
+          ). Please fill it in and save again.
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
@@ -98,7 +109,13 @@ export function CompanyForm({
           hint="Only applies when a deposit is required."
         />
 
-        <Field label="Phone" name="phone" type="tel" defaultValue={company?.phone} />
+        <Field
+          label="Phone"
+          name="phone"
+          type="tel"
+          defaultValue={company?.phone}
+          required={requiredFields?.phone}
+        />
         <Field
           label="Phone extension"
           name="phoneExt"
@@ -106,7 +123,13 @@ export function CompanyForm({
           defaultValue={company?.phoneExt}
         />
         <Field label="Cell phone" name="cellPhone" type="tel" defaultValue={company?.cellPhone} />
-        <Field label="Email" name="email" type="email" defaultValue={company?.email} />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          defaultValue={company?.email}
+          required={requiredFields?.email}
+        />
 
         <Field label="Website" name="website" defaultValue={company?.website} />
         <Field label="Location name" name="locationName" defaultValue={company?.locationName} />

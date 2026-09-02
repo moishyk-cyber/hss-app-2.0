@@ -11,7 +11,7 @@ async function log(linkedId: string, action: string, detail: string) {
 }
 
 function refresh() {
-  revalidatePath("/team");
+  revalidatePath("/admin/team");
 }
 
 export async function createUser(formData: FormData): Promise<ActionResult> {

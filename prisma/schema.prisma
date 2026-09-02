@@ -331,3 +331,15 @@ model ActivityLog {
   @@index([linkedType, linkedId])
   @@index([at])
 }
+
+// Admin-configurable required fields (Settings tab). The shipped set lives in
+// @/lib/fieldRequirements; this table only ever holds an override per field,
+// so a missing row means "use the shipped default" (see getFieldRequirements).
+model FieldRequirement {
+  id       String  @id @default(cuid())
+  entity   String // company | opportunity
+  field    String // e.g. phone, email, companyId, neededByDate
+  required Boolean @default(true)
+
+  @@unique([entity, field])
+}

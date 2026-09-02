@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { BackLink } from "@/lib/BackLink";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { updateCompany } from "../../actions";
 import { CompanyForm } from "../../CompanyForm";
 import { PageHeader } from "../../_ui";
@@ -15,7 +16,10 @@ export default async function EditCompanyPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
-  const company = await prisma.company.findUnique({ where: { id } });
+  const [company, req] = await Promise.all([
+    prisma.company.findUnique({ where: { id } }),
+    getFieldRequirements(),
+  ]);
   if (!company) notFound();
 
   return (
@@ -30,6 +34,7 @@ export default async function EditCompanyPage({
         submitLabel="Save changes"
         cancelHref={`/companies/${company.id}`}
         error={error}
+        requiredFields={{ phone: req["company.phone"], email: req["company.email"] }}
       />
     </div>
   );

@@ -7,6 +7,7 @@ import { OPPORTUNITY_STAGES, RFQ_STATUSES, isValidValue, labelFor } from "@/lib/
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import {
   CLOSED_STAGES,
   DELIVERY_TYPES,
@@ -300,19 +301,31 @@ export async function updateOpportunity(formData: FormData) {
     redirect(`/pipeline/${id}/edit?error=invalid_value`);
   }
 
+  // Server-side backstop for whatever the Settings tab currently requires
+  // (native `required` on the form is client-only).
+  const companyId = str(formData, "companyId");
+  const neededByDate = date(formData, "neededByDate");
+  const req = await getFieldRequirements();
+  if (
+    (req["opportunity.companyId"] && !companyId) ||
+    (req["opportunity.neededByDate"] && !neededByDate)
+  ) {
+    redirect(`/pipeline/${id}/edit?error=missing_required`);
+  }
+
   try {
     const updated = await prisma.opportunity.update({
       where: { id },
       data: {
         title: str(formData, "title") ?? "Untitled opportunity",
         stage,
-        companyId: str(formData, "companyId"),
+        companyId,
         primaryContactId: str(formData, "primaryContactId"),
         salespersonId: str(formData, "salespersonId"),
         orderType,
         needsPricing: bool(formData, "needsPricing"),
         value: num(formData, "value"),
-        neededByDate: date(formData, "neededByDate"),
+        neededByDate,
         estDueDate: date(formData, "estDueDate"),
         nextFollowUp: date(formData, "nextFollowUp"),
         lostReason: str(formData, "lostReason"),
