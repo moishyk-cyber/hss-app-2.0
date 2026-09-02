@@ -25,6 +25,22 @@ export function fmtMoney(v: number | null | undefined): ReactNode {
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+/**
+ * True only for an absolute http(s) URL. Guards tracking-link rendering: a
+ * carrier's tracking field is free text entered by a person, and production
+ * has seen non-URLs ("gewryher") and internal links (chat.google.com) land
+ * there - neither should render as a clickable "Track" link.
+ */
+export function isValidTrackingUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function paymentState(payments: { status: string }[]): "none" | "pending" | "paid" {
   if (payments.length === 0) return "none";
   if (payments.every((p) => p.status === "paid")) return "paid";

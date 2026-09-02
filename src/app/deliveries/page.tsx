@@ -6,7 +6,7 @@ import { URGENCY_COLORS, ORDER_URGENCIES, PO_DELIVERY_STATUSES } from "@/lib/con
 import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import { fmtDate } from "../orders/utils";
+import { fmtDate, isValidTrackingUrl } from "../orders/utils";
 import { CountPill } from "../dashboard/QueueCard";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
 import { TruckerSelect } from "./TruckerSelect";
@@ -167,14 +167,20 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
 
             <span className="relative z-10 shrink-0 text-[12px]">
               {leg.trackingUrl ? (
-                <a
-                  href={leg.trackingUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue transition-colors hover:underline"
-                >
-                  Track
-                </a>
+                isValidTrackingUrl(leg.trackingUrl) ? (
+                  <a
+                    href={leg.trackingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue transition-colors hover:underline"
+                  >
+                    Track
+                  </a>
+                ) : (
+                  <span className="text-gray-dark" title="Not a valid tracking link">
+                    {leg.trackingUrl}
+                  </span>
+                )
               ) : (
                 <span className="empty-value">no link</span>
               )}
@@ -282,8 +288,17 @@ export default async function DeliveriesPage({
   // it belongs in "recently delivered", not in the open work.
   const open = inFlightRaw.filter((l) => !DELIVERED.includes(l.deliveryStatus));
 
-  const needsAttentionRaw = open.filter((l) => !l.scheduledDeliveryDate || l.scheduledDeliveryDate < startOfToday);
-  const scheduledRaw = open.filter((l) => l.scheduledDeliveryDate != null && l.scheduledDeliveryDate >= startOfToday);
+  // A leg whose own status pill already reads "scheduled" must land in the
+  // Scheduled section even if its calendar date is missing or in the past -
+  // otherwise the section list and the leg's own badge visibly disagree (the
+  // bucketing used to go by scheduledDeliveryDate alone, ignoring this field).
+  const isScheduledStatus = (l: DeliveryLeg) => l.deliveryStatus === "scheduled";
+  const needsAttentionRaw = open.filter(
+    (l) => !isScheduledStatus(l) && (!l.scheduledDeliveryDate || l.scheduledDeliveryDate < startOfToday)
+  );
+  const scheduledRaw = open.filter(
+    (l) => isScheduledStatus(l) || (l.scheduledDeliveryDate != null && l.scheduledDeliveryDate >= startOfToday)
+  );
 
   const needsAttention = sortKey
     ? sortLegsBy(needsAttentionRaw, sortKey, sortDir)
