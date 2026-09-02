@@ -149,7 +149,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               <TruckerSelect poId={leg.id} value={leg.trucker} truckers={truckers} />
             </span>
 
-            <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
+            <span className="hidden w-28 shrink-0 whitespace-nowrap text-[12px] text-gray-dark sm:block">
               {leg.scheduledDeliveryDate ? (
                 fmtDate(leg.scheduledDeliveryDate)
               ) : (
@@ -157,15 +157,15 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
               )}
             </span>
 
-            <span className="hidden shrink-0 text-[12px] text-gray-dark md:block">
+            <span className="hidden w-20 shrink-0 whitespace-nowrap text-[12px] text-gray-dark md:block">
               {fmtDate(leg.expectedDelivery)}
             </span>
 
-            <span className="relative z-10 shrink-0">
+            <span className="relative z-10 w-40 shrink-0">
               <DeliveryStatusPill poId={leg.id} value={leg.deliveryStatus} />
             </span>
 
-            <span className="relative z-10 shrink-0 text-[12px]">
+            <span className="relative z-10 block w-20 shrink-0 truncate text-[12px]">
               {leg.trackingUrl ? (
                 isValidTrackingUrl(leg.trackingUrl) ? (
                   <a
@@ -177,7 +177,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
                     Track
                   </a>
                 ) : (
-                  <span className="text-gray-dark" title="Not a valid tracking link">
+                  <span className="text-gray-dark" title={leg.trackingUrl}>
                     {leg.trackingUrl}
                   </span>
                 )
