@@ -110,6 +110,26 @@ export async function submitIntake(formData: FormData) {
     }
   }
 
+  // Idempotency guard, BEFORE the transaction (same reasoning as markOpportunityWon's
+  // guard on the order): a fast double-submit - a double-click that lands before
+  // PendingButton's pending state disables it, or a client/network retry - must not
+  // create two opportunities for one phone call. Scoped to a same-company opportunity
+  // created in the last few seconds, so a genuine second call to the same client later
+  // the same day is unaffected. New-client submissions are already covered by the
+  // duplicate-company guard above (the second attempt finds the company the first one
+  // just created).
+  if (goesToPipeline && clientMode === "existing") {
+    const existingCompanyId = str(formData, "companyId");
+    if (existingCompanyId) {
+      const recentDuplicate = await prisma.opportunity.findFirst({
+        where: { companyId: existingCompanyId, createdAt: { gte: new Date(Date.now() - 15_000) } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (recentDuplicate) redirect(`/pipeline/${recentDuplicate.id}`);
+    }
+  }
+
   let result;
   try {
     result = await runIntakeTransaction();

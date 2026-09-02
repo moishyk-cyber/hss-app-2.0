@@ -1,5 +1,5 @@
 // Local presentational helpers for the /contacts module.
-// Back navigation is NOT one of them - every page uses @/lib/BackLink.
+import { BackLink } from "@/lib/BackLink";
 
 // One avatar component app-wide: circle for a person, rounded square for a
 // business. Re-exported here so the contacts pages import from one place.
@@ -7,6 +7,107 @@ export { Avatar } from "@/lib/Avatar";
 
 // Contact-detail links live in one shared file now (phonebook treatment app-wide).
 export { PhoneLink, EmailLink } from "@/lib/ContactLinks";
+
+/**
+ * Detail-page header (matches the /companies treatment): back link · title ·
+ * badges, and exactly ONE contextual primary action on the right.
+ */
+export function DetailHeader({
+  backHref,
+  backLabel,
+  title,
+  subtitle,
+  badges,
+  action,
+  secondary,
+  avatar,
+}: {
+  backHref: string;
+  backLabel: string;
+  title: string;
+  subtitle?: string | null;
+  badges?: React.ReactNode;
+  action?: React.ReactNode;
+  secondary?: React.ReactNode;
+  /** Optional avatar that leads the title, so the name reads the same as in lists. */
+  avatar?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6">
+      <BackLink href={backHref} label={backLabel} />
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {avatar}
+            <h1 className="page-title">{title}</h1>
+            {badges}
+          </div>
+          {subtitle ? <p className="page-sub">{subtitle}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {secondary}
+          {action}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Muted italic stand-in - never a bare dash. */
+export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
+  return <span className="empty-value">{children}</span>;
+}
+
+/**
+ * One label/value line in a detail card. An empty value drops the row entirely
+ * unless `emptyLabel` is given, in which case absence is itself information.
+ */
+export function DetailRow({
+  label,
+  value,
+  emptyLabel,
+}: {
+  label: string;
+  value: React.ReactNode;
+  emptyLabel?: string;
+}) {
+  const isEmpty = value === null || value === undefined || value === false || value === "";
+  if (isEmpty && !emptyLabel) return null;
+  return (
+    <div className="flex gap-4 py-2 text-[13px]">
+      <div className="w-40 shrink-0 text-gray-dark">{label}</div>
+      <div className="min-w-0 break-words text-ink">
+        {isEmpty ? <Empty>{emptyLabel}</Empty> : value}
+      </div>
+    </div>
+  );
+}
+
+export function Card({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <section className="card">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="section-label">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Null when there is no date - callers decide how to say "nothing here". */
+export function fmtDate(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  return date.toISOString().slice(0, 10);
+}
 
 /** Visible required marker. The control's own `required` is what AT announces. */
 export function RequiredMark() {

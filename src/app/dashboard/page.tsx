@@ -358,7 +358,7 @@ export default async function DashboardPage({
 
       {urgentOrders.length > 0 && (
         <Link
-          href="/orders"
+          href={urgentOrders.length === 1 ? `/orders/${urgentOrders[0].id}` : "/orders"}
           className="card card-interactive flex items-center gap-3 text-sm"
           style={{ padding: "14px 20px" }}
         >
@@ -402,7 +402,11 @@ export default async function DashboardPage({
           tableRows={stageChartData.map((d) => [d.label, fmtMoney(d.value)])}
           emptyText="No open pipeline yet."
         >
-          <HorizontalBarChart data={stageChartData} formatValue={fmtCompactMoney} />
+          <HorizontalBarChart
+            data={stageChartData}
+            formatValue={fmtCompactMoney}
+            ariaLabel="Pipeline value by stage"
+          />
         </ChartCard>
 
         <ChartCard
@@ -412,7 +416,7 @@ export default async function DashboardPage({
           tableRows={intakeChartData.map((d) => [d.label, d.value])}
           emptyText="No intake in this period."
         >
-          <VerticalBarChart data={intakeChartData} formatValue={fmtCount} />
+          <VerticalBarChart data={intakeChartData} formatValue={fmtCount} ariaLabel="New intake per week" />
         </ChartCard>
 
         <ChartCard
@@ -422,7 +426,7 @@ export default async function DashboardPage({
           tableRows={wonChartData.map((d) => [d.label, fmtMoney(d.value)])}
           emptyText="Nothing won in this period."
         >
-          <VerticalBarChart data={wonChartData} formatValue={fmtCompactMoney} />
+          <VerticalBarChart data={wonChartData} formatValue={fmtCompactMoney} ariaLabel="Won value by month" />
         </ChartCard>
 
         <ChartCard
@@ -432,7 +436,7 @@ export default async function DashboardPage({
           tableRows={statusChartData.map((d) => [d.label, d.value])}
           emptyText="No orders yet."
         >
-          <HorizontalBarChart data={statusChartData} formatValue={fmtCount} />
+          <HorizontalBarChart data={statusChartData} formatValue={fmtCount} ariaLabel="Orders by status" />
         </ChartCard>
 
         <ChartCard
@@ -442,7 +446,12 @@ export default async function DashboardPage({
           tableRows={mixChartData.map((d) => [d.label, d.a, d.b])}
           emptyText="No orders in this period."
         >
-          <GroupedBarChart data={mixChartData} seriesLabels={["Project", "Order"]} formatValue={fmtCount} />
+          <GroupedBarChart
+            data={mixChartData}
+            seriesLabels={["Project", "Order"]}
+            formatValue={fmtCount}
+            ariaLabel="Project vs Order mix by month"
+          />
         </ChartCard>
       </div>
 

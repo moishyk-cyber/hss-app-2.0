@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { PO_DELIVERY_STATUSES, PO_DELIVERY_STATUS_COLORS } from "@/lib/constants";
 import { setPoDeliveryStatus, updatePoShipmentDetails } from "../actions";
 import { PendingButton, BadgeSelect } from "@/lib/ui";
-import { fmtDate } from "../utils";
+import { fmtDate, isValidTrackingUrl } from "../utils";
 import LineItemsSection from "./LineItemsSection";
 
 type Item = {
@@ -127,14 +127,20 @@ function PoRow({ po }: { po: Po }) {
 
         <span className="relative z-10 shrink-0 text-xs" onClick={(e) => e.stopPropagation()}>
           {po.trackingUrl ? (
-            <a
-              href={po.trackingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue transition-colors hover:underline"
-            >
-              Track{po.trackingCarrier ? ` (${po.trackingCarrier})` : ""}
-            </a>
+            isValidTrackingUrl(po.trackingUrl) ? (
+              <a
+                href={po.trackingUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue transition-colors hover:underline"
+              >
+                Track{po.trackingCarrier ? ` (${po.trackingCarrier})` : ""}
+              </a>
+            ) : (
+              <span className="text-gray-dark" title="Not a valid tracking link">
+                {po.trackingUrl}
+              </span>
+            )
           ) : (
             <span className="empty-value">no tracking link yet</span>
           )}
@@ -217,14 +223,20 @@ function PoModal({ po, onClose }: { po: Po; onClose: () => void }) {
           </label>
           <span className="text-xs text-gray-dark">Expected: {fmtDate(po.expectedDelivery)}</span>
           {po.trackingUrl ? (
-            <a
-              href={po.trackingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-blue transition-colors hover:underline"
-            >
-              Track shipment{po.trackingCarrier ? ` (${po.trackingCarrier})` : ""}
-            </a>
+            isValidTrackingUrl(po.trackingUrl) ? (
+              <a
+                href={po.trackingUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-blue transition-colors hover:underline"
+              >
+                Track shipment{po.trackingCarrier ? ` (${po.trackingCarrier})` : ""}
+              </a>
+            ) : (
+              <span className="text-xs text-gray-dark" title="Not a valid tracking link">
+                {po.trackingUrl}
+              </span>
+            )
           ) : (
             <span className="text-xs empty-value">no tracking link yet</span>
           )}

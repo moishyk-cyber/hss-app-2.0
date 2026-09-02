@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { PO_STATUSES, labelFor } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
 import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
-import { PO_STATUS_COLORS, fmtDate } from "../utils";
+import { PO_STATUS_COLORS, fmtDate, isValidTrackingUrl } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { SearchCombobox } from "@/lib/Combobox";
 import { Avatar } from "@/lib/Avatar";
@@ -209,26 +209,27 @@ export default function PurchaseOrdersSection({
               const blocked = po.status === "draft" && !gate.open;
               const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
               return (
-                <li key={po.id}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setOpenPoId(po.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setOpenPoId(po.id);
-                      }
-                    }}
-                    className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-hover"
-                  >
+                // The row's click target is a real <button> (title cell) whose
+                // ::after is stretched to cover the full row - same overlay
+                // technique as the Link in deliveries/page.tsx's LegTable. A
+                // plain <button> wrapping the whole row isn't possible here:
+                // the row also nests the "Advance to…" ActionButton, and a
+                // <button> can't contain another <button> per the HTML content
+                // model.
+                <li key={po.id} className="relative transition-colors hover:bg-hover">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
                     <Avatar name={po.supplier?.name ?? "?"} kind="business" size="sm" />
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
+                    <button
+                      type="button"
+                      onClick={() => setOpenPoId(po.id)}
+                      aria-haspopup="dialog"
+                      className="min-w-0 flex-1 cursor-pointer truncate text-left text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                    >
                       {po.poNumber ?? "(no PO#)"}
                       <span className="ml-2 text-[12px] font-normal text-gray-dark">
                         {po.supplier?.name ?? "no vendor"}
                       </span>
-                    </span>
+                    </button>
                     <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
                       {po.lineItems.length} item{po.lineItems.length === 1 ? "" : "s"}
                     </span>
@@ -247,7 +248,7 @@ export default function PurchaseOrdersSection({
                       </span>
                     </span>
                     {next && (
-                      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                      <span className="relative z-10">
                         <ActionButton
                           action={() => handleAdvance(po.id, blocked)}
                           className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
@@ -396,7 +397,7 @@ function TrackingEdit({
         <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
           Save
         </PendingButton>
-        {trackingUrl && (
+        {trackingUrl && isValidTrackingUrl(trackingUrl) && (
           <a
             href={trackingUrl}
             target="_blank"

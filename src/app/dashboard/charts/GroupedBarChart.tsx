@@ -6,10 +6,12 @@ export function GroupedBarChart({
   data,
   seriesLabels,
   formatValue = (v: number) => String(v),
+  ariaLabel = "Grouped bar chart",
 }: {
   data: { label: string; a: number; b: number }[];
   seriesLabels: [string, string];
   formatValue?: (v: number) => string;
+  ariaLabel?: string;
 }) {
   const width = 560;
   const height = 220;
@@ -40,7 +42,7 @@ export function GroupedBarChart({
           {seriesLabels[1]}
         </span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Grouped bar chart">
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={ariaLabel}>
         {gridLines.map((y, i) => (
           <line key={i} x1={padX} x2={width - padX} y1={y} y2={y} stroke="var(--border)" strokeWidth={1} />
         ))}

@@ -68,7 +68,11 @@ export default function RfqRow({
             type="number"
             step="0.01"
             name="price"
-            defaultValue={item.unitPrice ?? ""}
+            // A reverted-to-needs_pricing item can still have a stale unitPrice on
+            // record (Moishy, Sep 2 QA) - never pre-fill it here, or someone could
+            // mistake the old number for a current quote. The stored value itself
+            // is untouched; this only changes what the input renders.
+            defaultValue={item.rfqStatus === "needs_pricing" ? "" : item.unitPrice ?? ""}
             className="input-klyne w-24 px-1.5 py-1 text-xs"
             placeholder="price"
             aria-label="Price"

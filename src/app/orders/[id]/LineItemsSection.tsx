@@ -8,7 +8,7 @@ import {
   setLineItemBackorderExpected,
   setLineItemDeliveryStatus,
 } from "../actions";
-import { DELIVERY_STATUS_COLORS, fmtDate } from "../utils";
+import { DELIVERY_STATUS_COLORS, fmtDate, fmtMoney, isValidTrackingUrl } from "../utils";
 import { BadgeSelect, PendingButton } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
 
@@ -67,9 +67,7 @@ export default function LineItemsSection({
             <tr key={item.id} className="transition-colors">
               <td className="font-medium text-ink">{item.name}</td>
               <td className="text-gray-dark">{item.qty}</td>
-              <td className="text-gray-dark">
-                {item.unitPrice != null ? `$${item.unitPrice}` : <span className="text-gray/60">–</span>}
-              </td>
+              <td className="text-gray-dark">{fmtMoney(item.unitPrice)}</td>
               <td>
                 <UserSelect
                   value={item.assigneeId ?? ""}
@@ -87,14 +85,20 @@ export default function LineItemsSection({
               </td>
               <td>
                 {item.trackingUrl ? (
-                  <a
-                    href={item.trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue transition-colors hover:underline"
-                  >
-                    Track
-                  </a>
+                  isValidTrackingUrl(item.trackingUrl) ? (
+                    <a
+                      href={item.trackingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue transition-colors hover:underline"
+                    >
+                      Track
+                    </a>
+                  ) : (
+                    <span className="text-gray-dark" title="Not a valid tracking link">
+                      {item.trackingUrl}
+                    </span>
+                  )
                 ) : (
                   <span className="empty-value">not tracked</span>
                 )}
