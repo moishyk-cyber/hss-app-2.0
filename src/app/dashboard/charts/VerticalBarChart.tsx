@@ -7,10 +7,12 @@ export function VerticalBarChart({
   data,
   formatValue = (v: number) => String(v),
   color = SERIES_1,
+  ariaLabel = "Bar chart",
 }: {
   data: { label: string; value: number }[];
   formatValue?: (v: number) => string;
   color?: string;
+  ariaLabel?: string;
 }) {
   const width = 560;
   const height = 220;
@@ -35,7 +37,7 @@ export function VerticalBarChart({
   const tickStep = Math.max(1, Math.ceil(data.length / 8));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Bar chart">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={ariaLabel}>
       {gridLines.map((y, i) => (
         <line key={i} x1={padX} x2={width - padX} y1={y} y2={y} stroke="var(--border)" strokeWidth={1} />
       ))}

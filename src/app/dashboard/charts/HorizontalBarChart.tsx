@@ -7,10 +7,12 @@ export function HorizontalBarChart({
   data,
   formatValue = (v: number) => String(v),
   color = SERIES_1,
+  ariaLabel = "Bar chart",
 }: {
   data: { label: string; value: number }[];
   formatValue?: (v: number) => string;
   color?: string;
+  ariaLabel?: string;
 }) {
   const rowH = 30;
   const barH = Math.round(rowH * 0.6);
@@ -22,7 +24,7 @@ export function HorizontalBarChart({
   const max = Math.max(1, ...data.map((d) => d.value));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Bar chart">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={ariaLabel}>
       {data.map((d, i) => {
         const y = i * rowH + 3;
         const barLen = Math.max(0, (d.value / max) * trackW);
