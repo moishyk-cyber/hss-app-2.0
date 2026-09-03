@@ -128,14 +128,21 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                     setDraggingId(null);
                     setDragOverStage(null);
                   }}
-                  className={`card-sunken card-interactive cursor-grab active:cursor-grabbing ${
+                  className={`card-sunken card-interactive relative cursor-grab active:cursor-grabbing ${
                     draggingId === card.id ? "opacity-50" : ""
                   }`}
                 >
+                  {/*
+                    Stretched link (same pattern as PipelineList rows): the whole card
+                    opens the deal, not just the title text. The stage pill below sits
+                    above it (relative z-10) so clicking the pill still changes stage.
+                    draggable={false} on the link means a mouse-down anywhere on it -
+                    pseudo-element included - falls through to the draggable article.
+                  */}
                   <Link
                     href={`/pipeline/${card.id}`}
                     draggable={false}
-                    className="block text-[13px] font-medium leading-snug text-ink hover:underline"
+                    className="block text-[13px] font-medium leading-snug text-ink hover:underline after:absolute after:inset-0 after:content-['']"
                   >
                     {card.title}
                   </Link>
@@ -170,7 +177,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   ) : null}
 
                   {/* Keyboard/no-drag alternative - moves the card optimistically too. */}
-                  <div className="mt-3">
+                  <div className="relative z-10 mt-3 w-max">
                     <BadgeSelect
                       value={card.stage}
                       options={stageOptions(card.stage)}

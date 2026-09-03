@@ -233,7 +233,9 @@ export default function PaymentsSection({
         {gate.exempt
           ? gate.reason
           : gate.requiredTotal != null
-          ? `Required ${fmtUSD(gate.requiredTotal)} · Paid ${fmtUSD(gate.paidTotal)} · Outstanding ${fmtUSD(gate.shortfall)}`
+          ? `Required ${fmtUSD(gate.requiredTotal)} · Paid ${fmtUSD(gate.paidTotal)} · Outstanding ${fmtUSD(gate.shortfall)}${
+              gate.invoiced ? "" : " · Nothing invoiced yet"
+            }`
           : gate.open
           ? "Payment received"
           : gate.reason}

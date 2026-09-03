@@ -100,6 +100,7 @@ export default async function DashboardPage({
     myOrders,
     myTasks,
     myPricingItemsRaw,
+    orphanedAssigneeCount,
   ] = await Promise.all([
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
@@ -228,6 +229,26 @@ export default async function DashboardPage({
       },
       orderBy: { createdAt: "asc" },
     }),
+    // Open work assigned to a deactivated teammate never shows up in anyone's
+    // "My Items" (the picker only lists active users) - QA #2b traced "My
+    // Items looks the same for everyone" to two deactivated User rows
+    // (a legacy salesperson, plus the migration's placeholder "HSS Kitchens"
+    // row) that still own real open opportunities/orders/tasks/items. Surface
+    // the count so this stops being silently invisible while it's reconciled.
+    prisma.$transaction([
+      prisma.opportunity.count({
+        where: { stage: { notIn: ["won", "lost"] }, salespersonId: { not: null }, salesperson: { active: false } },
+      }),
+      prisma.order.count({
+        where: { status: { not: "complete" }, ownerId: { not: null }, owner: { active: false } },
+      }),
+      prisma.task.count({
+        where: { status: { not: "done" }, assigneeId: { not: null }, assignee: { active: false } },
+      }),
+      prisma.lineItem.count({
+        where: { rfqStatus: { in: RFQ_QUEUE_VALUES }, assigneeId: { not: null }, assignee: { active: false } },
+      }),
+    ]).then(([opps, orders, tasks, items]) => opps + orders + tasks + items),
   ]);
 
   // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
@@ -304,7 +325,10 @@ export default async function DashboardPage({
     const nonPaid = o.payments.filter((p) => p.status !== "paid");
     const amountDue = nonPaid.length > 0 ? nonPaid.reduce((sum, p) => sum + p.amount, 0) : o.orderValue ?? 0;
     const paymentType = nonPaid[0]?.type ?? (o.orderType === "project" ? "deposit" : "full");
-    return { id: o.id, title: o.title, amountDue, paymentType };
+    // Sep 3 QA #6: an order with no invoice rows at all used to read exactly like
+    // one with a real unpaid invoice ("full · $0"). Flag it so the row says so.
+    const invoiced = o.payments.length > 0;
+    return { id: o.id, title: o.title, amountDue, paymentType, invoiced };
   });
   const awaitingPaymentValue = awaitingPaymentRows.reduce((sum, r) => sum + r.amountDue, 0);
 
@@ -475,6 +499,16 @@ export default async function DashboardPage({
   // ------------------------------------------------------------------
   const myItems = (
     <div className="space-y-8">
+      {orphanedAssigneeCount > 0 && (
+        <div className="empty-state">
+          {orphanedAssigneeCount} open item{orphanedAssigneeCount === 1 ? "" : "s"} assigned to a deactivated
+          teammate won&rsquo;t appear in anyone&rsquo;s My Items above.{" "}
+          <Link href="/admin/team" className="text-blue transition-colors hover:underline">
+            Review the team list
+          </Link>{" "}
+          to reassign or reactivate.
+        </div>
+      )}
       {!userId ? (
         <div className="empty-state">
           Pick your name in the sidebar to see your items. Until then, only the team queues below apply to you.
@@ -608,8 +642,13 @@ export default async function DashboardPage({
               (o): QueueRow => ({
                 href: `/orders/${o.id}#invoice`,
                 primary: o.title,
-                secondary: o.paymentType,
-                meta: fmtMoney(o.amountDue),
+                secondary: o.invoiced ? o.paymentType : "not yet invoiced",
+                meta:
+                  o.invoiced || o.amountDue > 0 ? (
+                    fmtMoney(o.amountDue)
+                  ) : (
+                    <span className="empty-value">no invoice yet</span>
+                  ),
               })
             )}
             emptyText="Nothing awaiting payment. Orders land here once a deposit or full payment is due but not yet paid."

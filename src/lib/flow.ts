@@ -3,6 +3,8 @@
 // these instead of re-deriving (the old bug class: two truths that drift).
 
 import { prisma } from "@/lib/prisma";
+import { logActivity } from "@/lib/log";
+import { roundCents } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
 // Payment gate
@@ -28,6 +30,13 @@ export type PaymentGate = {
   /** Dollars needed to open the gate; null when the order has no value to measure against. */
   requiredTotal: number | null;
   shortfall: number;
+  /**
+   * True once at least one invoice/payment row exists on the order. Lets the UI
+   * tell "invoiced but unpaid" apart from "never invoiced" (Sep 3 QA #6: both
+   * used to read as Awaiting Payment / $0). Presentation only - it never
+   * affects `open`.
+   */
+  invoiced: boolean;
   /** UI-ready explanation of the gate state. */
   reason: string;
 };
@@ -39,6 +48,7 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   const paidTotal = order.payments
     .filter((p) => p.status === "paid")
     .reduce((sum, p) => sum + p.amount, 0);
+  const invoiced = order.payments.length > 0;
   const isProject = order.orderType === "project";
   const requiresDeposit = order.company?.requiresDeposit ?? true;
   const depositPercent = order.company?.depositPercent ?? 30;
@@ -52,6 +62,7 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
       paidTotal,
       requiredTotal: null,
       shortfall: 0,
+      invoiced,
       reason: "No deposit required for this account - full payment collected after delivery",
     };
   }
@@ -60,6 +71,8 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   const agreed = order.depositRequired ?? null;
   if (value <= 0 && agreed == null) {
     // Nothing to measure sufficiency against - fall back to "any paid payment".
+    // With no payment rows at all there is nothing to chase yet - say so,
+    // rather than reading exactly like an invoice that is sitting unpaid.
     const open = paidTotal > 0;
     return {
       open,
@@ -67,11 +80,16 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
       paidTotal,
       requiredTotal: null,
       shortfall: 0,
+      invoiced,
       reason: open
         ? "Payment received"
-        : isProject
-          ? "Deposit required before POs are sent"
-          : "Full payment required before POs are sent",
+        : !invoiced
+          ? isProject
+            ? "Nothing invoiced yet - add a deposit invoice and collect it before POs are sent"
+            : "Nothing invoiced yet - add an invoice and collect full payment before POs are sent"
+          : isProject
+            ? "Deposit required before POs are sent"
+            : "Full payment required before POs are sent",
     };
   }
 
@@ -90,6 +108,7 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
     paidTotal,
     requiredTotal,
     shortfall: open ? 0 : shortfall,
+    invoiced,
     reason: open
       ? "Payment received"
       : isProject
@@ -181,6 +200,51 @@ export async function recomputeOrderStatus(orderId: string): Promise<string | nu
     return derived;
   } catch (err) {
     console.error("recomputeOrderStatus failed", err);
+    return null;
+  }
+}
+
+/**
+ * Keep Order.orderValue honest after a line-item price change (Sep 3 QA #4: an
+ * order read $11,194 while its items summed to far more). orderValue is
+ * snapshotted from the Close panel at win time and nothing ever recomputed it,
+ * so any post-win pricing edit drifted the displayed total - and, because the
+ * payment gate's requiredTotal is derived from it, a too-low total asks the
+ * customer for too little. Recompute-on-write, mirroring rfq/actions.ts's
+ * syncOpportunityPricing for the pre-win side: only once EVERY live item
+ * carries a price (a partial sum would understate the total and loosen the
+ * gate), then re-derive status since the gate may have moved. Call after any
+ * mutation of a line item's unitPrice/qty/rfqStatus on an order.
+ * Never throws - a sync hiccup must not fail the pricing save that caused it.
+ */
+export async function syncOrderValueFromLineItems(orderId: string): Promise<number | null> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        orderValue: true,
+        lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } },
+      },
+    });
+    if (!order) return null;
+    const live = order.lineItems.filter((li) => li.rfqStatus !== "removed");
+    if (live.length === 0 || live.some((li) => li.unitPrice == null || li.unitPrice <= 0)) {
+      return order.orderValue;
+    }
+    const total = roundCents(live.reduce((sum, li) => sum + (li.unitPrice ?? 0) * li.qty, 0));
+    if (order.orderValue != null && Math.abs(order.orderValue - total) < 0.005) return order.orderValue;
+
+    await prisma.order.update({ where: { id: orderId }, data: { orderValue: total } });
+    await logActivity(
+      "order",
+      orderId,
+      "order_value_synced",
+      `Order value updated from $${order.orderValue ?? 0} to $${total} to match priced line items`
+    );
+    await recomputeOrderStatus(orderId);
+    return total;
+  } catch (err) {
+    console.error("syncOrderValueFromLineItems failed", err);
     return null;
   }
 }

@@ -7,7 +7,7 @@
 // this component drives it via next/link `href`s that point at these same
 // hashes (same interaction language as the sales pipeline stepper).
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type TabKey = "invoice" | "purchase-orders" | "delivery";
 
@@ -37,6 +37,26 @@ export function OrderTabs({
 }) {
   const [tab, setTab] = useState<TabKey>(defaultTab);
 
+  // Sep 3 QA #7: the header's "Record payment" (and the stepper's step links)
+  // are plain <a href="#invoice">s. When their target tab was ALREADY showing,
+  // setTab() was a no-op and the click looked completely dead. Every such
+  // click now scrolls the tabs into view and briefly highlights the panel, so
+  // something visibly happens whether or not the tab actually changed.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drawAttention = useCallback(() => {
+    rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(false), 600);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
+
   // Deep-link support: honor a hash present on load, and react to any later
   // hash change (back/forward, or a plain <a href="#..."> like the header's
   // primary action).
@@ -62,11 +82,13 @@ export function OrderTabs({
       const hashIdx = href.indexOf("#");
       if (hashIdx === -1) return;
       const mapped = HASH_TO_TAB[href.slice(hashIdx)];
-      if (mapped) setTab(mapped);
+      if (!mapped) return;
+      setTab(mapped);
+      drawAttention();
     }
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, []);
+  }, [drawAttention]);
 
   function selectTab(next: TabKey, hash: string) {
     setTab(next);
@@ -74,7 +96,7 @@ export function OrderTabs({
   }
 
   return (
-    <div>
+    <div ref={rootRef} className="scroll-mt-4">
       <div role="tablist" aria-label="Order sections" className="flex gap-1 border-b border-border">
         {TABS.map((t) => {
           const active = tab === t.key;
@@ -97,7 +119,13 @@ export function OrderTabs({
           );
         })}
       </div>
-      <div className="pt-5">
+      {/* The ring snaps on and fades out via the transition once `flash` clears. */}
+      <div
+        className={
+          "mt-5 rounded-lg transition-[box-shadow,background-color] duration-500 ease-out " +
+          (flash ? "bg-hover ring-2 ring-primary/60 ring-offset-4 ring-offset-panel" : "")
+        }
+      >
         <div className={tab === "invoice" ? "" : "hidden"}>{invoice}</div>
         <div className={tab === "purchase-orders" ? "" : "hidden"}>{purchaseOrders}</div>
         <div className={tab === "delivery" ? "" : "hidden"}>{delivery}</div>

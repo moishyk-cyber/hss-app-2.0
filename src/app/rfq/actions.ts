@@ -6,6 +6,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, RFQ_STATUSES } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
+import { syncOrderValueFromLineItems } from "@/lib/flow";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("line_item", linkedId, action, detail);
@@ -72,8 +73,27 @@ export async function updateLineItemPricing(
       }`
     );
     await syncOpportunityPricing(lineItemId);
+    await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not update pricing. Please try again.");
+}
+
+/**
+ * Order-side twin of syncOpportunityPricing (Sep 3 QA #4). Once a deal is won
+ * its items belong to an Order, whose orderValue was a one-time snapshot of the
+ * agreed close price - so re-pricing an item from this queue silently left the
+ * order total (and the payment gate derived from it) stale. The rule itself
+ * lives in @/lib/flow next to the gate math; this just routes to it.
+ */
+async function syncOrderPricing(lineItemId: string): Promise<void> {
+  const item = await prisma.lineItem.findUnique({
+    where: { id: lineItemId },
+    select: { orderId: true },
+  });
+  if (!item?.orderId) return;
+  await syncOrderValueFromLineItems(item.orderId);
+  // The orders list shows orderValue too - revalidateLineItem only covers the detail page.
+  revalidatePath("/orders");
 }
 
 /**
@@ -140,6 +160,8 @@ export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string
   return safeAction(async () => {
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { rfqStatus } });
     await log(lineItemId, "rfq_status_set", `RFQ status set to ${rfqStatus}`);
+    // Moving into/out of "removed" changes which items count toward the order total.
+    await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not update RFQ status. Please try again.");
 }
@@ -157,6 +179,7 @@ export async function markLineItemRemoved(lineItemId: string): Promise<ActionRes
   return safeAction(async () => {
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { rfqStatus: "removed" } });
     await log(lineItemId, "rfq_item_removed", "Line item marked removed from RFQ");
+    await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not remove the line item. Please try again.");
 }

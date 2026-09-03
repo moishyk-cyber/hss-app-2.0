@@ -10,15 +10,30 @@ function subscribe(callback: () => void) {
 function getSnapshot() {
   return readStoredUserId();
 }
-function getServerSnapshot(): string | null {
-  return null; // the server has no localStorage
-}
 
 /**
  * Sidebar identity picker - stands in for auth. Whoever is picked here is who
  * the activity log credits (via the cookie mirror in identityClient).
  */
-export default function WhoAmI({ users }: { users: { id: string; name: string }[] }) {
+export default function WhoAmI({
+  users,
+  initialUserId,
+}: {
+  users: { id: string; name: string }[];
+  /**
+   * The identity cookie's value, read server-side (layout.tsx, via
+   * identityServer.currentUserId()). Without this, getServerSnapshot had to
+   * return null (the server has no localStorage), so the raw SSR/full-page-load
+   * HTML never marked any <option> selected - browsers then default the native
+   * <select> to its first non-disabled option until React hydrates and corrects
+   * it, which read as "picked Moishy, landed on Sam Freund" on a hard nav (an
+   * `<a href>`, a fresh tab) where that pre-hydration paint is actually visible.
+   * Feeding the cookie's value in here lets the server render the right
+   * <option selected> up front, so there's nothing to correct.
+   */
+  initialUserId: string | null;
+}) {
+  const getServerSnapshot = () => initialUserId;
   const userId = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
