@@ -24,6 +24,8 @@ export const metadata: Metadata = {
   description: "CRM, Order & Purchasing Management",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const users = await prisma.user.findMany({
     where: { active: true },
