@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { fmtDateUTC, fmtDateTimeUTC } from "@/lib/dates";
+import { fmtDateUTC, fmtDateTimeUTC, isPastDay, isDueWithinDays } from "@/lib/dates";
 
 // Table-cell date/money formatters. Per DESIGN_V2.md §2, a bare "-" is only
 // allowed inside table bodies for numeric/currency-like cells where column
@@ -67,6 +67,40 @@ export function isLikelyTrackingUrl(url: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+// Orders no longer carry a manual urgency flag - the "Due" column and the
+// dashboard/deliveries queues all key off Order.neededByDate instead. A
+// delivered/complete order is done, so it never reads as overdue or soon.
+const CLOSED_ORDER_STATUSES = new Set(["delivered", "complete"]);
+
+export type DueState = "overdue" | "soon" | null;
+
+/** Overdue: past neededByDate and not yet delivered/complete. Soon: due within 7 days. */
+export function dueState(neededByDate: Date | string | null | undefined, status: string): DueState {
+  if (!neededByDate || CLOSED_ORDER_STATUSES.has(status)) return null;
+  if (isPastDay(neededByDate)) return "overdue";
+  if (isDueWithinDays(neededByDate, 7)) return "soon";
+  return null;
+}
+
+/** "Due" column cell: red + "overdue" badge, orange when due within 7 days, muted dash when unset. */
+export function DueCell({
+  neededByDate,
+  status,
+}: {
+  neededByDate: Date | string | null | undefined;
+  status: string;
+}): ReactNode {
+  if (!neededByDate) return mutedDash();
+  const state = dueState(neededByDate, status);
+  const cls = state === "overdue" ? "font-medium text-red" : state === "soon" ? "font-medium text-orange" : "";
+  return (
+    <span className={cls || undefined}>
+      {fmtDateUTC(neededByDate)}
+      {state === "overdue" ? <span className="badge badge-red ml-1.5">overdue</span> : null}
+    </span>
+  );
 }
 
 export function paymentState(payments: { status: string }[]): "none" | "pending" | "paid" {

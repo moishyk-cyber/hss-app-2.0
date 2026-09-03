@@ -43,8 +43,9 @@ Phone call / email
                                               DELIVERY DAY check → COMPLETE
 ```
 
-Cross-cutting: URGENT (same-day/emergency) orders jump every queue. Tasks and
-Phone Book support all phases.
+Cross-cutting: the manual urgency flag was removed - orders due soonest jump
+every queue instead, keyed off needed_by_date. Tasks and Phone Book support
+all phases.
 
 ## 3. Redesign decisions
 
@@ -70,7 +71,7 @@ step's label includes the ONE next action ("Record deposit", "Send 2 POs").
 ### C. Dashboard = queues, not stats (Sonnet)
 Replace stat-card grid with actionable queues, each a .card listing top items
 with deep links and one primary action per row:
-1. 🔴 Urgent orders (same_day/emergency, not delivered) — pinned top, red accent
+1. 🔴 Overdue & due this week orders (not delivered/complete, by needed_by_date) - pinned top, red accent (removed the manual urgency flag - the client's call is to filter by due date instead)
 2. Follow-ups due (today + overdue, oldest first)
 3. Items needing pricing (RFQ) — with "days waiting"
 4. Orders awaiting payment — amount + type (deposit/full)

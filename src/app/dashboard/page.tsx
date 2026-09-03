@@ -13,7 +13,7 @@ import {
   OPEN_SERVICE_ISSUE_STATUSES,
   labelFor,
 } from "@/lib/constants";
-import { fmtDateUTC } from "@/lib/dates";
+import { fmtDateUTC, isPastDay } from "@/lib/dates";
 import { currentUserId } from "@/lib/identityServer";
 import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
@@ -118,7 +118,7 @@ export default async function DashboardPage({
   const mineId = userId ?? "__no_identity__";
 
   const [
-    urgentOrders,
+    dueOrders,
     opportunityStageGroups,
     wonOpportunities,
     orderStatusGroups,
@@ -139,9 +139,11 @@ export default async function DashboardPage({
     openServiceIssueCount,
     openServiceIssues,
   ] = await Promise.all([
+    // ---- Overdue & due this week: replaces the old manual-urgency queue -
+    // the client's call was "just filter it by due date". ----
     prisma.order.findMany({
-      where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
-      select: { id: true, title: true },
+      where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+      select: { id: true, title: true, neededByDate: true },
       orderBy: { neededByDate: "asc" },
     }),
     prisma.opportunity.groupBy({
@@ -432,19 +434,20 @@ export default async function DashboardPage({
         <RangePicker />
       </Suspense>
 
-      {urgentOrders.length > 0 && (
+      {dueOrders.length > 0 && (
         <Link
-          href={urgentOrders.length === 1 ? `/orders/${urgentOrders[0].id}` : "/orders"}
+          href={dueOrders.length === 1 ? `/orders/${dueOrders[0].id}` : "/orders"}
           className="card card-interactive flex items-center gap-3 text-sm"
           style={{ padding: "14px 20px" }}
         >
-          <span className="badge badge-red shrink-0">{urgentOrders.length} urgent</span>
+          <span className="badge badge-red shrink-0">{dueOrders.length} due</span>
           <span className="truncate text-ink">
-            {urgentOrders
+            Overdue &amp; due this week:{" "}
+            {dueOrders
               .slice(0, 3)
-              .map((o) => o.title)
+              .map((o) => (isPastDay(o.neededByDate) ? `${o.title} (overdue)` : o.title))
               .join(" · ")}
-            {urgentOrders.length > 3 ? ` +${urgentOrders.length - 3} more` : ""}
+            {dueOrders.length > 3 ? ` +${dueOrders.length - 3} more` : ""}
           </span>
           <span className="ml-auto shrink-0 text-xs font-medium text-blue">View all</span>
         </Link>
