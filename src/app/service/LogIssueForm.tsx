@@ -158,7 +158,11 @@ export default function LogIssueForm({
     return initialCompany?.locations.find((l) => l.isDefault)?.id ?? "";
   });
   const [error, setError] = useState<string | null>(null);
-  // Bumping this remounts every search level so their local query state resets.
+  // Bumping pickersKey remounts the search levels (their query text lives
+  // locally); it deliberately leaves the title/description below untouched, so
+  // changing the business after typing a title never wipes the title. formKey
+  // resets the whole form after a successful submit.
+  const [pickersKey, setPickersKey] = useState(0);
   const [formKey, setFormKey] = useState(0);
   const { toast } = useToast();
 
@@ -206,7 +210,7 @@ export default function LogIssueForm({
     setLocationId(c?.locations.find((l) => l.isDefault)?.id ?? "");
     setOrderId("");
     setLineItemId("");
-    setFormKey((k) => k + 1);
+    setPickersKey((k) => k + 1);
   }
 
   function pickLocation(next: ComboboxOption | null) {
@@ -218,7 +222,7 @@ export default function LogIssueForm({
     const o = next ? company?.orders.find((x) => x.id === next.id) : null;
     if (o?.locationId) setLocationId(o.locationId);
     setLineItemId("");
-    setFormKey((k) => k + 1);
+    setPickersKey((k) => k + 1);
   }
 
   function pickItem(next: ComboboxOption | null) {
@@ -277,7 +281,7 @@ export default function LogIssueForm({
 
       <form key={formKey} action={handleSubmit} className="space-y-4">
         {/* ---- 1. Who is this about: business -> location -> order -> item ---- */}
-        <div className="space-y-2">
+        <div key={pickersKey} className="space-y-2">
           <p className="text-[13px] text-gray-dark">Who is this about? Search the business first.</p>
 
           <SearchLevel
