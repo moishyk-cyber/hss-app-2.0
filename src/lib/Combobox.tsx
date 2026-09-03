@@ -20,6 +20,7 @@ export function SearchCombobox({
   maxResults = 8,
   required,
   emptyText = "Nothing on file yet - type a name to create one.",
+  allowCreate = true,
 }: {
   label?: string;
   placeholder?: string;
@@ -32,6 +33,8 @@ export function SearchCombobox({
   maxResults?: number;
   required?: boolean;
   emptyText?: string;
+  /** Hide the "Create what you typed" row - for pickers over a closed list (locations, orders, items). */
+  allowCreate?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -48,7 +51,7 @@ export function SearchCombobox({
     return matches.slice(0, maxResults);
   }, [options, trimmed, maxResults]);
 
-  const canCreate = trimmed !== "";
+  const canCreate = allowCreate && trimmed !== "";
   const createIndex = results.length;
   const rowCount = results.length + (canCreate ? 1 : 0);
 
