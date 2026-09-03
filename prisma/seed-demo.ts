@@ -561,6 +561,7 @@ async function main() {
   // --- purchase orders ---------------------------------------------------
   const poStatuses = ["draft", "sent", "sent", "acknowledged", "shipped", "received"];
   const carriers = ["UPS Freight", "XPO Logistics", "Estes", "FedEx Freight"];
+  const TRUCKERS = ["ANDY", "UBER", "UPS DROPSHIP", "MOSHE"];
   await prisma.purchaseOrder.createMany({
     data: poStatuses.map((status, i) => {
       const order = orders[(i * 2 + 1) % orders.length];
@@ -574,9 +575,6 @@ async function main() {
         shipTo: chance(0.25) ? "client_direct" : "hss",
         sentDate: sent ? daysAgo(int(6, 30)) : null,
         ackDate: status === "acknowledged" || shipped ? daysAgo(int(2, 12)) : null,
-        trackingUrl: shipped ? `https://tracking.example.com/${int(100000000, 999999999)}` : null,
-        trackingCarrier: shipped ? pick(carriers) : null,
-        expectedDelivery: daysAhead(int(1, 12)),
         notes: tag("purchase order", i),
         createdAt: daysAgo(35 - i * 2),
       };
@@ -585,12 +583,32 @@ async function main() {
 
   const demoPoRows = await prisma.purchaseOrder.findMany({
     where: { notes: { startsWith: NOTE } },
-    select: { id: true, orderId: true },
+    select: { id: true, orderId: true, status: true, shipTo: true },
   });
   step(`purchase orders: ${demoPoRows.length}`);
 
-  // Hang a couple of each PO's order items off it.
-  for (const po of demoPoRows) {
+  // --- delivery legs -----------------------------------------------------
+  // Logistics live on Delivery, one leg per PO (the same shape createPurchaseOrder
+  // produces). Hang a couple of each PO's order items off the PO and its leg.
+  for (const [i, po] of demoPoRows.entries()) {
+    const shipped = po.status === "shipped" || po.status === "received";
+    const mode = po.shipTo === "client_direct" ? "manufacturer_to_customer" : "manufacturer_to_hss_to_customer";
+    const delivery = await prisma.delivery.create({
+      data: {
+        orderId: po.orderId,
+        purchaseOrderId: po.id,
+        mode,
+        status: po.status === "received" ? "delivered_full" : shipped ? "in_transit" : "pending",
+        trackingUrl: shipped ? `https://tracking.example.com/${int(100000000, 999999999)}` : null,
+        trackingCarrier: shipped ? pick(carriers) : null,
+        expectedDelivery: daysAhead(int(1, 12)),
+        trucker: shipped ? pick(TRUCKERS) : null,
+        scheduledDeliveryDate: shipped ? daysAhead(int(1, 10)) : null,
+        deliveredAt: po.status === "received" ? daysAgo(int(1, 10)) : null,
+        notes: tag("delivery", i),
+      },
+    });
+
     const items = await prisma.lineItem.findMany({
       where: { orderId: po.orderId, notes: { startsWith: NOTE }, purchaseOrderId: null },
       select: { id: true },
@@ -599,10 +617,11 @@ async function main() {
     if (items.length) {
       await prisma.lineItem.updateMany({
         where: { id: { in: items.map((it) => it.id) } },
-        data: { purchaseOrderId: po.id },
+        data: { purchaseOrderId: po.id, deliveryId: delivery.id },
       });
     }
   }
+  step(`delivery legs: ${demoPoRows.length}`);
 
   // --- tasks -------------------------------------------------------------
   const TASKS: [string, string, string, string][] = [
@@ -738,6 +757,7 @@ async function main() {
     LineItem: await prisma.lineItem.count({ where: { notes: { startsWith: NOTE } } }),
     Order: await prisma.order.count({ where: { notes: { startsWith: NOTE } } }),
     PurchaseOrder: await prisma.purchaseOrder.count({ where: { notes: { startsWith: NOTE } } }),
+    Delivery: await prisma.delivery.count({ where: { notes: { startsWith: NOTE } } }),
     Payment: await prisma.payment.count({ where: { notes: { startsWith: NOTE } } }),
     Task: await prisma.task.count({ where: { notes: { startsWith: NOTE } } }),
     TaskComment: await prisma.taskComment.count({ where: { body: { endsWith: SUFFIX } } }),

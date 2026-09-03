@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, USER_ROLES } from "@/lib/constants";
+import { requirePermission } from "@/lib/permissionsServer";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("user", linkedId, action, detail);
@@ -15,6 +16,8 @@ function refresh() {
 }
 
 export async function createUser(formData: FormData): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const role = String(formData.get("role") ?? "").trim() || "sales";
@@ -36,6 +39,8 @@ export async function updateUserField(
   field: "name" | "email" | "role",
   value: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
   const trimmed = value.trim();
   if ((field === "name" || field === "email") && !trimmed) {
     return { ok: false, message: `${field === "name" ? "Name" : "Email"} can't be empty.` };
@@ -56,6 +61,8 @@ export async function updateUserField(
 }
 
 export async function setUserActive(id: string, active: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
   const isActive = active === "active";
   return safeAction(async () => {
     await prisma.user.update({ where: { id }, data: { active: isActive } });

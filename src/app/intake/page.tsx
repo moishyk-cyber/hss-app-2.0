@@ -16,7 +16,18 @@ export default async function IntakePage({
       where: { type: { in: ["customer", "lead"] } },
       // deliveryAddress is shown read-only under the picked business - the intake
       // reuses it unless the caller says the delivery goes somewhere else.
-      select: { id: true, name: true, deliveryAddress: true, locationName: true },
+      select: {
+        id: true,
+        name: true,
+        deliveryAddress: true,
+        locationName: true,
+        // Sites on file - the location picker in step 1 (a new location typed
+        // here is created with the intake).
+        locations: {
+          select: { id: true, name: true, address: true, isDefault: true },
+          orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+        },
+      },
       orderBy: { name: "asc" },
     }),
     // Loaded whole and filtered client-side by the picked company, so the contact

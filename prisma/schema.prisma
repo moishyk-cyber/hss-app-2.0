@@ -267,19 +267,13 @@ model PurchaseOrder {
   shipTo           String     @default("hss") // hss | client_direct
   sentDate         DateTime?
   ackDate          DateTime?
-  // Logistics now live on Delivery (one or more legs per PO). These columns were
-  // backfilled into Delivery by prisma/sql/20260903_sales_orders_delivery.sql and
-  // stay here only so the tree keeps type-checking until every reader is moved.
-  trackingUrl      String?    // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  trackingCarrier  String?    // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  expectedDelivery DateTime?  // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  trucker              String?   // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  pickupAddress        String?   // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  scheduledDeliveryDate DateTime? // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  shipCost             Float?    // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  chargedToCustomer    Boolean   @default(false) // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  deliveryContactPhone String?   // DEPRECATED - moved to Delivery (removed in Phase 2a-B)
-  deliveryStatus       String    @default("pending") // DEPRECATED - moved to Delivery.status (removed in Phase 2a-B)
+  // Logistics live on Delivery (one or more legs per PO): trucker, pickup
+  // address, scheduled date, ship cost, charged-to-customer, delivery contact
+  // phone, delivery status, carrier tracking and ETA. The old PurchaseOrder
+  // columns were backfilled into Delivery by
+  // prisma/sql/20260903_sales_orders_delivery.sql and are gone from the schema
+  // as of Phase 2a-B; the database columns themselves stay in place (no
+  // destructive DDL this pass), Prisma simply no longer maps them.
   notes            String?
   lineItems        LineItem[]
   deliveries       Delivery[]

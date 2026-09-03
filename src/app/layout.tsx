@@ -5,6 +5,7 @@ import Nav from "./nav";
 import WhoAmI from "./who-am-i";
 import { prisma } from "@/lib/prisma";
 import { currentUserId } from "@/lib/identityServer";
+import { can } from "@/lib/permissionsServer";
 import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
 
@@ -28,13 +29,14 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const [users, initialUserId] = await Promise.all([
+  const [users, initialUserId, showAdmin] = await Promise.all([
     prisma.user.findMany({
       where: { active: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     currentUserId(),
+    can("admin.manage"),
   ]);
   return (
     <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
@@ -59,7 +61,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                 </div>
               </Link>
             </div>
-            <Nav />
+            <Nav showAdmin={showAdmin} />
             <WhoAmI users={users} initialUserId={initialUserId} />
             <div className="px-6 py-5 text-[11px] text-gray">
               Built by Klyne &amp; Co.

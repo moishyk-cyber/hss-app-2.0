@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { can } from "@/lib/permissionsServer";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
@@ -48,7 +49,11 @@ export default async function OpportunityDetailPage({
     prisma.opportunity.findUnique({
       where: { id },
       include: {
-        company: true,
+        // locations feed the Close panel's picker (and the Location row below).
+        company: {
+          include: { locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] } },
+        },
+        location: { select: { id: true, name: true, address: true } },
         primaryContact: true,
         salesperson: true,
         lineItems: true,
@@ -73,6 +78,19 @@ export default async function OpportunityDetailPage({
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
   const suggestedDeposit = Math.round(((opportunity.value ?? 0) * depositPercent) / 100);
+  // Terms the Close panel opens on: the account's own terms for a project, and
+  // full payment for a straight order (which is how those have always closed -
+  // markOpportunityWon falls back to exactly the same pair).
+  const defaultTerms = !isProject
+    ? "full_upfront"
+    : requiresDeposit
+      ? "deposit_balance"
+      : "on_delivery";
+  const closeLocations = (opportunity.company?.locations ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    address: l.address,
+  }));
 
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
@@ -109,7 +127,7 @@ export default async function OpportunityDetailPage({
   // A won deal that never got an order is only half-closed - the Close panel stays
   // open as the recovery route (it reuses the same Won form).
   const needsOrderRecovery = stage === "won" && !linkedOrder;
-  const showClosePanel = !closed || needsOrderRecovery;
+  const showClosePanel = (!closed || needsOrderRecovery) && (await can("deals.close"));
 
   const steps: FlowStep[] = STEPPER.map((step, i) => {
     // A closed deal has finished the whole journey, including the final step.
@@ -241,6 +259,10 @@ export default async function OpportunityDetailPage({
         <div className="banner-alert mb-4">Give the item a name before adding it.</div>
       ) : error === "save_failed" ? (
         <div className="banner-alert mb-4">Something went wrong while saving. Please try again.</div>
+      ) : error === "not_allowed" ? (
+        <div className="banner-alert mb-4">
+          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an admin.
+        </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -267,6 +289,25 @@ export default async function OpportunityDetailPage({
                   </Link>
                 ) : null
               }
+            />
+            <DetailRow
+              label="Location"
+              value={
+                opportunity.location ? (
+                  <>
+                    <span className="font-medium">{opportunity.location.name}</span>
+                    <span className="block text-gray-dark">{opportunity.location.address}</span>
+                  </>
+                ) : opportunity.deliveryAddress ? (
+                  <>
+                    {opportunity.locationName ? (
+                      <span className="font-medium">{opportunity.locationName}</span>
+                    ) : null}
+                    <span className="block text-gray-dark">{opportunity.deliveryAddress}</span>
+                  </>
+                ) : null
+              }
+              emptyLabel="no site picked yet"
             />
             <DetailRow
               label="Primary contact"
@@ -442,12 +483,17 @@ export default async function OpportunityDetailPage({
                 <ClosePanel
                   opportunityId={opportunity.id}
                   isProject={isProject}
-                  requiresDeposit={requiresDeposit}
                   depositPercent={depositPercent}
                   suggestedDeposit={suggestedDeposit}
                   needsOrderRecovery={needsOrderRecovery}
                   defaultValue={opportunity.value}
-                  defaultDeliveryAddress={opportunity.deliveryAddress}
+                  defaultTerms={defaultTerms}
+                  locations={closeLocations}
+                  defaultLocationId={opportunity.locationId}
+                  defaultLocationName={opportunity.location?.name ?? opportunity.locationName}
+                  defaultDeliveryAddress={
+                    opportunity.location?.address ?? opportunity.deliveryAddress
+                  }
                   defaultNeededBy={
                     opportunity.neededByDate
                       ? opportunity.neededByDate.toISOString().slice(0, 10)

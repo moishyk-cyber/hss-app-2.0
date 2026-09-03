@@ -9,8 +9,10 @@ import {
   ORDER_STATUS_COLORS,
   RFQ_STATUS_COLORS,
   STAGE_COLORS,
+  OPEN_SERVICE_ISSUE_STATUSES,
   labelFor,
 } from "@/lib/constants";
+import { fmtDateUTC } from "@/lib/dates";
 import { currentUserId } from "@/lib/identityServer";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
@@ -94,13 +96,15 @@ export default async function DashboardPage({
     mixOrders,
     ordersAwaitingPayment,
     posInFlight,
-    poDeliveriesThisWeek,
+    deliveriesThisWeek,
     ordersDueThisWeek,
     myDeals,
     myOrders,
     myTasks,
     myPricingItemsRaw,
     orphanedAssigneeCount,
+    openServiceIssueCount,
+    openServiceIssues,
   ] = await Promise.all([
     prisma.order.findMany({
       where: { urgency: { in: ["same_day", "emergency"] }, status: { notIn: ["delivered", "complete"] } },
@@ -177,9 +181,10 @@ export default async function DashboardPage({
       },
       orderBy: { sentDate: "asc" },
     }),
-    // ---- Team queue: deliveries this week (POs) ----
-    prisma.purchaseOrder.findMany({
+    // ---- Team queue: deliveries this week (delivery legs) ----
+    prisma.delivery.findMany({
       where: {
+        status: { notIn: ["delivered_partial", "delivered_full"] },
         OR: [
           { scheduledDeliveryDate: { gte: now, lte: in7Days } },
           { expectedDelivery: { gte: now, lte: in7Days } },
@@ -187,11 +192,11 @@ export default async function DashboardPage({
       },
       select: {
         id: true,
-        poNumber: true,
         orderId: true,
         scheduledDeliveryDate: true,
         expectedDelivery: true,
         order: { select: { title: true } },
+        purchaseOrder: { select: { poNumber: true } },
       },
     }),
     // ---- Team queue: deliveries this week (orders by neededByDate) ----
@@ -249,6 +254,14 @@ export default async function DashboardPage({
         where: { rfqStatus: { in: RFQ_QUEUE_VALUES }, assigneeId: { not: null }, assignee: { active: false } },
       }),
     ]).then(([opps, orders, tasks, items]) => opps + orders + tasks + items),
+    // ---- Team queue: open customer-service issues ----
+    prisma.serviceIssue.count({ where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } }),
+    prisma.serviceIssue.findMany({
+      where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } },
+      select: { id: true, title: true, reportedAt: true, company: { select: { name: true } } },
+      orderBy: { reportedAt: "desc" },
+      take: 5,
+    }),
   ]);
 
   // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
@@ -350,16 +363,16 @@ export default async function DashboardPage({
     };
   });
 
-  // ---- Team queue: deliveries this week (POs + orders by neededByDate) ----
+  // ---- Team queue: deliveries this week (delivery legs + orders by neededByDate) ----
   type DeliveryRow = { href: string; label: string; date: Date; meta: string };
   const deliveryRows: DeliveryRow[] = [
-    ...poDeliveriesThisWeek.map((po) => {
-      const date = (po.scheduledDeliveryDate ?? po.expectedDelivery) as Date;
+    ...deliveriesThisWeek.map((d) => {
+      const date = (d.scheduledDeliveryDate ?? d.expectedDelivery) as Date;
       return {
-        href: `/orders/${po.orderId}#delivery`,
-        label: `${po.poNumber ?? "PO"} - ${po.order.title}`,
+        href: `/orders/${d.orderId}#delivery`,
+        label: `${d.purchaseOrder?.poNumber ?? "HSS stock"} - ${d.order.title}`,
         date,
-        meta: po.scheduledDeliveryDate ? "scheduled" : "expected",
+        meta: d.scheduledDeliveryDate ? "scheduled" : "expected",
       };
     }),
     ...ordersDueThisWeek.map((o) => ({
@@ -675,6 +688,21 @@ export default async function DashboardPage({
               })
             )}
             emptyText="Nothing scheduled to arrive this week."
+          />
+
+          <QueueCard
+            title="Open Service Issues"
+            count={openServiceIssueCount}
+            viewAllHref="/service"
+            rows={openServiceIssues.map(
+              (i): QueueRow => ({
+                href: "/service",
+                primary: i.title,
+                secondary: i.company?.name ?? "not linked to a company",
+                meta: fmtDateUTC(i.reportedAt),
+              })
+            )}
+            emptyText="Nothing open. Issues land here once someone logs a customer call in Customer Service."
           />
         </div>
       </div>

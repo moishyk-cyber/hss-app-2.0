@@ -3,13 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES, RFQ_STATUSES, isValidValue, labelFor } from "@/lib/constants";
+import {
+  OPPORTUNITY_STAGES,
+  PAYMENT_TERMS,
+  RFQ_STATUSES,
+  isValidValue,
+  labelFor,
+} from "@/lib/constants";
+import { applyTermsToOrder, depositForTerms } from "@/lib/terms";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus, syncOrderValueFromLineItems } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
+import { requirePermission } from "@/lib/permissionsServer";
 import {
   CLOSED_STAGES,
   DELIVERY_TYPES,
@@ -62,6 +70,8 @@ function revalidateLineItem(item: { opportunityId: string | null; orderId: strin
 }
 
 export async function updateLineItemQty(lineItemId: string, qty: number): Promise<ActionResult> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const safeQty = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
     const item = await prisma.lineItem.update({
@@ -85,6 +95,8 @@ export async function updateLineItemAssignee(
   lineItemId: string,
   assigneeId: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const nextId = assigneeId || null;
     const assignee = nextId
@@ -110,6 +122,8 @@ export async function updateLineItemPricing(
   unitCost: number | null,
   unitPrice: number | null
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
   if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
     return { ok: false, message: "Enter a price greater than $0." };
   }
@@ -138,6 +152,8 @@ export async function updateLineItemPricing(
 }
 
 export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: string): Promise<ActionResult> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
   if (!isValidValue(RFQ_STATUSES, rfqStatus)) {
     return { ok: false, message: "That is not a valid RFQ status." };
   }
@@ -167,6 +183,9 @@ export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: str
 export async function addLineItem(formData: FormData) {
   const opportunityId = str(formData, "opportunityId");
   if (!opportunityId) throw new Error("Missing opportunity id");
+
+  const denied = await requirePermission("deals.edit");
+  if (denied) redirect(`/pipeline/${opportunityId}?error=not_allowed`);
 
   const name = str(formData, "name");
   if (!name) redirect(`/pipeline/${opportunityId}?error=item_name_required`);
@@ -205,6 +224,8 @@ export async function addLineItem(formData: FormData) {
 
 /** Kanban card stage picker. */
 export async function changeOpportunityStage(id: string, stage: string): Promise<ActionResult> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
   if (!isValidValue(OPPORTUNITY_STAGES, stage)) {
     return { ok: false, message: "That is not a valid stage." };
   }
@@ -250,6 +271,8 @@ export async function moveStageFromStepper(
   _formData: FormData
 ): Promise<void> {
   if (!id) throw new Error("Missing opportunity id");
+  const denied = await requirePermission("deals.edit");
+  if (denied) redirect(`/pipeline/${id}?error=not_allowed`);
   if (!isValidValue(OPPORTUNITY_STAGES, stage) || CLOSED_STAGES.includes(stage)) {
     // Won/Lost live behind the Close panel; anything else is a tampered payload.
     redirect(`/pipeline/${id}`);
@@ -288,13 +311,16 @@ export async function updateOpportunity(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing opportunity id");
 
+  const denied = await requirePermission("deals.edit");
+  if (denied) redirect(`/pipeline/${id}/edit?error=not_allowed`);
+
   // Validate the enum-shaped fields BEFORE the try, so redirect() isn't swallowed
   // by the catch that turns real save failures into ?error=save_failed.
   // The days-in-stage metric reads only "stage_changed" rows, so this read is also
   // what lets an edit-form stage move be logged instead of silently freezing it.
   const before = await prisma.opportunity.findUnique({
     where: { id },
-    select: { stage: true },
+    select: { stage: true, locationId: true },
   });
   if (!before) redirect(`/pipeline/${id}/edit?error=save_failed`);
 
@@ -331,6 +357,25 @@ export async function updateOpportunity(formData: FormData) {
     redirect(`/pipeline/${id}/edit?error=missing_required`);
   }
 
+  // Location: only a site on this deal's business can be picked. Moving to a
+  // different one copies its name and address into the snapshot fields, which
+  // stay hand-editable afterwards (the form posts them as typed).
+  const pickedLocationId = str(formData, "locationId");
+  let locationId: string | null = null;
+  let copiedFromLocation: { locationName: string; deliveryAddress: string } | null = null;
+  if (pickedLocationId) {
+    const picked = await prisma.location.findUnique({
+      where: { id: pickedLocationId },
+      select: { id: true, companyId: true, name: true, address: true },
+    });
+    if (picked && (!companyId || picked.companyId === companyId)) {
+      locationId = picked.id;
+      if (picked.id !== before.locationId) {
+        copiedFromLocation = { locationName: picked.name, deliveryAddress: picked.address };
+      }
+    }
+  }
+
   try {
     const updated = await prisma.opportunity.update({
       where: { id },
@@ -358,8 +403,9 @@ export async function updateOpportunity(formData: FormData) {
         openingSize: str(formData, "openingSize"),
         installationNeeded: bool(formData, "installationNeeded"),
         designStatus,
-        locationName: str(formData, "locationName"),
-        deliveryAddress: str(formData, "deliveryAddress"),
+        locationId,
+        locationName: copiedFromLocation?.locationName ?? str(formData, "locationName"),
+        deliveryAddress: copiedFromLocation?.deliveryAddress ?? str(formData, "deliveryAddress"),
         notes: str(formData, "notes"),
       },
     });
@@ -389,6 +435,8 @@ export async function updateOpportunity(formData: FormData) {
 export async function markOpportunityLost(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing opportunity id");
+  const denied = await requirePermission("deals.close");
+  if (denied) redirect(`/pipeline/${id}?error=not_allowed`);
   const lostReason = str(formData, "lostReason");
 
   // A lost reason is mandatory - bounce back to the detail page with an error.
@@ -421,9 +469,10 @@ export async function markOpportunityLost(formData: FormData) {
 
 /**
  * Mark Won - driven by the Close panel on the deal page (Aug 31 feedback): the
- * salesperson types the price they actually agreed and, for a project, whether a
- * deposit was agreed and how much. Those answers ARE the order: they set the order
- * value, the Order.depositRequired gate amount, and the staged payment.
+ * salesperson confirms the price agreed, where it is going, when it is needed
+ * and on what terms. Those answers ARE the order: the value, the location, and
+ * (through applyTermsToOrder, in this same transaction) the depositRequired
+ * payment gate and the invoices it implies.
  *
  * Without those fields (the pre-panel recovery path, or a tampered payload) it
  * falls back to the per-account terms: Company.requiresDeposit / depositPercent.
@@ -431,6 +480,8 @@ export async function markOpportunityLost(formData: FormData) {
 export async function markOpportunityWon(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing opportunity id");
+  const denied = await requirePermission("deals.close");
+  if (denied) redirect(`/pipeline/${id}?error=not_allowed`);
 
   const opportunity = await prisma.opportunity.findUnique({
     where: { id },
@@ -449,13 +500,13 @@ export async function markOpportunityWon(formData: FormData) {
     redirect(`/pipeline/${opportunity.id}`);
   }
 
-  // Marks a submission from the Close panel, so an unchecked deposit box reads as
-  // "no deposit agreed" instead of "this form didn't ask".
+  // Marks a submission from the Close panel, so a blank deposit reads as "these
+  // terms need none" instead of "this form didn't ask".
   const fromClosePanel = formData.get("closePanel") === "1";
   const submittedValue = num(formData, "value");
 
   // The gate and the deposit are both measured against this number. Winning at $0
-  // stages a $0 payment and opens the gate on an unpaid order - refuse instead.
+  // invoices $0 and opens the gate on an unpaid order - refuse instead.
   // The Close panel requires it client-side; this is the server-side backstop.
   const rawValue =
     fromClosePanel && submittedValue != null && submittedValue > 0
@@ -477,6 +528,20 @@ export async function markOpportunityWon(formData: FormData) {
   }
   const orderDeliveryAddress = closeDeliveryAddress ?? opportunity.deliveryAddress;
   const orderNeededByDate = closeNeededByDate ?? opportunity.neededByDate;
+  const closeLocationName = str(formData, "locationName");
+
+  // The site picked in the Close panel carries into the order (and back onto the
+  // deal). A location from another business is a tampered payload - ignore it.
+  let orderLocationId: string | null = opportunity.locationId;
+  const pickedLocationId = str(formData, "locationId");
+  if (pickedLocationId) {
+    const picked = await prisma.location.findUnique({
+      where: { id: pickedLocationId },
+      select: { id: true, companyId: true },
+    });
+    orderLocationId =
+      picked && picked.companyId === opportunity.companyId ? picked.id : orderLocationId;
+  }
 
   // Owner: the deal's salesperson, or whoever is signed in via "Working as".
   let ownerId: string | null = opportunity.salespersonId;
@@ -493,36 +558,29 @@ export async function markOpportunityWon(formData: FormData) {
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
 
-  /** Agreed gate amount stored on the order. Null = derive from the company percent. */
-  let depositRequired: number | null = null;
-  let payment: { type: string; amount: number; notes: string } | null;
-
-  if (!isProject) {
-    // A straight order is paid in full before POs go out - nothing to negotiate.
-    payment = { type: "full", amount: value, notes: "Full payment generated on win" };
-  } else if (fromClosePanel) {
-    if (formData.get("requireDeposit") === "1") {
-      const typed = num(formData, "depositAmount");
-      const amount =
-        typed != null && typed > 0
-          ? roundCents(typed)
-          : roundCents((value * depositPercent) / 100);
-      depositRequired = amount;
-      payment = { type: "deposit", amount, notes: `Deposit of $${amount} agreed at close` };
-    } else {
-      // Explicitly no deposit: record the zero so the gate stays open on purpose.
-      depositRequired = 0;
-      payment = null;
-    }
-  } else {
-    payment = requiresDeposit
-      ? {
-          type: "deposit",
-          amount: roundCents((value * depositPercent) / 100),
-          notes: `${depositPercent}% deposit generated on win`,
-        }
-      : null;
-  }
+  // Terms picked on the call ARE the order's money: applyTermsToOrder turns them
+  // into depositRequired (the payment gate) and the invoices, inside the same
+  // transaction that creates the order. Nothing is hand-built here any more.
+  // Without a Close-panel submission (the recovery path, or a tampered payload)
+  // fall back to the account's own terms.
+  const submittedTerms = str(formData, "paymentTerms");
+  const fallbackTerms = !isProject
+    ? "full_upfront"
+    : requiresDeposit
+      ? "deposit_balance"
+      : "on_delivery";
+  const terms =
+    fromClosePanel && isValidValue(PAYMENT_TERMS, submittedTerms)
+      ? submittedTerms!
+      : fallbackTerms;
+  const typedDeposit = num(formData, "depositAmount");
+  const depositAmount = depositForTerms({
+    terms,
+    value,
+    depositPercent,
+    agreedDeposit: fromClosePanel ? typedDeposit : null,
+  });
+  const termsNotes = str(formData, "termsNotes");
 
   let order;
   try {
@@ -537,10 +595,21 @@ export async function markOpportunityWon(formData: FormData) {
           orderType: opportunity.orderType,
           status: "new",
           orderValue: value,
-          depositRequired,
+          locationId: orderLocationId,
           deliveryAddress: orderDeliveryAddress,
           neededByDate: orderNeededByDate,
+          // A project is quoted to the customer before the sales order goes
+          // out; a straight order never is (see QUOTE_STATUSES).
+          quoteStatus: isProject ? "needed" : "not_needed",
         },
+      });
+
+      // Writes paymentTerms/termsNotes/depositRequired and creates the invoices.
+      await applyTermsToOrder(tx, created.id, {
+        terms,
+        value,
+        depositAmount,
+        notes: termsNotes,
       });
 
       // Every line item that wasn't removed follows the deal into the order.
@@ -558,22 +627,12 @@ export async function markOpportunityWon(formData: FormData) {
           stage: "won",
           nextFollowUp: null,
           value,
+          locationId: orderLocationId,
+          ...(closeLocationName ? { locationName: closeLocationName } : {}),
           ...(closeDeliveryAddress ? { deliveryAddress: closeDeliveryAddress } : {}),
           ...(closeNeededByDate ? { neededByDate: closeNeededByDate } : {}),
         },
       });
-
-      if (payment) {
-        await tx.payment.create({
-          data: {
-            orderId: created.id,
-            type: payment.type,
-            amount: payment.amount,
-            status: "pending",
-            notes: payment.notes,
-          },
-        });
-      }
 
       return created;
     });
@@ -595,11 +654,10 @@ export async function markOpportunityWon(formData: FormData) {
     "order",
     order.id,
     "order_created",
-    `Order created from opportunity "${opportunity.title}" (${
-      payment
-        ? `${payment.type} payment of $${payment.amount} pending`
-        : "no deposit agreed - full payment due after delivery"
-    })`
+    `Order created from opportunity "${opportunity.title}" on ${labelFor(
+      PAYMENT_TERMS,
+      terms
+    )}${depositAmount > 0 ? ` - $${depositAmount} due before POs go out` : ""}`
   );
 
   // The order was created as "new"; re-derive it so it reads awaiting_payment (or

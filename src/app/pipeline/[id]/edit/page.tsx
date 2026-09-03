@@ -41,6 +41,17 @@ export default async function EditOpportunityPage({
     getFieldRequirements(),
   ]);
   if (!opportunity) notFound();
+
+  // The deal's business supplies the location options (a site on another
+  // business is refused by the action anyway).
+  const locations = opportunity.companyId
+    ? await prisma.location.findMany({
+        where: { companyId: opportunity.companyId },
+        select: { id: true, name: true, address: true },
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+      })
+    : [];
+
   const companyRequired = req["opportunity.companyId"];
   const neededByRequired = req["opportunity.neededByDate"];
 
@@ -225,6 +236,18 @@ export default async function EditOpportunityPage({
               name="installationNeeded"
               defaultChecked={opportunity.installationNeeded}
             />
+            <div className="block">
+              <Select
+                label="Location"
+                name="locationId"
+                options={locations.map((l) => ({ value: l.id, label: l.name }))}
+                defaultValue={opportunity.locationId}
+                includeBlank={locations.length > 0 ? "None" : "No locations on this business yet"}
+              />
+              <span className="mt-1 block text-xs text-gray">
+                Picking a different site fills the name and address below from it.
+              </span>
+            </div>
             <Field
               label="Location name"
               name="locationName"

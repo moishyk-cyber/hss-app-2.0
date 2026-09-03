@@ -12,10 +12,24 @@ import {
   canCompleteOrder,
   FLOW_ORDER_INCLUDE,
 } from "@/lib/flow";
-import { isValidValue, ORDER_URGENCIES, DELIVERY_STATUSES, PO_DELIVERY_STATUSES } from "@/lib/constants";
+import {
+  isValidValue,
+  labelFor,
+  ORDER_URGENCIES,
+  DELIVERY_STATUSES,
+  DELIVERY_MODES,
+  DELIVERY_LEG_STATUSES,
+} from "@/lib/constants";
 import { roundCents } from "@/lib/money";
+import { requirePermission } from "@/lib/permissionsServer";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
+import {
+  hasCarrierLeg,
+  hasTruckerLeg,
+  inTransitItemStatus,
+  modeForShipTo,
+} from "../deliveries/_ui";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("order", linkedId, action, detail);
@@ -25,7 +39,7 @@ function revalidateOrder(orderId: string) {
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
   revalidatePath("/dashboard");
-  // The deliveries tracker renders PO status/shipment data - keep it fresh too.
+  // The deliveries tracker renders every delivery leg - keep it fresh too.
   revalidatePath("/deliveries");
 }
 
@@ -174,6 +188,8 @@ export async function addInvoice(
   amount: number,
   quickbooksLink: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
   if (!isValidValue(PAYMENT_TYPES, type)) {
     return { ok: false, message: "Pick an invoice type." };
   }
@@ -199,6 +215,8 @@ export async function addInvoice(
 }
 
 export async function markPaymentInvoiced(paymentId: string): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const payment = await prisma.payment.update({
       where: { id: paymentId },
@@ -221,6 +239,8 @@ export async function markPaymentPaid(
   paidDate?: string,
   method?: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
   if (method && !PAYMENT_METHODS.some((m) => m.value === method)) {
     return { ok: false, message: "Pick a payment method from the list." };
   }
@@ -262,6 +282,8 @@ export async function markPaymentPaid(
 
 /** Reverses markPaymentPaid: back to invoiced, date cleared, logged. */
 export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const existing = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!existing) throw new Error("Payment not found");
@@ -360,6 +382,8 @@ export async function createPurchaseOrder(
   lineItemIds: string[],
   newVendorName: string = ""
 ): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
   if ((!supplierId && !newVendorName.trim()) || lineItemIds.length === 0) {
     return { ok: false, message: "Pick or create a vendor, and at least one item." };
   }
@@ -393,9 +417,16 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
+    // One PO -> one delivery leg by default (plan §3B.3). The mode follows the
+    // PO's ship-to: a client_direct PO is a drop-ship, everything else routes
+    // through HSS. Splitting it later is a job for the Delivery tab.
+    const delivery = await prisma.delivery.create({
+      data: { orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
+    });
+
     await prisma.lineItem.updateMany({
       where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-      data: { purchaseOrderId: po.id },
+      data: { purchaseOrderId: po.id, deliveryId: delivery.id },
     });
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     await recomputeOrderStatus(orderId);
@@ -405,6 +436,8 @@ export async function createPurchaseOrder(
 
 /** Header CTA: bulk-advance every "sent" PO on the order to "acknowledged" in one click. */
 export async function acknowledgeAllSentPos(orderId: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const result = await prisma.purchaseOrder.updateMany({
       where: { orderId, status: "sent" },
@@ -421,6 +454,8 @@ export async function acknowledgeAllSentPos(orderId: string): Promise<ActionResu
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
 
 export async function advancePoStatus(poId: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
   try {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: poId },
@@ -460,95 +495,447 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
   }
 }
 
-export async function updatePoTracking(
-  poId: string,
-  trackingUrl: string,
-  trackingCarrier: string,
-  expectedDelivery: string
-): Promise<ActionResult> {
-  // Free-text field with a history of junk ("gewryher", a chat link saved as
-  // tracking). Only a real absolute link gets stored from here on.
-  const url = trackingUrl.trim();
-  if (url && !/^https?:\/\/\S+\.\S+/i.test(url)) {
-    return {
-      ok: false,
-      message: "That doesn't look like a link - paste the carrier's full tracking URL (https://…).",
-    };
-  }
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({
-      where: { id: poId },
-      data: {
-        trackingUrl: trackingUrl || null,
-        trackingCarrier: trackingCarrier || null,
-        expectedDelivery: expectedDelivery ? new Date(expectedDelivery) : null,
-      },
-    });
-    await log(po.orderId, "po_tracking_updated", `PO ${po.poNumber ?? po.id} tracking info updated`);
-    revalidateOrder(po.orderId);
-  }, "Could not save tracking info. Please try again.");
+// ---------------------------------------------------------------------------
+// Deliveries (plan §3B). A Delivery is one delivery leg: one PO -> one Delivery
+// by default (created with the PO below), splittable, and HSS-stock legs carry
+// no PO at all. Every logistics field the PurchaseOrder used to hold now lives
+// on Delivery, so these actions replaced updatePoTracking / setPoTrucker /
+// setPoDeliveryStatus / updatePoShipmentDetails.
+// ---------------------------------------------------------------------------
+
+/**
+ * Free-text tracking link guard, carried over from the old updatePoTracking:
+ * this field has a history of junk ("gewryher", a chat link saved as tracking),
+ * so only a real absolute link is ever stored.
+ */
+function trackingUrlError(url: string): string | null {
+  if (!url) return null;
+  if (/^https?:\/\/\S+\.\S+/i.test(url)) return null;
+  return "That doesn't look like a link - paste the carrier's full tracking URL (https://…).";
 }
 
-/** PO-level delivery/trucking status pill (pending | scheduled | delivered_partial | delivered_full). */
-/** Inline trucker pick from the /deliveries list (full free-text edit lives in the shipment form). */
-export async function setPoTrucker(poId: string, trucker: string): Promise<ActionResult> {
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({
-      where: { id: poId },
-      data: { trucker: trucker || null },
-    });
-    await log(po.orderId, "po_shipment_details_updated", `PO ${po.poNumber ?? po.id} trucker set to ${trucker || "none"}`);
-    revalidateOrder(po.orderId);
-  }, "Could not set the trucker. Please try again.");
+/** Parses the ship-cost input: blank clears it, anything non-numeric is rejected. */
+function parseShipCost(raw: string | undefined): { value: number | null } | { error: string } {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed === "") return { value: null };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return { error: "Enter a valid ship cost." };
+  return { value: roundCents(n) };
 }
 
-export async function setPoDeliveryStatus(poId: string, deliveryStatus: string): Promise<ActionResult> {
-  if (!isValidValue(PO_DELIVERY_STATUSES, deliveryStatus)) {
-    return { ok: false, message: "Not a valid delivery status." };
-  }
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({ where: { id: poId }, data: { deliveryStatus } });
-    await log(po.orderId, "po_delivery_status_set", `PO ${po.poNumber ?? po.id} delivery status set to ${deliveryStatus}`);
-    await recomputeOrderStatus(po.orderId);
-    revalidateOrder(po.orderId);
-  }, "Could not update delivery status. Please try again.");
+function parseDate(raw: string | undefined): Date | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** How a delivery reads in the activity log: "PO-123-1" or "HSS stock delivery". */
+function deliveryLabel(d: { purchaseOrder: { poNumber: string | null } | null }): string {
+  return d.purchaseOrder ? d.purchaseOrder.poNumber ?? "(no PO#)" : "HSS stock delivery";
 }
 
 /**
- * Batched save for the real-world shipment/trucking fields (modeled on the
- * client's Delivery Sheet): trucker, pickup address, scheduled delivery date,
- * ship cost, whether it was billed back to the customer, and the delivery-day
- * contact phone. Saved together behind one "Save shipment details" button,
- * matching the existing TrackingEdit form pattern in this file.
+ * A new delivery leg on an order. `purchaseOrderId` empty = an HSS-stock leg
+ * (the "New delivery from HSS stock" button); the chosen items move onto it.
  */
-export async function updatePoShipmentDetails(
-  poId: string,
-  trucker: string,
-  pickupAddress: string,
-  scheduledDeliveryDate: string,
-  shipCost: string,
-  chargedToCustomer: boolean,
-  deliveryContactPhone: string
+export async function createDelivery(
+  orderId: string,
+  mode: string,
+  lineItemIds: string[],
+  purchaseOrderId: string = ""
 ): Promise<ActionResult> {
-  const trimmedCost = shipCost.trim();
-  const cost = trimmedCost === "" ? null : Number(trimmedCost);
-  if (cost != null && !Number.isFinite(cost)) {
-    return { ok: false, message: "Enter a valid ship cost." };
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a delivery mode." };
   }
-  const costCents = cost == null ? null : roundCents(cost);
   return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({
-      where: { id: poId },
+    const delivery = await prisma.delivery.create({
+      data: { orderId, mode, purchaseOrderId: purchaseOrderId || null },
+    });
+    if (lineItemIds.length > 0) {
+      await prisma.lineItem.updateMany({
+        where: { id: { in: lineItemIds }, orderId, rfqStatus: { not: "removed" } },
+        data: { deliveryId: delivery.id },
+      });
+    }
+    await log(
+      orderId,
+      "delivery_created",
+      `Delivery created (${labelFor(DELIVERY_MODES, mode)}) with ${lineItemIds.length} item(s)`
+    );
+    await recomputeOrderStatus(orderId);
+    revalidateOrder(orderId);
+  }, "Could not create the delivery. Please try again.");
+}
+
+/**
+ * The delivery modal's one save: the mode plus whichever legs that mode has.
+ * Fields belonging to a leg the mode does not use are left untouched rather
+ * than blanked, so flipping a mode back and forth never loses what was typed.
+ */
+export async function updateDelivery(
+  deliveryId: string,
+  details: {
+    mode: string;
+    trackingCarrier?: string;
+    trackingUrl?: string;
+    expectedDelivery?: string;
+    trucker?: string;
+    pickupAddress?: string;
+    scheduledDeliveryDate?: string;
+    shipCost?: string;
+    chargedToCustomer?: boolean;
+    deliveryContactPhone?: string;
+    notes?: string;
+  }
+): Promise<ActionResult> {
+  const mode = details.mode;
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a delivery mode." };
+  }
+  const carrierLeg = hasCarrierLeg(mode);
+  const truckerLeg = hasTruckerLeg(mode);
+
+  if (carrierLeg) {
+    const urlError = trackingUrlError((details.trackingUrl ?? "").trim());
+    if (urlError) return { ok: false, message: urlError };
+  }
+  let shipCost: number | null = null;
+  if (truckerLeg) {
+    const parsed = parseShipCost(details.shipCost);
+    if ("error" in parsed) return { ok: false, message: parsed.error };
+    shipCost = parsed.value;
+  }
+
+  return safeAction(async () => {
+    const existing = await prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: { orderId: true, purchaseOrder: { select: { poNumber: true } } },
+    });
+    if (!existing) throw new Error("Delivery not found");
+
+    await prisma.delivery.update({
+      where: { id: deliveryId },
       data: {
-        trucker: trucker || null,
-        pickupAddress: pickupAddress || null,
-        scheduledDeliveryDate: scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : null,
-        shipCost: costCents,
-        chargedToCustomer,
-        deliveryContactPhone: deliveryContactPhone || null,
+        mode,
+        notes: (details.notes ?? "").trim() || null,
+        ...(carrierLeg
+          ? {
+              trackingCarrier: (details.trackingCarrier ?? "").trim() || null,
+              trackingUrl: (details.trackingUrl ?? "").trim() || null,
+              expectedDelivery: parseDate(details.expectedDelivery),
+            }
+          : {}),
+        ...(truckerLeg
+          ? {
+              trucker: (details.trucker ?? "").trim() || null,
+              pickupAddress: (details.pickupAddress ?? "").trim() || null,
+              scheduledDeliveryDate: parseDate(details.scheduledDeliveryDate),
+              shipCost,
+              chargedToCustomer: details.chargedToCustomer === true,
+              deliveryContactPhone: (details.deliveryContactPhone ?? "").trim() || null,
+            }
+          : {}),
       },
     });
-    await log(po.orderId, "po_shipment_details_updated", `PO ${po.poNumber ?? po.id} shipment details updated`);
+    await log(
+      existing.orderId,
+      "delivery_updated",
+      `Delivery ${deliveryLabel(existing)} updated (${labelFor(DELIVERY_MODES, mode)})`
+    );
+    await recomputeOrderStatus(existing.orderId);
+    revalidateOrder(existing.orderId);
+  }, "Could not save the delivery. Please try again.");
+}
+
+/**
+ * The status pill on every delivery row, and the "Mark delivered" button.
+ * delivered_full lands the leg's items (arrived_complete + arrival date);
+ * delivered_partial is item-by-item by definition, so it leaves them alone.
+ */
+export async function setDeliveryStatus(deliveryId: string, status: string): Promise<ActionResult> {
+  if (!isValidValue(DELIVERY_LEG_STATUSES, status)) {
+    return { ok: false, message: "Not a valid delivery status." };
+  }
+  return safeAction(async () => {
+    const existing = await prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: { orderId: true, deliveredAt: true, purchaseOrder: { select: { poNumber: true } } },
+    });
+    if (!existing) throw new Error("Delivery not found");
+
+    const isDelivered = status === "delivered_full" || status === "delivered_partial";
+    const now = new Date();
+    await prisma.delivery.update({
+      where: { id: deliveryId },
+      data: { status, deliveredAt: isDelivered ? existing.deliveredAt ?? now : null },
+    });
+
+    if (status === "delivered_full") {
+      await prisma.lineItem.updateMany({
+        where: { deliveryId, rfqStatus: { not: "removed" }, dateArrivedClient: null },
+        data: { dateArrivedClient: now },
+      });
+      await prisma.lineItem.updateMany({
+        where: { deliveryId, rfqStatus: { not: "removed" } },
+        data: { deliveryStatus: "arrived_complete" },
+      });
+    }
+
+    await log(
+      existing.orderId,
+      "delivery_status_set",
+      `Delivery ${deliveryLabel(existing)} set to ${labelFor(DELIVERY_LEG_STATUSES, status)}`
+    );
+    await recomputeOrderStatus(existing.orderId);
+    revalidateOrder(existing.orderId);
+  }, "Could not update the delivery status. Please try again.");
+}
+
+/** Inline trucker pick from the /deliveries list (the full form lives in the delivery modal). */
+export async function setDeliveryTrucker(deliveryId: string, trucker: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const existing = await prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: { orderId: true, purchaseOrder: { select: { poNumber: true } } },
+    });
+    if (!existing) throw new Error("Delivery not found");
+    await prisma.delivery.update({
+      where: { id: deliveryId },
+      data: { trucker: trucker.trim() || null },
+    });
+    await log(
+      existing.orderId,
+      "delivery_trucker_set",
+      `Delivery ${deliveryLabel(existing)} trucker set to ${trucker.trim() || "none"}`
+    );
+    await recomputeOrderStatus(existing.orderId);
+    revalidateOrder(existing.orderId);
+  }, "Could not set the trucker. Please try again.");
+}
+
+/**
+ * Split: the picked items move onto a brand-new leg on the same order and PO,
+ * inheriting the mode. Splits happen when half a PO ships early - so the
+ * original has to keep at least one item, otherwise this is just a no-op.
+ */
+export async function splitDelivery(deliveryId: string, lineItemIds: string[]): Promise<ActionResult> {
+  if (lineItemIds.length === 0) {
+    return { ok: false, message: "Pick at least one item to split off." };
+  }
+  return safeAction(async () => {
+    const source = await prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        orderId: true,
+        purchaseOrderId: true,
+        mode: true,
+        purchaseOrder: { select: { poNumber: true } },
+        lineItems: { where: { rfqStatus: { not: "removed" } }, select: { id: true } },
+      },
+    });
+    if (!source) throw new Error("Delivery not found");
+    const moving = source.lineItems.filter((li) => lineItemIds.includes(li.id));
+    if (moving.length === 0) throw new Error("Those items are not on this delivery");
+    if (moving.length >= source.lineItems.length) {
+      throw new Error("Leave at least one item behind - a split needs two legs");
+    }
+
+    const created = await prisma.delivery.create({
+      data: {
+        orderId: source.orderId,
+        purchaseOrderId: source.purchaseOrderId,
+        mode: source.mode,
+      },
+    });
+    await prisma.lineItem.updateMany({
+      where: { id: { in: moving.map((li) => li.id) } },
+      data: { deliveryId: created.id },
+    });
+    await log(
+      source.orderId,
+      "delivery_split",
+      `Delivery ${deliveryLabel(source)} split - ${moving.length} item(s) moved to a new leg`
+    );
+    await recomputeOrderStatus(source.orderId);
+    revalidateOrder(source.orderId);
+  }, "Could not split the delivery. Please try again.");
+}
+
+/**
+ * Move items onto another leg of the same order. Merging two legs is this plus
+ * deleteEmptyDelivery on the one that is left empty.
+ */
+export async function moveItemsToDelivery(
+  targetDeliveryId: string,
+  lineItemIds: string[]
+): Promise<ActionResult> {
+  if (lineItemIds.length === 0) {
+    return { ok: false, message: "Pick at least one item to move." };
+  }
+  return safeAction(async () => {
+    const target = await prisma.delivery.findUnique({
+      where: { id: targetDeliveryId },
+      select: { orderId: true, purchaseOrder: { select: { poNumber: true } } },
+    });
+    if (!target) throw new Error("Delivery not found");
+    const moved = await prisma.lineItem.updateMany({
+      // Same order only - an item never hops between orders.
+      where: { id: { in: lineItemIds }, orderId: target.orderId, rfqStatus: { not: "removed" } },
+      data: { deliveryId: targetDeliveryId },
+    });
+    await log(
+      target.orderId,
+      "delivery_items_moved",
+      `${moved.count} item(s) moved to delivery ${deliveryLabel(target)}`
+    );
+    await recomputeOrderStatus(target.orderId);
+    revalidateOrder(target.orderId);
+  }, "Could not move the items. Please try again.");
+}
+
+/** Removes a leg that has nothing left on it (the second half of a merge). */
+export async function deleteEmptyDelivery(deliveryId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const existing = await prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        orderId: true,
+        purchaseOrder: { select: { poNumber: true } },
+        _count: { select: { lineItems: true } },
+      },
+    });
+    if (!existing) throw new Error("Delivery not found");
+    if (existing._count.lineItems > 0) {
+      throw new Error("Move its items to another delivery first");
+    }
+    await prisma.delivery.delete({ where: { id: deliveryId } });
+    await log(existing.orderId, "delivery_deleted", `Empty delivery ${deliveryLabel(existing)} removed`);
+    await recomputeOrderStatus(existing.orderId);
+    revalidateOrder(existing.orderId);
+  }, "Could not delete the delivery. Please try again.");
+}
+
+/**
+ * PO "Advance to Shipped": the dialog's shipment details save onto the PO's
+ * delivery, the leg goes in_transit, the PO advances, and any item still
+ * sitting at pending/ordered starts moving (to HSS on mode 3, straight to the
+ * client on a drop-ship). Advancing to any other status stays on
+ * advancePoStatus above - including the payment gate on draft -> sent.
+ */
+export async function markPoShipped(
+  poId: string,
+  shipment: {
+    trackingCarrier?: string;
+    trackingUrl?: string;
+    expectedDelivery?: string;
+    trucker?: string;
+    scheduledDeliveryDate?: string;
+  }
+): Promise<ActionResult> {
+  const urlError = trackingUrlError((shipment.trackingUrl ?? "").trim());
+  if (urlError) return { ok: false, message: urlError };
+
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      select: {
+        id: true,
+        orderId: true,
+        poNumber: true,
+        status: true,
+        shipTo: true,
+        deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
+      },
+    });
+    if (!po) throw new Error("PO not found");
+    if (po.status === "received") throw new Error("This PO has already been received");
+
+    // A PO created before deliveries existed (or one whose leg was deleted)
+    // gets its default leg now rather than losing the shipment details.
+    let delivery = po.deliveries[0] ?? null;
+    if (!delivery) {
+      delivery = await prisma.delivery.create({
+        data: { orderId: po.orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
+        select: { id: true, mode: true },
+      });
+      await prisma.lineItem.updateMany({
+        where: { purchaseOrderId: po.id, deliveryId: null },
+        data: { deliveryId: delivery.id },
+      });
+    }
+
+    await prisma.delivery.update({
+      where: { id: delivery.id },
+      data: {
+        status: "in_transit",
+        trackingCarrier: (shipment.trackingCarrier ?? "").trim() || null,
+        trackingUrl: (shipment.trackingUrl ?? "").trim() || null,
+        expectedDelivery: parseDate(shipment.expectedDelivery),
+        ...(hasTruckerLeg(delivery.mode)
+          ? {
+              trucker: (shipment.trucker ?? "").trim() || null,
+              scheduledDeliveryDate: parseDate(shipment.scheduledDeliveryDate),
+            }
+          : {}),
+      },
+    });
+
+    await prisma.lineItem.updateMany({
+      where: { deliveryId: delivery.id, deliveryStatus: { in: ["pending", "ordered"] }, rfqStatus: { not: "removed" } },
+      data: { deliveryStatus: inTransitItemStatus(delivery.mode) },
+    });
+
+    await prisma.purchaseOrder.update({ where: { id: poId }, data: { status: "shipped" } });
+    await log(
+      po.orderId,
+      "po_shipped",
+      `PO ${po.poNumber ?? po.id} marked shipped - delivery in transit`
+    );
+    await recomputeOrderStatus(po.orderId);
     revalidateOrder(po.orderId);
-  }, "Could not save shipment details. Please try again.");
+  }, "Could not mark the PO shipped. Please try again.");
+}
+
+/**
+ * Point the order at one of its customer's saved locations (Sep 3 plan A1.6).
+ * The Location row is the link; `deliveryAddress` stays the snapshot the
+ * delivery leg actually reads, so picking a site copies its address across.
+ * An empty id unlinks the order without touching the address it already has.
+ */
+export async function setOrderLocation(orderId: string, locationId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, companyId: true },
+    });
+    if (!order) throw new Error("Order not found");
+
+    if (!locationId) {
+      await prisma.order.update({ where: { id: orderId }, data: { locationId: null } });
+      await log(orderId, "order_location_set", "Order is no longer linked to a location");
+      revalidateOrder(orderId);
+      return;
+    }
+
+    const location = await prisma.location.findUnique({
+      where: { id: locationId },
+      select: { id: true, name: true, address: true, companyId: true },
+    });
+    // A site on another business is a tampered payload, not a choice.
+    if (!location || location.companyId !== order.companyId) {
+      throw new Error("That location belongs to another business");
+    }
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { locationId: location.id, deliveryAddress: location.address },
+    });
+    await log(
+      orderId,
+      "order_location_set",
+      `Delivering to ${location.name} (${location.address})`
+    );
+    revalidateOrder(orderId);
+  }, "Could not set the location. Please try again.");
 }

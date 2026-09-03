@@ -6,6 +6,7 @@ import PaymentsSection from "./PaymentsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
 import DeliverySection from "./DeliverySection";
 import { OrderTabs } from "./OrderTabs";
+import { OrderLocationField } from "./OrderLocationField";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { BackLink } from "@/lib/BackLink";
 import { evaluatePaymentGate, canCompleteOrder } from "@/lib/flow";
@@ -25,17 +26,59 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     prisma.order.findUnique({
       where: { id },
       include: {
-        company: { select: { id: true, name: true, requiresDeposit: true, depositPercent: true } },
+        company: {
+          select: {
+            id: true,
+            name: true,
+            requiresDeposit: true,
+            depositPercent: true,
+            // Saved sites, for the Location picker in the details grid.
+            locations: {
+              select: { id: true, name: true },
+              orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+            },
+          },
+        },
         contact: true,
         owner: true,
         payments: true,
-        // Status/complete rules read delivery legs now (see @/lib/flowRules).
-        deliveries: { select: { status: true } },
+        // Delivery legs drive the Delivery tab, and the status/complete rules
+        // read them too (see @/lib/flowRules).
+        deliveries: {
+          include: {
+            lineItems: {
+              select: { id: true, name: true, qty: true, deliveryStatus: true },
+              orderBy: { createdAt: "asc" },
+            },
+            purchaseOrder: {
+              select: {
+                id: true,
+                poNumber: true,
+                supplier: { select: { name: true, deliveryAddress: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
         lineItems: { include: { assignee: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
         purchaseOrders: {
           include: {
             supplier: { select: { name: true, deliveryAddress: true } },
             lineItems: { select: { id: true, name: true, qty: true } },
+            // Read-only on this tab: the PO's leg powers the shipped dialog.
+            deliveries: {
+              select: {
+                id: true,
+                mode: true,
+                status: true,
+                trackingCarrier: true,
+                trackingUrl: true,
+                expectedDelivery: true,
+                trucker: true,
+                scheduledDeliveryDate: true,
+              },
+              orderBy: { createdAt: "asc" },
+            },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -201,6 +244,16 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
           <div>
+            <div className="field-label">Location</div>
+            <div className="text-ink">
+              <OrderLocationField
+                orderId={order.id}
+                locationId={order.locationId}
+                locations={order.company?.locations ?? []}
+              />
+            </div>
+          </div>
+          <div>
             <div className="field-label">Needed By</div>
             <div className="text-ink">
               {order.neededByDate ? (
@@ -242,7 +295,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               orderId={order.id}
               items={order.lineItems}
               users={users}
-              purchaseOrders={order.purchaseOrders}
+              deliveries={order.deliveries}
             />
           }
         />
