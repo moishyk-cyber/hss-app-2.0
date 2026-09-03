@@ -184,3 +184,101 @@ export const PO_DELIVERY_STATUS_COLORS: Record<string, string> = {
   delivered_partial: "badge-orange",
   delivered_full: "badge-green",
 };
+
+// ---------------------------------------------------------------------------
+// Sales -> Orders -> Delivery -> Service vocabularies (Sep 3 2026 build plan).
+// ---------------------------------------------------------------------------
+
+/** Payment terms agreed at close - drive Order.depositRequired and the auto-created invoices. */
+export const PAYMENT_TERMS = [
+  { value: "deposit_balance", label: "Deposit now, balance before delivery" },
+  { value: "full_upfront", label: "Full payment before ordering" },
+  { value: "on_delivery", label: "Full payment on delivery" },
+  { value: "net_30", label: "Net 30 after delivery" },
+  { value: "custom", label: "Custom (see notes)" },
+] as const;
+
+/** Which legs a Delivery has (see the Delivery model comment in the schema). */
+export const DELIVERY_MODES = [
+  { value: "manufacturer_to_customer", label: "Manufacturer → customer" },
+  { value: "hss_to_customer", label: "HSS pickup → customer" },
+  { value: "manufacturer_to_hss_to_customer", label: "Manufacturer → HSS → customer" },
+] as const;
+
+/** Delivery-level (leg) status. Item-level status stays DELIVERY_STATUSES above. */
+export const DELIVERY_LEG_STATUSES = [
+  { value: "pending", label: "Pending" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "in_transit", label: "In Transit" },
+  { value: "delivered_partial", label: "Delivered - Partial" },
+  { value: "delivered_full", label: "Delivered - Full" },
+] as const;
+
+/** Customer-facing quote on an order (projects need one; straight orders do not). */
+export const QUOTE_STATUSES = [
+  { value: "not_needed", label: "Not Needed" },
+  { value: "needed", label: "Quote Needed" },
+  { value: "sent", label: "Quote Sent" },
+  { value: "accepted", label: "Quote Accepted" },
+] as const;
+
+export const SERVICE_ISSUE_STATUSES = [
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "resolved", label: "Resolved" },
+  { value: "closed", label: "Closed" },
+] as const;
+
+export const DOCUMENT_KINDS = [
+  { value: "quote", label: "Quote" },
+  { value: "invoice", label: "Invoice" },
+  { value: "drawing", label: "Drawing" },
+  { value: "po", label: "Purchase Order" },
+  { value: "tracking", label: "Tracking" },
+  { value: "other", label: "Other" },
+] as const;
+
+export const DOCUMENT_SOURCES = [
+  { value: "link", label: "Link" },
+  { value: "upload", label: "Upload" },
+  { value: "google_drive", label: "Google Drive" },
+] as const;
+
+export const PAYMENT_TERM_COLORS: Record<string, string> = {
+  deposit_balance: "badge-blue",
+  full_upfront: "badge-green",
+  on_delivery: "badge-yellow",
+  net_30: "badge-yellow",
+  custom: "badge-gray",
+};
+
+export const DELIVERY_MODE_COLORS: Record<string, string> = {
+  manufacturer_to_customer: "badge-blue",
+  hss_to_customer: "badge-yellow",
+  manufacturer_to_hss_to_customer: "badge-gray",
+};
+
+export const DELIVERY_LEG_STATUS_COLORS: Record<string, string> = {
+  pending: "badge-gray",
+  scheduled: "badge-blue",
+  in_transit: "badge-yellow",
+  delivered_partial: "badge-orange",
+  delivered_full: "badge-green",
+};
+
+export const QUOTE_STATUS_COLORS: Record<string, string> = {
+  not_needed: "badge-gray",
+  needed: "badge-orange",
+  sent: "badge-blue",
+  accepted: "badge-green",
+};
+
+export const SERVICE_ISSUE_STATUS_COLORS: Record<string, string> = {
+  open: "badge-orange",
+  in_progress: "badge-blue",
+  resolved: "badge-green",
+  closed: "badge-gray",
+};
+
+/** The SERVICE_ISSUE_STATUSES that count as "still open" (ball-in-court, queues). */
+export const OPEN_SERVICE_ISSUE_STATUSES = ["open", "in_progress"] as const;

@@ -119,10 +119,17 @@ export async function markOrderComplete(orderId: string): Promise<ActionResult> 
       }
       const items = order.lineItems.filter((i) => i.rfqStatus !== "removed");
       const itemsPending = items.filter((i) => i.deliveryStatus !== "arrived_complete").length;
-      const posPending = order.purchaseOrders.filter(
-        (p) => p.status !== "received" && p.deliveryStatus !== "delivered_full"
-      ).length;
+      const deliveriesPending = order.deliveries.filter((d) => d.status !== "delivered_full").length;
+      // Mirrors canCompleteOrder: once every delivery has landed a PO left at
+      // "shipped" is not a blocker, so don't nag about it.
+      const allDeliveriesLanded = order.deliveries.length > 0 && deliveriesPending === 0;
+      const posPending = allDeliveriesLanded
+        ? 0
+        : order.purchaseOrders.filter((p) => p.status !== "received").length;
       const parts: string[] = [];
+      if (deliveriesPending > 0) {
+        parts.push(`${deliveriesPending} deliver${deliveriesPending > 1 ? "ies" : "y"} not yet delivered`);
+      }
       if (posPending > 0) parts.push(`${posPending} purchase order${posPending > 1 ? "s" : ""} not yet received`);
       if (itemsPending > 0) parts.push(`${itemsPending} item${itemsPending > 1 ? "s" : ""} not yet arrived`);
       return {

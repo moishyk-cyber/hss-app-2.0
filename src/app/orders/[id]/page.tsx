@@ -29,6 +29,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         contact: true,
         owner: true,
         payments: true,
+        // Status/complete rules read delivery legs now (see @/lib/flowRules).
+        deliveries: { select: { status: true } },
         lineItems: { include: { assignee: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
         purchaseOrders: {
           include: {
