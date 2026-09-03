@@ -15,6 +15,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FormAlert, PendingButton } from "@/lib/ui";
+import { PAYMENT_TERMS } from "@/lib/constants";
 import { readStoredUserId, storeUserId } from "@/lib/identityClient";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
@@ -47,14 +48,23 @@ type IntakeContact = {
   companyId: string | null;
 };
 
+type IntakeLocation = {
+  id: string;
+  name: string;
+  address: string;
+  isDefault: boolean;
+};
+
 type IntakeCompany = {
   id: string;
   name: string;
   deliveryAddress: string | null;
   locationName: string | null;
+  /** Sites on file for this business - the location picker in step 1. */
+  locations: IntakeLocation[];
 };
 
-type ItemRow = { key: number; name: string; details: string; qty: string };
+type ItemRow = { key: number; name: string; details: string; qty: string; unitPrice: string };
 
 /** Everything a saved draft needs to rebuild the form. */
 type IntakeDraft = {
@@ -67,7 +77,10 @@ type IntakeDraft = {
     companyQuery: string;
     companyId: string;
     newCompanyName: string;
-    overrideDelivery: boolean;
+    /** "existing" = a saved location (or the address on file); "new" = typed here. */
+    locationMode: "existing" | "new";
+    locationId: string;
+    saveLocation: boolean;
     contactMode: "existing" | "new";
     contactQuery: string;
     contactId: string;
@@ -76,6 +89,8 @@ type IntakeDraft = {
     deliveryType: "curbside" | "inside";
     installationNeeded: string;
     needsPricing: string;
+    paymentTerms: string;
+    totalPrice: string;
     items: ItemRow[];
     fieldValues: Record<string, string>;
   };
@@ -96,6 +111,11 @@ const CONTROLLED_FIELDS = new Set([
   "itemName",
   "itemDetails",
   "itemQty",
+  "itemUnitPrice",
+  "totalPrice",
+  "paymentTerms",
+  "locationId",
+  "saveLocation",
   "newCompanyName",
   "newContactFirstName",
   "deliveryType",
@@ -131,6 +151,12 @@ function clearDraft() {
 const inputClass = "input-klyne w-full";
 const labelClass = "field-label";
 
+/** The site a picker should start on: the default one, else the first on file. */
+function defaultLocationOf(company: IntakeCompany | null | undefined): IntakeLocation | null {
+  const list = company?.locations ?? [];
+  return list.find((l) => l.isDefault) ?? list[0] ?? null;
+}
+
 function contactName(contact: IntakeContact): string {
   return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
 }
@@ -165,6 +191,19 @@ const FIELD_VALIDATORS: Record<string, (v: string) => string | null> = {
 function rowQtyValid(row: ItemRow): boolean {
   const qty = Number.parseInt(row.qty.trim(), 10);
   return Number.isFinite(qty) && qty >= 1;
+}
+
+/** Prices are optional; a typed one has to be real money. */
+function priceProblem(raw: string): boolean {
+  const t = raw.trim();
+  if (t === "") return false;
+  const n = Number(t);
+  return !Number.isFinite(n) || n <= 0;
+}
+
+function priceValue(raw: string): number {
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -343,7 +382,13 @@ export function IntakeForm({
   const [companyQuery, setCompanyQuery] = useState(initialCompany?.name ?? "");
   const [companyId, setCompanyId] = useState(initialCompany?.id ?? "");
   const [newCompanyName, setNewCompanyName] = useState("");
-  const [overrideDelivery, setOverrideDelivery] = useState(false);
+  // Location: a saved site on the business, or one typed here (which is saved
+  // back onto the business unless the caller unticks it).
+  const [locationMode, setLocationMode] = useState<"existing" | "new">("existing");
+  const [locationId, setLocationId] = useState(
+    initialCompany ? (defaultLocationOf(initialCompany)?.id ?? "") : ""
+  );
+  const [saveLocation, setSaveLocation] = useState(true);
   const [contactMode, setContactMode] = useState<"existing" | "new">("existing");
   const [contactQuery, setContactQuery] = useState("");
   const [contactId, setContactId] = useState("");
@@ -356,8 +401,12 @@ export function IntakeForm({
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
   const [needsPricing, setNeedsPricing] = useState("yes");
+  // Price it once, here (Sep 3 plan A1.3): per-item prices and the total agreed,
+  // plus the payment terms when this becomes an order straight away.
+  const [totalPrice, setTotalPrice] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("full_upfront");
   const [items, setItems] = useState<ItemRow[]>([
-    { key: 1, name: "", details: "", qty: "1" },
+    { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
   ]);
   const [nextKey, setNextKey] = useState(2);
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
@@ -413,7 +462,9 @@ export function IntakeForm({
         companyQuery,
         companyId,
         newCompanyName,
-        overrideDelivery,
+        locationMode,
+        locationId,
+        saveLocation,
         contactMode,
         contactQuery,
         contactId,
@@ -422,6 +473,8 @@ export function IntakeForm({
         deliveryType,
         installationNeeded,
         needsPricing,
+        paymentTerms,
+        totalPrice,
         items,
         fieldValues,
       },
@@ -459,7 +512,9 @@ export function IntakeForm({
     companyQuery,
     companyId,
     newCompanyName,
-    overrideDelivery,
+    locationMode,
+    locationId,
+    saveLocation,
     contactMode,
     contactQuery,
     contactId,
@@ -468,6 +523,8 @@ export function IntakeForm({
     deliveryType,
     installationNeeded,
     needsPricing,
+    paymentTerms,
+    totalPrice,
     items,
     fieldValues,
   ]);
@@ -481,7 +538,10 @@ export function IntakeForm({
     setCompanyQuery(ui.companyQuery);
     setCompanyId(ui.companyId);
     setNewCompanyName(ui.newCompanyName);
-    setOverrideDelivery(ui.overrideDelivery);
+    // Drafts saved before locations existed have none of these three.
+    setLocationMode(ui.locationMode ?? "existing");
+    setLocationId(ui.locationId ?? "");
+    setSaveLocation(ui.saveLocation ?? true);
     setContactMode(ui.contactMode);
     setContactQuery(ui.contactQuery);
     setContactId(ui.contactId);
@@ -490,8 +550,11 @@ export function IntakeForm({
     setDeliveryType(ui.deliveryType);
     setInstallationNeeded(ui.installationNeeded);
     setNeedsPricing(ui.needsPricing);
+    setPaymentTerms(ui.paymentTerms ?? "full_upfront");
+    setTotalPrice(ui.totalPrice ?? "");
     if (ui.items.length > 0) {
-      setItems(ui.items);
+      // Older drafts have no per-item price field.
+      setItems(ui.items.map((r) => ({ ...r, unitPrice: r.unitPrice ?? "" })));
       setNextKey(Math.max(...ui.items.map((r) => r.key)) + 1);
     }
     setFieldValues(ui.fieldValues ?? {});
@@ -558,6 +621,15 @@ export function IntakeForm({
   );
 
   const selectedCompany = companies.find((c) => c.id === companyId) ?? null;
+  const companyLocations = selectedCompany?.locations ?? [];
+  const selectedLocation = companyLocations.find((l) => l.id === locationId) ?? null;
+
+  /** Point the location picker at a business (or clear it when the pick is dropped). */
+  function resetLocation(company: IntakeCompany | null) {
+    setLocationMode("existing");
+    setLocationId(defaultLocationOf(company)?.id ?? "");
+    setSaveLocation(true);
+  }
 
   // Contacts are loaded whole and filtered here - the picked business is client state.
   const contactOptions = useMemo(
@@ -580,7 +652,16 @@ export function IntakeForm({
   // ---------------- validation (Sep 2 QA) ----------------
   const validItems = items.filter((r) => r.name.trim() !== "" && rowQtyValid(r));
   const badQtyRows = items.filter((r) => r.name.trim() !== "" && !rowQtyValid(r));
-  const itemsReady = validItems.length > 0 && badQtyRows.length === 0;
+  const badPriceRows = items.filter((r) => priceProblem(r.unitPrice));
+  const totalPriceBad = priceProblem(totalPrice);
+  const pricesReady = badPriceRows.length === 0 && !totalPriceBad;
+  const itemsReady = validItems.length > 0 && badQtyRows.length === 0 && pricesReady;
+  /** What the typed item prices add up to - the fallback order value. */
+  const itemsTotal = validItems.reduce(
+    (sum, r) => sum + priceValue(r.unitPrice) * Number.parseInt(r.qty.trim(), 10),
+    0
+  );
+  const agreedTotal = priceValue(totalPrice) || itemsTotal;
 
   /** Which validated fields are actually on screen right now? */
   const activeValidatedFields = [
@@ -602,11 +683,13 @@ export function IntakeForm({
       ? "Every item needs a quantity of at least 1"
       : validItems.length === 0
         ? "Add at least one item with a name"
-        : !fieldsReady
-          ? "Fix the highlighted phone/email fields"
-          : openSection < 3
-            ? "Work through the steps above"
-            : null;
+        : !pricesReady
+          ? "A typed price has to be more than $0"
+          : !fieldsReady
+            ? "Fix the highlighted phone/email fields"
+            : openSection < 3
+              ? "Work through the steps above"
+              : null;
 
   const clientLabel =
     clientMode === "new"
@@ -633,7 +716,10 @@ export function IntakeForm({
   }
 
   function addItem() {
-    setItems((rows) => [...rows, { key: nextKey, name: "", details: "", qty: "1" }]);
+    setItems((rows) => [
+      ...rows,
+      { key: nextKey, name: "", details: "", qty: "1", unitPrice: "" },
+    ]);
     setAutoFocusKey(nextKey);
     setNextKey((k) => k + 1);
   }
@@ -686,6 +772,11 @@ export function IntakeForm({
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : error === "not_allowed" ? (
+        <FormAlert>
+          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
+          admin.
+        </FormAlert>
       ) : null}
 
       {showDraftBanner ? (
@@ -722,7 +813,7 @@ export function IntakeForm({
                   // Typing again means they're re-searching - drop the old pick.
                   if (companyId) {
                     setCompanyId("");
-                    setOverrideDelivery(false);
+                    resetLocation(null);
                     resetContact();
                   }
                 }}
@@ -732,14 +823,14 @@ export function IntakeForm({
                 onPick={(o) => {
                   setCompanyId(o.id);
                   setCompanyQuery(o.name);
-                  setOverrideDelivery(false);
+                  resetLocation(companies.find((c) => c.id === o.id) ?? null);
                   resetContact();
                 }}
                 onCreate={(name) => {
                   setClientMode("new");
                   setNewCompanyName(name);
                   setCompanyId("");
-                  setOverrideDelivery(false);
+                  resetLocation(null);
                   setContactMode("new");
                   setContactId("");
                   setContactQuery("");
@@ -750,36 +841,100 @@ export function IntakeForm({
 
               {selectedCompany ? (
                 <>
-                  {/* --- delivery address, straight off the business --- */}
+                  {/*
+                    --- where is it going? ---
+                    The business's saved locations as chips, so the address is
+                    picked, not retyped. A location typed here is saved back onto
+                    the business (Sep 3 plan A1.2) unless the caller unticks it.
+                  */}
                   <div className="rounded-[10px] border border-border bg-panel p-3">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="section-label !mb-0">Delivery address</span>
-                      {overrideDelivery ? (
+                      <span className="section-label !mb-0">Location</span>
+                      {locationMode === "new" ? (
                         <button
                           type="button"
-                          onClick={() => setOverrideDelivery(false)}
+                          onClick={() => resetLocation(selectedCompany)}
                           className="text-xs text-gray-dark transition-colors hover:text-ink"
                         >
-                          Use the address on file
+                          {companyLocations.length > 0
+                            ? "Use a saved location"
+                            : "Use the address on file"}
                         </button>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setOverrideDelivery(true)}
+                          onClick={() => {
+                            setLocationMode("new");
+                            setLocationId("");
+                          }}
                           className="text-xs text-primary transition-colors hover:underline"
                         >
-                          Deliver somewhere else
+                          {companyLocations.length > 0
+                            ? "Add a location"
+                            : "Deliver somewhere else"}
                         </button>
                       )}
                     </div>
 
-                    {overrideDelivery ? (
-                      <input
-                        name="deliveryAddress"
-                        autoFocus
-                        placeholder="Where is this going instead?"
-                        className={inputClass}
-                      />
+                    {locationMode === "new" ? (
+                      <div className="space-y-3">
+                        <label className="block">
+                          <span className={labelClass}>Name of location</span>
+                          <input
+                            name="locationName"
+                            autoFocus
+                            placeholder="e.g. Second store, Boro Park"
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className={labelClass}>Delivery address</span>
+                          <input
+                            name="deliveryAddress"
+                            placeholder="Where is this going?"
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="flex items-center gap-2 text-[13px] text-ink">
+                          <input
+                            type="checkbox"
+                            checked={saveLocation}
+                            onChange={(e) => setSaveLocation(e.target.checked)}
+                            className="h-4 w-4 rounded border-border accent-primary"
+                          />
+                          Save it as a location on {selectedCompany.name}
+                        </label>
+                      </div>
+                    ) : companyLocations.length > 0 ? (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {companyLocations.map((l) => (
+                            <button
+                              key={l.id}
+                              type="button"
+                              aria-pressed={l.id === locationId}
+                              onClick={() => setLocationId(l.id)}
+                              className={`rounded-lg border px-3 py-1.5 text-left text-[13px] transition-colors ${
+                                l.id === locationId
+                                  ? "border-primary bg-hover text-ink"
+                                  : "border-border bg-surface hover:bg-hover"
+                              }`}
+                            >
+                              <span className="font-medium">{l.name}</span>
+                              {l.isDefault ? (
+                                <span className="ml-1.5 text-xs text-gray">default</span>
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[13px] text-ink">
+                          {selectedLocation ? (
+                            selectedLocation.address
+                          ) : (
+                            <span className="empty-value">Pick where this is going</span>
+                          )}
+                        </p>
+                      </>
                     ) : (
                       <p className="text-[13px] text-ink">
                         {selectedCompany.locationName ? (
@@ -792,6 +947,17 @@ export function IntakeForm({
                         )}
                       </p>
                     )}
+                    {/* The real values the action reads. */}
+                    <input
+                      type="hidden"
+                      name="locationId"
+                      value={locationMode === "existing" ? locationId : ""}
+                    />
+                    <input
+                      type="hidden"
+                      name="saveLocation"
+                      value={locationMode === "new" && saveLocation ? "1" : "0"}
+                    />
                   </div>
 
                   {/* --- contact: same search-or-create pattern as the business --- */}
@@ -931,6 +1097,10 @@ export function IntakeForm({
                 <label className="block sm:col-span-2">
                   <span className={labelClass}>Name of location</span>
                   <input name="newCompanyLocationName" className={inputClass} />
+                  <span className="mt-1 block text-xs text-gray">
+                    The delivery address and this name become the business&rsquo;s first saved
+                    location.
+                  </span>
                 </label>
               </div>
 
@@ -1019,6 +1189,7 @@ export function IntakeForm({
               {items.map((row, index) => {
                 const isLastRow = index === items.length - 1;
                 const qtyBad = row.name.trim() !== "" && !rowQtyValid(row);
+                const priceBad = priceProblem(row.unitPrice);
                 return (
                   <div key={row.key}>
                     <div className="flex items-end gap-2">
@@ -1058,6 +1229,22 @@ export function IntakeForm({
                           className={`${inputClass} ${qtyBad ? "!border-red" : ""}`}
                         />
                       </label>
+                      {/* Price it once, on the call, when the price is already known. */}
+                      <label className="block w-24">
+                        <span className="sr-only">Unit price</span>
+                        <input
+                          name="itemUnitPrice"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={row.unitPrice}
+                          onChange={(e) => updateItem(row.key, { unitPrice: e.target.value })}
+                          onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
+                          aria-invalid={priceBad}
+                          placeholder="$ each"
+                          className={`${inputClass} ${priceBad ? "!border-red" : ""}`}
+                        />
+                      </label>
                       <button
                         type="button"
                         onClick={() => removeItem(row.key)}
@@ -1073,6 +1260,11 @@ export function IntakeForm({
                         Quantity has to be at least 1.
                       </p>
                     ) : null}
+                    {priceBad ? (
+                      <p role="alert" className="mt-1 text-xs text-red">
+                        A price has to be more than $0 - leave it blank if it needs quoting.
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
@@ -1085,6 +1277,54 @@ export function IntakeForm({
             >
               + Add item
             </button>
+
+            {/*
+              Price once (Sep 3 plan A1.3). A total typed here IS the number:
+              it becomes the deal value for anything going to the pipeline, and
+              the order value - with its invoice - for anything that doesn't.
+            */}
+            <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block w-44">
+                  <span className={labelClass}>Total price agreed</span>
+                  <input
+                    name="totalPrice"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={totalPrice}
+                    onChange={(e) => setTotalPrice(e.target.value)}
+                    aria-invalid={totalPriceBad}
+                    placeholder={itemsTotal > 0 ? itemsTotal.toFixed(2) : "0.00"}
+                    className={`${inputClass} ${totalPriceBad ? "!border-red" : ""}`}
+                  />
+                </label>
+                {goesToPipeline ? null : (
+                  <label className="block min-w-56 flex-1">
+                    <span className={labelClass}>Payment terms</span>
+                    <select
+                      name="paymentTerms"
+                      value={paymentTerms}
+                      onChange={(e) => setPaymentTerms(e.target.value)}
+                      className={inputClass}
+                    >
+                      {PAYMENT_TERMS.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray">
+                {goesToPipeline
+                  ? "Optional. Any prices you already have are saved on the items, and the total becomes the deal value."
+                  : itemsTotal > 0
+                    ? `Optional - leave it blank to use the item prices ($${itemsTotal.toFixed(2)}). The invoice is created from the terms the moment the order is.`
+                    : "Optional. The invoice is created from the terms the moment the order is."}
+              </p>
+            </div>
 
             <label className="mt-4 block">
               <span className={labelClass}>Notes for the team</span>
@@ -1171,7 +1411,9 @@ export function IntakeForm({
               disabledReason={
                 badQtyRows.length > 0
                   ? "Every item needs a quantity of at least 1"
-                  : "Add at least one item with a name"
+                  : !pricesReady
+                    ? "A typed price has to be more than $0"
+                    : "Add at least one item with a name"
               }
             >
               Next - when do they need it?
@@ -1244,9 +1486,21 @@ export function IntakeForm({
               {orderType === "project" ? "Project" : "Order"}
               <span className="mx-1.5 text-gray">·</span>
               {validItems.length} item{validItems.length === 1 ? "" : "s"}
+              {agreedTotal > 0 ? (
+                <>
+                  <span className="mx-1.5 text-gray">·</span>
+                  {`$${agreedTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}
+                </>
+              ) : null}
               <span className="mx-1.5 text-gray">·</span>
               {goesToPipeline ? "goes to the pipeline" : "becomes an order straight away"}
             </p>
+            {goesToPipeline ? null : (
+              <p className="mt-1">
+                Terms:{" "}
+                {PAYMENT_TERMS.find((t) => t.value === paymentTerms)?.label ?? paymentTerms}
+              </p>
+            )}
           </div>
         </Section>
       </div>

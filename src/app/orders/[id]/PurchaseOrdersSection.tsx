@@ -5,31 +5,56 @@
 // at the top with nothing to click through - no toggle to find. Shipment/
 // trucking/scheduled-delivery details and the PO's own delivery-status pill
 // now live on the Delivery tab (see DeliverySection.tsx); this tab keeps the
-// PO status ladder, sent-aging, gate blocking, and carrier tracking info.
+// PO status ladder, sent-aging, gate blocking, and a read-only view of the
+// PO's delivery leg. Advancing to Shipped asks for the shipment details once
+// and writes them onto that leg.
 
 import { useEffect, useRef, useState } from "react";
-import { PO_STATUSES, labelFor } from "@/lib/constants";
+import {
+  PO_STATUSES,
+  DELIVERY_MODES,
+  DELIVERY_MODE_COLORS,
+  DELIVERY_LEG_STATUSES,
+  DELIVERY_LEG_STATUS_COLORS,
+  labelFor,
+} from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
-import { advancePoStatus, createPurchaseOrder, updatePoTracking } from "../actions";
+import { advancePoStatus, createPurchaseOrder, markPoShipped, setPoAutoQuotesNumber } from "../actions";
 import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { SearchCombobox } from "@/lib/Combobox";
 import { Avatar } from "@/lib/Avatar";
+import { hasTruckerLeg } from "../../deliveries/_ui";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
   id: string;
   poNumber: string | null;
+  autoQuotesPoNumber: string | null;
   status: string;
   shipTo: string;
   sentDate: Date | null;
   ackDate: Date | null;
-  trackingUrl: string | null;
-  trackingCarrier: string | null;
-  expectedDelivery: Date | null;
   supplier: { name: string; deliveryAddress: string | null } | null;
   lineItems: PoLineItem[];
+  /**
+   * The PO's delivery leg (the first one, when a split gave it more than one).
+   * Logistics live on Delivery now - this tab only reads it; the Delivery tab
+   * owns the editing.
+   */
+  deliveries: PoDelivery[];
+};
+
+type PoDelivery = {
+  id: string;
+  mode: string;
+  status: string;
+  trackingCarrier: string | null;
+  trackingUrl: string | null;
+  expectedDelivery: Date | null;
+  trucker: string | null;
+  scheduledDeliveryDate: Date | null;
 };
 
 type UnassignedLineItem = { id: string; name: string; qty: number };
@@ -74,25 +99,38 @@ export default function PurchaseOrdersSection({
   const [vendorId, setVendorId] = useState("");
   const [newVendorName, setNewVendorName] = useState("");
 
-  // "Make it list": rows stay compact, the full detail + tracking form pop up.
+  // "Make it list": rows stay compact, the full PO detail pops up.
   const [openPoId, setOpenPoId] = useState<string | null>(null);
   const openPo = purchaseOrders.find((po) => po.id === openPoId) ?? null;
+  // Advancing to Shipped is the one step that needs facts typed in first, so it
+  // opens a dialog instead of firing straight away.
+  const [shipPoId, setShipPoId] = useState<string | null>(null);
+  const shipPo = purchaseOrders.find((po) => po.id === shipPoId) ?? null;
   const { toast } = useToast();
 
-  async function handleAdvance(poId: string, blocked: boolean) {
+  function clearError(poId: string) {
+    setErrors((e) => {
+      const next = { ...e };
+      delete next[poId];
+      return next;
+    });
+  }
+
+  async function handleAdvance(po: Po, blocked: boolean, next: string) {
     if (blocked) {
-      setErrors((e) => ({ ...e, [poId]: gate.reason }));
+      setErrors((e) => ({ ...e, [po.id]: gate.reason }));
       return;
     }
-    const res = await advancePoStatus(poId);
+    if (next === "shipped") {
+      clearError(po.id);
+      setShipPoId(po.id);
+      return;
+    }
+    const res = await advancePoStatus(po.id);
     if (!res.ok) {
-      setErrors((e) => ({ ...e, [poId]: res.message }));
+      setErrors((e) => ({ ...e, [po.id]: res.message }));
     } else {
-      setErrors((e) => {
-        const next = { ...e };
-        delete next[poId];
-        return next;
-      });
+      clearError(po.id);
     }
   }
 
@@ -114,8 +152,19 @@ export default function PurchaseOrdersSection({
       setCreateError("Tick at least one item to put on this PO.");
       return;
     }
+    const autoQuotesPoNumber = String(formData.get("autoQuotesPoNumber") ?? "").trim();
+    if (autoQuotesPoNumber.length > 40) {
+      setCreateError("AutoQuotes PO # is too long (max 40 characters).");
+      return;
+    }
     setCreateError(null);
-    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds, supplierId ? "" : typedVendor);
+    const result = await createPurchaseOrder(
+      orderId,
+      supplierId,
+      lineItemIds,
+      supplierId ? "" : typedVendor,
+      autoQuotesPoNumber
+    );
     if (result.ok) {
       setShowEmptyForm(false);
       setVendorQuery("");
@@ -169,6 +218,17 @@ export default function PurchaseOrdersSection({
             {/* The combobox is a display control; these carry the real values. */}
             <input type="hidden" name="supplierId" value={vendorId} />
             <input type="hidden" name="newVendorName" value={newVendorName} />
+          </div>
+          <div className="max-w-xs">
+            <label className="block">
+              <span className="field-label">AutoQuotes PO #</span>
+              <input
+                name="autoQuotesPoNumber"
+                maxLength={40}
+                placeholder="AutoQuotes PO #"
+                className="input-klyne w-full px-2 py-1.5 text-sm"
+              />
+            </label>
           </div>
           <div>
             <span className="field-label">Items</span>
@@ -254,6 +314,11 @@ export default function PurchaseOrdersSection({
                         {po.supplier?.name ?? "no vendor"}
                       </span>
                     </button>
+                    {po.autoQuotesPoNumber && (
+                      <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
+                        AQ# {po.autoQuotesPoNumber}
+                      </span>
+                    )}
                     <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
                       {po.lineItems.length} item{po.lineItems.length === 1 ? "" : "s"}
                     </span>
@@ -271,10 +336,20 @@ export default function PurchaseOrdersSection({
                         {labelFor(PO_STATUSES, po.status)}
                       </span>
                     </span>
+                    <span className="relative z-10 shrink-0">
+                      <a
+                        href={`/orders/${orderId}/po/${po.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-sm active:scale-[0.99]"
+                      >
+                        PDF
+                      </a>
+                    </span>
                     {next && (
                       <span className="relative z-10">
                         <ActionButton
-                          action={() => handleAdvance(po.id, blocked)}
+                          action={() => handleAdvance(po, blocked, next)}
                           className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
                         >
                           Advance to {labelFor(PO_STATUSES, next)}
@@ -290,14 +365,28 @@ export default function PurchaseOrdersSection({
         </div>
       )}
 
-      {openPo ? <PoDetailModal po={openPo} onClose={() => setOpenPoId(null)} /> : null}
+      {openPo ? <PoDetailModal orderId={orderId} po={openPo} onClose={() => setOpenPoId(null)} /> : null}
+
+      {shipPo ? (
+        <ShipPoDialog
+          po={shipPo}
+          onClose={() => setShipPoId(null)}
+          onShipped={(poNumber) => {
+            setShipPoId(null);
+            toast({ kind: "success", message: `${poNumber} marked shipped` });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** PO popup: items, ship-to, the dates, and the carrier tracking form. */
-function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
+/** PO popup: items, ship-to, the dates, and a read-only look at its delivery leg. */
+function PoDetailModal({ orderId, po, onClose }: { orderId: string; po: Po; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // A split PO has more than one leg; the modal summarizes the first and sends
+  // people to the Delivery tab for the rest.
+  const delivery = po.deliveries[0] ?? null;
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -350,7 +439,19 @@ function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
 
         <div className="text-xs text-gray-dark">
           Ship to: {po.shipTo === "hss" ? "HSS warehouse" : "Client direct"} · Sent: {fmtDate(po.sentDate)} · Ack:{" "}
-          {fmtDate(po.ackDate)} · Expected: {fmtDate(po.expectedDelivery)}
+          {fmtDate(po.ackDate)} · Expected: {fmtDate(delivery?.expectedDelivery ?? null)}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <AutoQuotesField po={po} />
+          <a
+            href={`/orders/${orderId}/po/${po.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-sm active:scale-[0.99]"
+          >
+            PDF
+          </a>
         </div>
 
         <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
@@ -361,83 +462,275 @@ function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
           ))}
         </ul>
 
-        <TrackingEdit
-          poId={po.id}
-          trackingUrl={po.trackingUrl}
-          trackingCarrier={po.trackingCarrier}
-          expectedDelivery={po.expectedDelivery}
-        />
+        <DeliveryReadout delivery={delivery} />
       </div>
     </div>
   );
 }
 
-function TrackingEdit({
-  poId,
-  trackingUrl,
-  trackingCarrier,
-  expectedDelivery,
-}: {
-  poId: string;
-  trackingUrl: string | null;
-  trackingCarrier: string | null;
-  expectedDelivery: Date | null;
-}) {
-  const expectedDefault = expectedDelivery ? new Date(expectedDelivery).toISOString().slice(0, 10) : "";
+/** Modal's inline edit for the AutoQuotes PO # - same 40-char validation as create. */
+function AutoQuotesField({ po }: { po: Po }) {
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   async function handleSave(formData: FormData) {
-    const url = String(formData.get("trackingUrl") ?? "");
-    const carrier = String(formData.get("trackingCarrier") ?? "");
-    const expected = String(formData.get("expectedDelivery") ?? "");
-    const result = await updatePoTracking(poId, url, carrier, expected);
-    setError(result.ok ? null : result.message);
+    const value = String(formData.get("autoQuotesPoNumber") ?? "");
+    if (value.trim().length > 40) {
+      setError("AutoQuotes PO # is too long (max 40 characters).");
+      return;
+    }
+    const result = await setPoAutoQuotesNumber(po.id, value);
+    if (result.ok) {
+      setError(null);
+      setEditing(false);
+      toast({ kind: "success", message: "AutoQuotes PO # saved" });
+    } else {
+      setError(result.message);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-2 text-xs text-gray-dark">
+        AQ#: {po.autoQuotesPoNumber || <span className="empty-value">not set</span>}
+        <button
+          type="button"
+          className="text-gray transition-colors hover:text-ink hover:underline"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+      </span>
+    );
   }
 
   return (
-    <form action={handleSave} className="mt-3 space-y-1.5 border-t border-border pt-2">
-      {error && <div className="banner-warn">{error}</div>}
-      <div className="flex gap-1.5">
-        <input
-          name="trackingUrl"
-          className="input-klyne min-w-0 flex-1 px-2 py-1 text-xs"
-          placeholder="Tracking URL"
-          defaultValue={trackingUrl ?? ""}
-        />
-        <input
-          name="trackingCarrier"
-          className="input-klyne w-24 px-2 py-1 text-xs"
-          placeholder="Carrier"
-          defaultValue={trackingCarrier ?? ""}
-        />
-      </div>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="date"
-          name="expectedDelivery"
-          className="input-klyne px-2 py-1 text-xs"
-          defaultValue={expectedDefault}
-        />
-        <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-          Save
-        </PendingButton>
-        {trackingUrl ? (
-          isLikelyTrackingUrl(trackingUrl) ? (
-            <a
-              href={trackingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-blue transition-colors hover:underline"
-            >
-              Open tracking
-            </a>
-          ) : (
-            <span className="text-xs text-gray" title={trackingUrl}>
-              saved link doesn&rsquo;t look like tracking
-            </span>
-          )
-        ) : null}
-      </div>
+    <form action={handleSave} className="flex items-center gap-2">
+      <input
+        name="autoQuotesPoNumber"
+        maxLength={40}
+        defaultValue={po.autoQuotesPoNumber ?? ""}
+        placeholder="AutoQuotes PO #"
+        autoFocus
+        className="input-klyne w-40 px-2 py-1 text-xs"
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
+        Save
+      </PendingButton>
+      <button type="button" className="btn btn-sm" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {error && <span className="banner-alert px-2 py-1 text-xs">{error}</span>}
     </form>
+  );
+}
+
+/**
+ * Read-only view of the PO's delivery leg. Logistics are edited on the Delivery
+ * tab (one leg can cover a split PO, and an HSS-stock leg has no PO at all), so
+ * this is a summary with a link, not a second source of truth.
+ */
+function DeliveryReadout({ delivery }: { delivery: PoDelivery | null }) {
+  if (!delivery) {
+    return (
+      <div className="border-t border-border pt-3 text-xs">
+        <span className="empty-value">No delivery leg yet</span> - one is created with the PO, and advancing to
+        Shipped sets one up.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1 border-t border-border pt-3 text-xs text-gray-dark">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`badge ${DELIVERY_MODE_COLORS[delivery.mode] ?? "badge-gray"}`}>
+          {labelFor(DELIVERY_MODES, delivery.mode)}
+        </span>
+        <span className={`badge ${DELIVERY_LEG_STATUS_COLORS[delivery.status] ?? "badge-gray"}`}>
+          {labelFor(DELIVERY_LEG_STATUSES, delivery.status)}
+        </span>
+        <a href="#delivery" className="text-blue transition-colors hover:underline">
+          Edit on the Delivery tab
+        </a>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>Carrier: {delivery.trackingCarrier ?? <span className="empty-value">not set</span>}</span>
+        <span>
+          Trucker: {delivery.trucker ?? <span className="empty-value">not assigned</span>}
+        </span>
+        <span>
+          Scheduled:{" "}
+          {delivery.scheduledDeliveryDate ? (
+            fmtDate(delivery.scheduledDeliveryDate)
+          ) : (
+            <span className="empty-value">not scheduled</span>
+          )}
+        </span>
+        {delivery.trackingUrl && isLikelyTrackingUrl(delivery.trackingUrl) ? (
+          <a
+            href={delivery.trackingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue transition-colors hover:underline"
+          >
+            Open tracking
+          </a>
+        ) : (
+          <span className="empty-value" title={delivery.trackingUrl ?? undefined}>
+            no tracking link yet
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Advance to Shipped" asks for the shipment facts once, then writes them onto
+ * the PO's delivery leg, puts that leg in transit, and advances the PO. Trucker
+ * and scheduled date only appear when the leg has an HSS run to the customer.
+ */
+function ShipPoDialog({
+  po,
+  onClose,
+  onShipped,
+}: {
+  po: Po;
+  onClose: () => void;
+  onShipped: (poNumber: string) => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const delivery = po.deliveries[0] ?? null;
+  // No leg on file yet (a PO from before deliveries existed): markPoShipped
+  // creates one from the PO's ship-to, so show the fields that mode will have.
+  const mode = delivery?.mode ?? (po.shipTo === "client_direct" ? "manufacturer_to_customer" : "manufacturer_to_hss_to_customer");
+  const showTruckerLeg = hasTruckerLeg(mode);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  async function handleShip(formData: FormData) {
+    const result = await markPoShipped(po.id, {
+      trackingCarrier: String(formData.get("trackingCarrier") ?? ""),
+      trackingUrl: String(formData.get("trackingUrl") ?? ""),
+      expectedDelivery: String(formData.get("expectedDelivery") ?? ""),
+      trucker: String(formData.get("trucker") ?? ""),
+      scheduledDeliveryDate: String(formData.get("scheduledDeliveryDate") ?? ""),
+    });
+    if (result.ok) {
+      setError(null);
+      onShipped(po.poNumber ?? "The PO");
+    } else {
+      setError(result.message);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ship-po-title"
+        tabIndex={-1}
+        className="card w-full max-w-md space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
+      >
+        <div>
+          <h2 id="ship-po-title" className="text-base font-semibold text-ink">
+            Mark {po.poNumber ?? "this PO"} shipped
+          </h2>
+          <div className="text-xs text-gray-dark">
+            Saved onto its delivery leg ({labelFor(DELIVERY_MODES, mode)}), which goes In Transit.
+          </div>
+        </div>
+
+        <form action={handleShip} className="space-y-2 border-t border-border pt-4">
+          {error && <div className="banner-warn">{error}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="field-label">Carrier</span>
+              <input
+                name="trackingCarrier"
+                className="input-klyne w-full px-2 py-1 text-xs"
+                placeholder="e.g. UPS Freight"
+                defaultValue={delivery?.trackingCarrier ?? ""}
+              />
+            </label>
+            <label className="block">
+              <span className="field-label">Expected delivery</span>
+              <input
+                type="date"
+                name="expectedDelivery"
+                className="input-klyne w-full px-2 py-1 text-xs"
+                defaultValue={delivery?.expectedDelivery ? new Date(delivery.expectedDelivery).toISOString().slice(0, 10) : ""}
+              />
+            </label>
+            <label className="col-span-2 block">
+              <span className="field-label">Tracking URL</span>
+              <input
+                name="trackingUrl"
+                className="input-klyne w-full px-2 py-1 text-xs"
+                placeholder="https://…"
+                defaultValue={delivery?.trackingUrl ?? ""}
+              />
+            </label>
+            {showTruckerLeg && (
+              <>
+                <label className="block">
+                  <span className="field-label">Trucker (optional)</span>
+                  <input
+                    name="trucker"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder="e.g. ANDY, UBER"
+                    defaultValue={delivery?.trucker ?? ""}
+                  />
+                </label>
+                <label className="block">
+                  <span className="field-label">Scheduled delivery (optional)</span>
+                  <input
+                    type="date"
+                    name="scheduledDeliveryDate"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    defaultValue={
+                      delivery?.scheduledDeliveryDate
+                        ? new Date(delivery.scheduledDeliveryDate).toISOString().slice(0, 10)
+                        : ""
+                    }
+                  />
+                </label>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn btn-sm" onClick={onClose}>
+              Cancel
+            </button>
+            <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
+              Mark shipped
+            </PendingButton>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

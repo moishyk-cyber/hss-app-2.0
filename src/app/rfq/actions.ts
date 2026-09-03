@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/log";
 import { isValidValue, RFQ_STATUSES } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
+import { requirePermission } from "@/lib/permissionsServer";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("line_item", linkedId, action, detail);
@@ -42,6 +43,8 @@ export async function updateLineItemPricing(
   unitCost: number | null,
   unitPrice: number | null
 ): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
   if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
     return { ok: false, message: "Enter a price greater than $0." };
   }
@@ -154,6 +157,8 @@ async function syncOpportunityPricing(lineItemId: string): Promise<void> {
 }
 
 export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
   if (!isValidValue(RFQ_STATUSES, rfqStatus)) {
     return { ok: false, message: "Not a valid RFQ status." };
   }
@@ -167,6 +172,8 @@ export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string
 }
 
 export async function setLineItemAssignee(lineItemId: string, assigneeId: string): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { assigneeId: assigneeId || null } });
     await log(lineItemId, "rfq_assignee_set", `Assignee set to ${assigneeId || "unassigned"}`);
@@ -176,10 +183,45 @@ export async function setLineItemAssignee(lineItemId: string, assigneeId: string
 }
 
 export async function markLineItemRemoved(lineItemId: string): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { rfqStatus: "removed" } });
     await log(lineItemId, "rfq_item_removed", "Line item marked removed from RFQ");
     await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not remove the line item. Please try again.");
+}
+
+/**
+ * Estimated lead time in days, set from the RFQ row. Feeds the "Longest lead
+ * time" summary on the deal and the read-only lead-time columns on the deal
+ * and order line-item tables. `days === null` clears it.
+ */
+export async function setLineItemLeadTime(
+  lineItemId: string,
+  days: number | null
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  if (days != null && (!Number.isFinite(days) || days < 0 || days > 365)) {
+    return { ok: false, message: "Lead time has to be between 0 and 365 days." };
+  }
+  const leadTimeDays = days == null ? null : Math.round(days);
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({ where: { id: lineItemId }, data: { leadTimeDays } });
+    await log(
+      lineItemId,
+      "lead_time_set",
+      leadTimeDays != null
+        ? `Lead time set to ${leadTimeDays}d on "${before.name}"`
+        : `Lead time cleared on "${before.name}"`
+    );
+    await revalidateLineItem(lineItemId);
+  }, "Could not update lead time. Please try again.");
 }

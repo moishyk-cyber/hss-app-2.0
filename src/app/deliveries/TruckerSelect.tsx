@@ -1,6 +1,7 @@
 "use client";
 
-// Trucker picker on the deliveries list (Aug 31 feedback, two rounds):
+// Trucker picker on the deliveries list (Aug 31 feedback, two rounds), now
+// bound to a Delivery leg rather than the PO it came from:
 // a grey pill that opens a searchable menu of every trucker on file, with an
 // "Add «name»" row when nothing matches - so new truckers can be created right
 // here, same escape hatch as the business/contact/vendor comboboxes.
@@ -9,14 +10,14 @@
 import { useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DropMenu, useDismiss, Spinner } from "@/lib/ui";
-import { setPoTrucker } from "../orders/actions";
+import { setDeliveryTrucker } from "../orders/actions";
 
 export function TruckerSelect({
-  poId,
+  deliveryId,
   value,
   truckers,
 }: {
-  poId: string;
+  deliveryId: string;
   value: string | null;
   truckers: string[];
 }) {
@@ -46,7 +47,7 @@ export function TruckerSelect({
       setOptimistic(next);
       setError(null);
       try {
-        const result = await setPoTrucker(poId, next);
+        const result = await setDeliveryTrucker(deliveryId, next);
         if (result && result.ok === false) setError(result.message);
       } catch {
         setError("Something went wrong. Please try again.");

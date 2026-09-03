@@ -17,6 +17,7 @@ const SECTIONS: { label: string | null; items: { href: string; label: string }[]
     items: [
       { href: "/orders", label: "Orders" },
       { href: "/deliveries", label: "Deliveries" },
+      { href: "/service", label: "Customer Service" },
     ],
   },
   {
@@ -33,7 +34,7 @@ const ALIASES: Record<string, string[]> = {
   "/phonebook": ["/companies", "/contacts"],
 };
 
-export default function Nav() {
+export default function Nav({ showAdmin }: { showAdmin: boolean }) {
   const pathname = usePathname();
   const isActive = (href: string) =>
     pathname === href ||
@@ -57,7 +58,9 @@ export default function Nav() {
             </div>
           )}
           <div className="space-y-0.5">
-            {section.items.map((item) => (
+            {section.items
+              .filter((item) => item.href !== "/admin" || showAdmin)
+              .map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

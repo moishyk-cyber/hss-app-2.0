@@ -37,6 +37,7 @@ async function main() {
         payments: true,
         purchaseOrders: true,
         lineItems: true,
+        deliveries: true,
         company: { select: { requiresDeposit: true, depositPercent: true } },
       },
     });
@@ -79,14 +80,15 @@ async function main() {
   o = await load();
   check("derive: in_transit", deriveOrderStatus(o), "in_transit");
 
-  await prisma.purchaseOrder.update({ where: { id: po.id }, data: { deliveryStatus: "scheduled" } });
+  // Logistics live on the Delivery leg now (Sep 3 2026), not on the PO.
+  const delivery = await prisma.delivery.create({
+    data: { orderId: order.id, purchaseOrderId: po.id, status: "scheduled" },
+  });
   o = await load();
   check("derive: delivery_scheduled", deriveOrderStatus(o), "delivery_scheduled");
 
-  await prisma.purchaseOrder.update({
-    where: { id: po.id },
-    data: { status: "received", deliveryStatus: "delivered_full" },
-  });
+  await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: "received" } });
+  await prisma.delivery.update({ where: { id: delivery.id }, data: { status: "delivered_full" } });
   await prisma.lineItem.update({ where: { id: item.id }, data: { deliveryStatus: "arrived_complete" } });
   o = await load();
   check("derive: delivered", deriveOrderStatus(o), "delivered");
@@ -111,6 +113,7 @@ async function main() {
       payments: true,
       purchaseOrders: true,
       lineItems: true,
+      deliveries: true,
       company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
@@ -129,6 +132,7 @@ async function main() {
       payments: true,
       purchaseOrders: true,
       lineItems: true,
+      deliveries: true,
       company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
@@ -151,6 +155,7 @@ async function main() {
       payments: true,
       purchaseOrders: true,
       lineItems: true,
+      deliveries: true,
       company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
@@ -164,6 +169,7 @@ async function main() {
       payments: true,
       purchaseOrders: true,
       lineItems: true,
+      deliveries: true,
       company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
@@ -171,6 +177,7 @@ async function main() {
 
   // --- cleanup ---
   await prisma.lineItem.deleteMany({ where: { name: { startsWith: TAG } } });
+  await prisma.delivery.deleteMany({ where: { order: { title: { startsWith: TAG } } } });
   await prisma.purchaseOrder.deleteMany({ where: { poNumber: { startsWith: TAG } } });
   await prisma.payment.deleteMany({
     where: { orderId: { in: [order.id, trustedOrder.id, trustedSimple.id, custom.id] } },

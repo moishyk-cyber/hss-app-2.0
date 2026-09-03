@@ -18,6 +18,7 @@ export type EditableLineItem = {
   qty: number;
   unitCost: number | null;
   unitPrice: number | null;
+  leadTimeDays: number | null;
   rfqStatus: string;
   deliveryStatus: string;
   assigneeId: string | null;
@@ -120,6 +121,14 @@ export function LineItemRow({
       </td>
 
       {/* Cost and Price deliberately absent - pricing is edited in the RFQ queue. */}
+
+      <td className="text-xs text-gray-dark">
+        {item.leadTimeDays != null ? (
+          `${item.leadTimeDays} d`
+        ) : (
+          <span className="empty-value">not set</span>
+        )}
+      </td>
 
       <td>
         <UserSelect

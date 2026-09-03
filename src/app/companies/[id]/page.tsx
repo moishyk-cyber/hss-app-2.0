@@ -6,9 +6,13 @@ import {
   ORDER_STATUS_COLORS,
   OPPORTUNITY_STAGES,
   STAGE_COLORS,
+  SERVICE_ISSUE_STATUSES,
+  SERVICE_ISSUE_STATUS_COLORS,
   labelFor,
 } from "@/lib/constants";
 import { formatPhone } from "@/lib/ContactLinks";
+import { fmtDateUTC } from "@/lib/dates";
+import { LocationsCard } from "../LocationsCard";
 import {
   Avatar,
   Card,
@@ -35,8 +39,12 @@ export default async function CompanyDetailPage({
     where: { id },
     include: {
       contacts: { orderBy: { firstName: "asc" } },
+      // Sites this business takes delivery at (the Locations card below).
+      locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] },
       opportunities: { orderBy: { createdAt: "desc" } },
       orders: { orderBy: { createdAt: "desc" } },
+      // Service issues card below - open ones first, most recent on top.
+      serviceIssues: { orderBy: { reportedAt: "desc" }, take: 10 },
     },
   });
   if (!company) notFound();
@@ -129,6 +137,12 @@ export default async function CompanyDetailPage({
         </div>
 
         <div className="space-y-6 lg:col-span-2">
+          {/*
+            Locations: ask for the delivery address once, on the business, and let
+            intake / the Close panel / the deal edit form pick it from here.
+          */}
+          <LocationsCard companyId={company.id} locations={company.locations} />
+
           <Card
             title={`Contacts (${company.contacts.length})`}
             action={
@@ -260,6 +274,48 @@ export default async function CompanyDetailPage({
                     </span>
                     <span className={`badge ${ORDER_STATUS_COLORS[o.status] ?? "badge-gray"}`}>
                       {labelFor(ORDER_STATUSES, o.status)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card
+            title={`Service issues (${company.serviceIssues.length})`}
+            action={
+              <Link href={`/service?companyId=${company.id}`} className="btn btn-sm">
+                Log an issue
+              </Link>
+            }
+          >
+            {company.serviceIssues.length === 0 ? (
+              <div className="empty-state">
+                No service issues logged for this business.{" "}
+                <Link
+                  href={`/service?companyId=${company.id}`}
+                  className="text-primary transition-colors hover:underline"
+                >
+                  Log one
+                </Link>{" "}
+                once a customer calls in a problem.
+              </div>
+            ) : (
+              <ul className="-mx-5 divide-y divide-border border-t border-border">
+                {company.serviceIssues.map((issue) => (
+                  <li
+                    key={issue.id}
+                    className="relative flex items-center gap-3 px-5 py-2 transition-colors hover:bg-hover"
+                  >
+                    <Link
+                      href="/service"
+                      className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                    >
+                      {issue.title}
+                    </Link>
+                    <span className="shrink-0 text-[12px] text-gray-dark">{fmtDateUTC(issue.reportedAt)}</span>
+                    <span className={`badge ${SERVICE_ISSUE_STATUS_COLORS[issue.status] ?? "badge-gray"}`}>
+                      {labelFor(SERVICE_ISSUE_STATUSES, issue.status)}
                     </span>
                   </li>
                 ))}

@@ -6,6 +6,8 @@ import { STAGE_COLORS } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
 import type { ActionResult } from "@/lib/actionResult";
 import { BadgeSelect } from "@/lib/ui";
+import type { Ball } from "@/lib/ballInCourt";
+import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { changeOpportunityStage } from "./actions";
 import { CLOSED_STAGES, OPEN_STAGES, stageOptions } from "./_ui";
 
@@ -19,6 +21,8 @@ export type KanbanCard = {
   /** Preformatted on the server so the client does no date maths. */
   followUpLabel: string | null;
   followUpOverdue: boolean;
+  /** Computed server-side - who holds the ball and what's next. */
+  ball: Ball;
 };
 
 const DRAG_MIME = "text/plain";
@@ -163,6 +167,10 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                       {money(card.value) ?? <span className="empty-value">no value</span>}
                     </span>
                     <span className="text-gray">{card.daysInStage}d in stage</span>
+                  </div>
+
+                  <div className="mt-2">
+                    <BallInCourtBadge ball={card.ball} />
                   </div>
 
                   {card.followUpLabel ? (

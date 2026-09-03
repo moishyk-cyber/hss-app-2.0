@@ -6,7 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
 import { currentUserId } from "@/lib/identityServer";
+import { PAYMENT_TERMS, isValidValue, labelFor } from "@/lib/constants";
+import { roundCents } from "@/lib/money";
+import { applyTermsToOrder, depositForTerms } from "@/lib/terms";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
+import { requirePermission } from "@/lib/permissionsServer";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -20,6 +24,14 @@ function date(formData: FormData, key: string): Date | null {
   if (!raw) return null;
   const parsed = new Date(`${raw}T00:00:00.000Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Money typed into the form: null when blank, ignored when it isn't real money. */
+function money(formData: FormData, key: string): number | null {
+  const raw = str(formData, key);
+  if (raw == null) return null;
+  const parsed = Number(raw.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) && parsed > 0 ? roundCents(parsed) : null;
 }
 
 function all(formData: FormData, key: string): string[] {
@@ -39,12 +51,19 @@ function formSnapshot(formData: FormData): Record<string, string | string[]> {
   return out;
 }
 
-type ParsedItem = { name: string; moreDetails: string | null; qty: number };
+type ParsedItem = {
+  name: string;
+  moreDetails: string | null;
+  qty: number;
+  /** Optional price typed on the call (Sep 3 plan A1.3) - null means "needs quoting". */
+  unitPrice: number | null;
+};
 
 function parseItems(formData: FormData): ParsedItem[] {
   const names = all(formData, "itemName");
   const details = all(formData, "itemDetails");
   const qtys = all(formData, "itemQty");
+  const prices = all(formData, "itemUnitPrice");
 
   const items: ParsedItem[] = [];
   for (let i = 0; i < names.length; i += 1) {
@@ -52,10 +71,13 @@ function parseItems(formData: FormData): ParsedItem[] {
     if (!name) continue;
     const detail = (details[i] ?? "").trim();
     const qty = Number.parseInt((qtys[i] ?? "1").trim(), 10);
+    const rawPrice = (prices[i] ?? "").trim();
+    const price = rawPrice === "" ? null : Number(rawPrice.replace(/[^0-9.]/g, ""));
     items.push({
       name,
       moreDetails: detail === "" ? null : detail,
       qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
+      unitPrice: price != null && Number.isFinite(price) && price > 0 ? roundCents(price) : null,
     });
   }
   return items;
@@ -69,12 +91,20 @@ function parseItems(formData: FormData): ParsedItem[] {
  * hand skips the pipeline and becomes an Order right away.
  */
 export async function submitIntake(formData: FormData) {
+  const denied = await requirePermission("intake.create");
+  if (denied) redirect("/intake?error=not_allowed");
   const clientMode = str(formData, "clientMode") ?? "existing";
   const orderType = str(formData, "orderType") === "project" ? "project" : "order";
   const needsPricing = formData.get("needsPricing") === "yes";
   const neededByDate = date(formData, "neededByDate");
   const items = parseItems(formData);
   const payload = JSON.stringify(formSnapshot(formData));
+  /** "Total price agreed" - optional, and the number that wins when it is there. */
+  const typedTotal = money(formData, "totalPrice");
+  // Terms only reach the form when the intake becomes an order straight away;
+  // anything unrecognised (or absent) falls back to the house default.
+  const rawTerms = str(formData, "paymentTerms");
+  const terms = isValidValue(PAYMENT_TERMS, rawTerms) ? rawTerms! : "full_upfront";
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
@@ -152,8 +182,13 @@ export async function submitIntake(formData: FormData) {
     result.id,
     "intake_submitted",
     result.type === "opportunity"
-      ? `Intake form created opportunity "${result.title}" with ${items.length} item(s) needing pricing`
-      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s)`
+      ? `Intake form created opportunity "${result.title}" with ${items.length} item(s)${
+          typedTotal != null ? ` - $${typedTotal} agreed` : " needing pricing"
+        }`
+      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s) on ${labelFor(
+          PAYMENT_TERMS,
+          terms
+        )}`
   );
 
   // Branch B skips the pipeline, so nothing else ever derives this order's status.
@@ -173,6 +208,10 @@ export async function submitIntake(formData: FormData) {
     let companyName = "New client";
     /** Address on file for the picked business - the default destination. */
     let companyDeliveryAddress: string | null = null;
+    /** Deposit terms of the account, used when the intake's terms need a deposit. */
+    let depositPercent = 30;
+    /** Set when this intake creates the business's first Location. */
+    let createdLocationId: string | null = null;
 
     if (clientMode === "new") {
       const company = await tx.company.create({
@@ -191,12 +230,26 @@ export async function submitIntake(formData: FormData) {
       companyId = company.id;
       companyName = company.name;
       companyDeliveryAddress = company.deliveryAddress;
+      depositPercent = company.depositPercent;
+      // A new business's delivery address IS its first location (Sep 3 plan A1.2).
+      if (company.deliveryAddress) {
+        const firstLocation = await tx.location.create({
+          data: {
+            companyId: company.id,
+            name: company.locationName ?? "Main location",
+            address: company.deliveryAddress,
+            isDefault: true,
+          },
+        });
+        createdLocationId = firstLocation.id;
+      }
     } else {
       companyId = str(formData, "companyId");
       if (companyId) {
         const company = await tx.company.findUnique({ where: { id: companyId } });
         companyName = company?.name ?? companyName;
         companyDeliveryAddress = company?.deliveryAddress ?? null;
+        depositPercent = company?.depositPercent ?? depositPercent;
       }
     }
 
@@ -226,11 +279,41 @@ export async function submitIntake(formData: FormData) {
     }
 
     const title = `${companyName} - ${new Date().toISOString().slice(0, 10)}`;
-    // "Deliver somewhere else" wins; otherwise inherit the business's own address.
-    const deliveryAddress =
+
+    // --- location ---------------------------------------------------------
+    // A picked location wins: its name and address are copied onto the deal or
+    // order, which is what fulfillment actually reads (the Location row is the
+    // link, the copies are the snapshot). A location typed on the call is saved
+    // onto the business when the "save it" box is left ticked.
+    let locationId: string | null = createdLocationId;
+    let locationName = str(formData, "locationName") ?? str(formData, "newCompanyLocationName");
+    let deliveryAddress =
       str(formData, "deliveryAddress") ??
       companyDeliveryAddress ??
       str(formData, "newCompanyDeliveryAddress");
+
+    const pickedLocationId = str(formData, "locationId");
+    if (pickedLocationId && companyId) {
+      const picked = await tx.location.findUnique({ where: { id: pickedLocationId } });
+      // A location from another business is a tampered payload - ignore it.
+      if (picked && picked.companyId === companyId) {
+        locationId = picked.id;
+        locationName = picked.name;
+        deliveryAddress = picked.address;
+      }
+    } else if (!locationId && companyId && formData.get("saveLocation") === "1" && deliveryAddress) {
+      const existingLocations = await tx.location.count({ where: { companyId } });
+      const created = await tx.location.create({
+        data: {
+          companyId,
+          name: locationName ?? "Main location",
+          address: deliveryAddress,
+          isDefault: existingLocations === 0,
+        },
+      });
+      locationId = created.id;
+      locationName = created.name;
+    }
 
     // --- opportunity or order --------------------------------------------
     if (goesToPipeline) {
@@ -245,9 +328,13 @@ export async function submitIntake(formData: FormData) {
           // Carry the form's real answer. Hard-coding true told the RFQ queue every
           // deal needed quoting, including ones the salesperson had already priced.
           needsPricing,
+          // A price agreed on the call is the deal's value - the pipeline never
+          // has to ask for it again (Sep 3 plan A1.3).
+          value: typedTotal,
           neededByDate,
+          locationId,
           deliveryAddress,
-          locationName: str(formData, "locationName") ?? str(formData, "newCompanyLocationName"),
+          locationName,
           submittedVia: "form",
           facilityType: orderType === "project" ? str(formData, "facilityType") : null,
           menu: orderType === "project" ? str(formData, "menu") : null,
@@ -266,7 +353,10 @@ export async function submitIntake(formData: FormData) {
               name: item.name,
               moreDetails: item.moreDetails,
               qty: item.qty,
-              rfqStatus: "needs_pricing",
+              unitPrice: item.unitPrice,
+              // A price typed on the call is a quote in hand; everything else
+              // still has to go through the RFQ queue.
+              rfqStatus: item.unitPrice != null ? "quote_received" : "needs_pricing",
             })),
           },
         },
@@ -284,6 +374,12 @@ export async function submitIntake(formData: FormData) {
       return { type: "opportunity" as const, id: opportunity.id, title };
     }
 
+    // Priced on the call: the typed total wins, otherwise the items add up to it.
+    const itemsTotal = roundCents(
+      items.reduce((sum, item) => sum + (item.unitPrice ?? 0) * item.qty, 0)
+    );
+    const orderValue = typedTotal ?? (itemsTotal > 0 ? itemsTotal : null);
+
     const order = await tx.order.create({
       data: {
         title,
@@ -292,7 +388,9 @@ export async function submitIntake(formData: FormData) {
         ownerId: salespersonId,
         orderType,
         status: "new",
+        orderValue,
         neededByDate,
+        locationId,
         deliveryAddress,
         notes: str(formData, "notes"),
         lineItems: {
@@ -300,10 +398,23 @@ export async function submitIntake(formData: FormData) {
             name: item.name,
             moreDetails: item.moreDetails,
             qty: item.qty,
+            unitPrice: item.unitPrice,
             rfqStatus: "approved",
           })),
         },
       },
+    });
+
+    // Terms in the same transaction as the order, so the invoice exists the
+    // moment the order does (Sep 3 plan A1.3) - never a hand-built Payment row.
+    await applyTermsToOrder(tx, order.id, {
+      terms,
+      value: orderValue ?? 0,
+      depositAmount: depositForTerms({
+        terms,
+        value: orderValue ?? 0,
+        depositPercent,
+      }),
     });
 
     await tx.intakeSubmission.create({

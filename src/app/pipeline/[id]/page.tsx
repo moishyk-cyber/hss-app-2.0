@@ -1,9 +1,16 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { can } from "@/lib/permissionsServer";
+import { ORDER_STATUSES, ORDER_STATUS_COLORS, OPEN_SERVICE_ISSUE_STATUSES, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
+import { fmtDateUTC } from "@/lib/dates";
+import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
+import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { uploadsConfigured } from "@/lib/storage";
+import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
 import { addLineItem, moveStageFromStepper } from "../actions";
 import { ClosePanel } from "../ClosePanel";
 import { LineItemRow } from "../LineItemRow";
@@ -21,17 +28,41 @@ import {
 } from "../_ui";
 
 /**
- * The sales process, and the control for driving it (Aug 31 feedback): each open
- * step moves the deal to `target`; Close never writes a stage, it points at the
- * Close panel where Won/Lost do their real work.
+ * Just enough of an Order to compute orderBall() - mirrors ORDER_BALL_INCLUDE
+ * (@/lib/flow) but as a `select` so this detail page (which only ever needs
+ * the one linked order) doesn't drag every column along for a badge. Kept
+ * structurally in sync with OrderBallInput by hand; a tsc failure here means
+ * it drifted.
  */
-const STEPPER: { label: string; stages: string[]; target: string | null }[] = [
-  { label: "Intake", stages: ["new", "info_missing"], target: "new" },
-  { label: "Estimating", stages: ["estimating"], target: "estimating" },
-  { label: "Proposal", stages: ["proposal_sent", "revisions_needed"], target: "proposal_sent" },
-  { label: "Negotiation", stages: ["negotiation"], target: "negotiation" },
-  { label: "Close", stages: ["won", "lost"], target: null },
-];
+const ORDER_BALL_SELECT = {
+  status: true,
+  orderType: true,
+  orderValue: true,
+  depositRequired: true,
+  quoteStatus: true,
+  paymentTerms: true,
+  payments: { select: { status: true, amount: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true } },
+  lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
+  purchaseOrders: { select: { status: true } },
+  deliveries: { select: { status: true } },
+  _count: {
+    select: { serviceIssues: { where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
+  },
+} satisfies Prisma.OrderSelect;
+
+type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT & { id: true; title: true } }>;
+
+function toOrderBallInput(order: OrderBallRow): OrderBallInput {
+  const { _count, ...rest } = order;
+  return { ...rest, openIssueCount: _count.serviceIssues };
+}
+
+/** "N d · est. <date>" for a lead time measured from today. */
+function leadTimeSummary(days: number): string {
+  const est = new Date(Date.now() + days * 86_400_000);
+  return `${days} d · est. ${fmtDateUTC(est)}`;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +79,15 @@ export default async function OpportunityDetailPage({
     prisma.opportunity.findUnique({
       where: { id },
       include: {
-        company: true,
+        // locations feed the Close panel's picker (and the Location row below).
+        company: {
+          include: { locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] } },
+        },
+        location: { select: { id: true, name: true, address: true } },
         primaryContact: true,
         salesperson: true,
         lineItems: true,
-        orders: { select: { id: true, title: true, status: true } },
+        orders: { select: { id: true, title: true, ...ORDER_BALL_SELECT } },
       },
     }),
     prisma.user.findMany({
@@ -73,60 +108,67 @@ export default async function OpportunityDetailPage({
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
   const suggestedDeposit = Math.round(((opportunity.value ?? 0) * depositPercent) / 100);
+  // Terms the Close panel opens on: the account's own terms for a project, and
+  // full payment for a straight order (which is how those have always closed -
+  // markOpportunityWon falls back to exactly the same pair).
+  const defaultTerms = !isProject
+    ? "full_upfront"
+    : requiresDeposit
+      ? "deposit_balance"
+      : "on_delivery";
+  const closeLocations = (opportunity.company?.locations ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    address: l.address,
+  }));
 
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
   const needsPricingCount = liveItems.filter((li) => li.rfqStatus === "needs_pricing").length;
-  const awaitingQuoteCount = liveItems.filter((li) => li.rfqStatus === "rfq_sent").length;
-  const pricedCount = liveItems.filter(
-    (li) => li.rfqStatus === "quote_received" || li.rfqStatus === "priced_in_autoquotes"
-  ).length;
-
-  const lostReason = opportunity.lostReason;
-  const itemCount = liveItems.length;
-
-  const nextActionHint = ((): string => {
-    if (stage === "won") return "View order";
-    if (stage === "lost") return lostReason ?? "Deal lost";
-    if (needsPricingCount > 0) {
-      return `Price ${needsPricingCount} item${needsPricingCount === 1 ? "" : "s"}`;
-    }
-    if (awaitingQuoteCount > 0) {
-      return `Chase ${awaitingQuoteCount} quote${awaitingQuoteCount === 1 ? "" : "s"}`;
-    }
-    if (stage === "revisions_needed") return "Send revised proposal";
-    if (stage === "proposal_sent") return "Awaiting client - then close it";
-    if (stage === "negotiation") return "Close the deal";
-    if (itemCount === 0) return "Add line items";
-    if (pricedCount > 0) return "Send proposal";
-    return "Move to estimating";
-  })();
-
-  const foundStepIndex = STEPPER.findIndex((s) => s.stages.includes(stage));
-  const currentStepIndex = foundStepIndex === -1 ? 0 : foundStepIndex;
-  const closeStepIndex = STEPPER.length - 1;
+  const leadTimes = liveItems
+    .map((li) => li.leadTimeDays)
+    .filter((d): d is number => d != null);
+  const longestLeadTimeDays = leadTimes.length > 0 ? Math.max(...leadTimes) : null;
 
   // A won deal that never got an order is only half-closed - the Close panel stays
   // open as the recovery route (it reuses the same Won form).
   const needsOrderRecovery = stage === "won" && !linkedOrder;
-  const showClosePanel = !closed || needsOrderRecovery;
+  const showClosePanel = (!closed || needsOrderRecovery) && (await can("deals.close"));
 
-  const steps: FlowStep[] = STEPPER.map((step, i) => {
-    // A closed deal has finished the whole journey, including the final step.
-    const state: FlowStep["state"] =
-      closed || i < currentStepIndex ? "done" : i === currentStepIndex ? "current" : "upcoming";
-    const isCloseStep = i === closeStepIndex;
-    return {
-      label: step.label,
-      state,
-      hint: i === currentStepIndex ? nextActionHint : undefined,
-      // Closed deals: the stepper is a record, not a control.
-      href: !closed && isCloseStep ? "#close" : undefined,
-      formAction:
-        closed || isCloseStep || i === currentStepIndex || !step.target
-          ? undefined
-          : moveStageFromStepper.bind(null, opportunity.id, step.target),
-    };
+  // Ball-in-court: the single next thing that has to happen, and who has to do
+  // it. A won deal delegates straight to its order (orderBall).
+  const ball = opportunityBall({
+    stage: opportunity.stage,
+    lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
+    order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
+  });
+
+  // The 9-step full flow (sales through customer service), post-processed so
+  // the sales-side steps stay clickable exactly like the old 5-step stepper:
+  // each open step moves the deal to its stage; Close never writes a stage,
+  // it points at the Close panel where Won/Lost do their real work. The
+  // order-side steps keep the hrefs fullFlowSteps gives (the order's tabs).
+  const steps: FlowStep[] = fullFlowSteps(ball.step, {
+    dealHref: `/pipeline/${opportunity.id}`,
+    orderHref: linkedOrder ? `/orders/${linkedOrder.id}` : undefined,
+    hint: ball.hint,
+  }).map((step, i) => {
+    const key = FLOW_STEPS[i].key;
+    if (key === "sales" || key === "pricing") {
+      const target = key === "sales" ? "new" : "estimating";
+      return {
+        ...step,
+        href: undefined,
+        formAction:
+          !closed && step.state !== "current"
+            ? moveStageFromStepper.bind(null, opportunity.id, target)
+            : undefined,
+      };
+    }
+    if (key === "close") {
+      return { ...step, href: !closed ? "#close" : undefined, formAction: undefined };
+    }
+    return step;
   });
 
   // Exactly one contextual primary action (UX_FLOW §H).
@@ -145,6 +187,26 @@ export default async function OpportunityDetailPage({
 
   const followUpOverdue = isOverdue(opportunity.nextFollowUp);
 
+  // Files land on a deal long before there is an order (drawings, the signed
+  // quote), and the order page reads this same set back under "From the deal".
+  const documents = await prisma.document.findMany({
+    where: { linkedType: "opportunity", linkedId: opportunity.id },
+    orderBy: { uploadedAt: "desc" },
+  });
+  const dealDocs: FileDocData[] = documents.map((d) => ({
+    id: d.id,
+    kind: d.kind,
+    fileUrl: d.fileUrl,
+    fileName: d.fileName,
+    source: d.source,
+    mimeType: d.mimeType,
+    sizeBytes: d.sizeBytes,
+    storagePath: d.storagePath,
+    uploadedBy: d.uploadedBy,
+    note: d.note,
+    uploadedAt: d.uploadedAt,
+  }));
+
   return (
     <div>
       <DetailHeader
@@ -155,6 +217,7 @@ export default async function OpportunityDetailPage({
         badges={
           <>
             <StageBadge stage={stage} />
+            <BallInCourtBadge ball={ball} />
             <span className="badge badge-gray">{labelFor(ORDER_TYPES, opportunity.orderType)}</span>
             {followUpOverdue ? (
               <span className="badge badge-orange">
@@ -241,6 +304,10 @@ export default async function OpportunityDetailPage({
         <div className="banner-alert mb-4">Give the item a name before adding it.</div>
       ) : error === "save_failed" ? (
         <div className="banner-alert mb-4">Something went wrong while saving. Please try again.</div>
+      ) : error === "not_allowed" ? (
+        <div className="banner-alert mb-4">
+          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an admin.
+        </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -256,6 +323,11 @@ export default async function OpportunityDetailPage({
             />
             <DetailRow label="Budget" value={fmtMoney(opportunity.budget)} />
             <DetailRow
+              label="Longest lead time"
+              value={longestLeadTimeDays != null ? leadTimeSummary(longestLeadTimeDays) : null}
+              emptyLabel="not known yet"
+            />
+            <DetailRow
               label="Company"
               value={
                 opportunity.company ? (
@@ -267,6 +339,25 @@ export default async function OpportunityDetailPage({
                   </Link>
                 ) : null
               }
+            />
+            <DetailRow
+              label="Location"
+              value={
+                opportunity.location ? (
+                  <>
+                    <span className="font-medium">{opportunity.location.name}</span>
+                    <span className="block text-gray-dark">{opportunity.location.address}</span>
+                  </>
+                ) : opportunity.deliveryAddress ? (
+                  <>
+                    {opportunity.locationName ? (
+                      <span className="font-medium">{opportunity.locationName}</span>
+                    ) : null}
+                    <span className="block text-gray-dark">{opportunity.deliveryAddress}</span>
+                  </>
+                ) : null
+              }
+              emptyLabel="no site picked yet"
             />
             <DetailRow
               label="Primary contact"
@@ -350,6 +441,7 @@ export default async function OpportunityDetailPage({
                     <tr>
                       <th>Item</th>
                       <th>Qty</th>
+                      <th>Lead time</th>
                       <th>Assignee</th>
                       <th>RFQ status</th>
                       <th>Delivery</th>
@@ -401,6 +493,16 @@ export default async function OpportunityDetailPage({
             )}
           </section>
 
+          <section className="card">
+            <FilesSection
+              linkedType="opportunity"
+              linkedId={opportunity.id}
+              docs={dealDocs}
+              ownLabel="On this deal"
+              uploadsEnabled={uploadsConfigured()}
+            />
+          </section>
+
           {opportunity.orders.length > 0 ? (
             <Card title="Orders">
               <ul className="divide-y divide-border">
@@ -442,12 +544,17 @@ export default async function OpportunityDetailPage({
                 <ClosePanel
                   opportunityId={opportunity.id}
                   isProject={isProject}
-                  requiresDeposit={requiresDeposit}
                   depositPercent={depositPercent}
                   suggestedDeposit={suggestedDeposit}
                   needsOrderRecovery={needsOrderRecovery}
                   defaultValue={opportunity.value}
-                  defaultDeliveryAddress={opportunity.deliveryAddress}
+                  defaultTerms={defaultTerms}
+                  locations={closeLocations}
+                  defaultLocationId={opportunity.locationId}
+                  defaultLocationName={opportunity.location?.name ?? opportunity.locationName}
+                  defaultDeliveryAddress={
+                    opportunity.location?.address ?? opportunity.deliveryAddress
+                  }
                   defaultNeededBy={
                     opportunity.neededByDate
                       ? opportunity.neededByDate.toISOString().slice(0, 10)

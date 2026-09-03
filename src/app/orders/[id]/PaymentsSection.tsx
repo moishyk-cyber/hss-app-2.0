@@ -14,13 +14,20 @@
 
 import { useState } from "react";
 import type { PaymentGate } from "@/lib/flow";
-import { addInvoice, markPaymentInvoiced, markPaymentPaid, undoMarkPaymentPaid } from "../actions";
+import {
+  addInvoice,
+  markPaymentInvoiced,
+  markPaymentPaid,
+  undoMarkPaymentPaid,
+  setPaymentQuickbooksRef,
+} from "../actions";
 import { fmtDate, PAYMENT_METHODS, PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { useToast } from "@/lib/toast";
 import { fmtUSD } from "@/lib/money";
 import { ymdToday } from "@/lib/dates";
+import TermsCard from "./TermsCard";
 
 type Payment = {
   id: string;
@@ -29,6 +36,8 @@ type Payment = {
   status: string;
   quickbooksRef: string | null;
   date: Date | null;
+  source: string;
+  dueNote: string | null;
 };
 
 /** The review-then-confirm flow behind the "Mark paid" button on one payment row. */
@@ -196,18 +205,92 @@ function UnmarkPaidControl({ payment }: { payment: Payment }) {
   );
 }
 
+/** Inline "QuickBooks link" edit on a payment row - reveal, save, cancel. */
+function QuickBooksLinkControl({ payment }: { payment: Payment }) {
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  async function handleSave(formData: FormData) {
+    const link = String(formData.get("quickbooksRef") ?? "");
+    const result = await setPaymentQuickbooksRef(payment.id, link);
+    if (result.ok) {
+      setError(null);
+      setEditing(false);
+      toast({ kind: "success", message: "QuickBooks link saved" });
+    } else {
+      setError(result.message);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-2 text-xs">
+        {payment.quickbooksRef ? (
+          <a
+            href={payment.quickbooksRef}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue transition-colors hover:underline"
+          >
+            View in QuickBooks
+          </a>
+        ) : (
+          <span className="empty-value">no QuickBooks link</span>
+        )}
+        <button
+          type="button"
+          className="text-gray transition-colors hover:text-ink hover:underline"
+          onClick={() => setEditing(true)}
+        >
+          {payment.quickbooksRef ? "Edit" : "Add link"}
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <form action={handleSave} className="flex items-center gap-2">
+      <input
+        type="url"
+        name="quickbooksRef"
+        defaultValue={payment.quickbooksRef ?? ""}
+        placeholder="https://…"
+        autoFocus
+        className="input-klyne w-48 px-2 py-1 text-xs"
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
+        Save
+      </PendingButton>
+      <button type="button" className="btn btn-sm" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {error && <span className="banner-alert px-2 py-1 text-xs">{error}</span>}
+    </form>
+  );
+}
+
 export default function PaymentsSection({
   orderId,
   payments,
   gate,
+  orderValue,
+  depositPercent,
+  terms,
+  quote,
 }: {
   orderId: string;
   payments: Payment[];
   gate: PaymentGate;
+  orderValue: number | null;
+  depositPercent: number;
+  terms: { paymentTerms: string | null; termsNotes: string | null; depositRequired: number | null };
+  quote: { quoteStatus: string; quoteUrl: string | null; quoteSentAt: Date | null };
 }) {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(payments.length === 0);
   const { toast } = useToast();
+  const anyPaid = payments.some((p) => p.status === "paid");
 
   async function handleAddInvoice(formData: FormData) {
     const type = String(formData.get("type") ?? "deposit");
@@ -229,6 +312,19 @@ export default function PaymentsSection({
 
   return (
     <div className="space-y-5">
+      <TermsCard
+        orderId={orderId}
+        paymentTerms={terms.paymentTerms}
+        termsNotes={terms.termsNotes}
+        depositRequired={terms.depositRequired}
+        orderValue={orderValue}
+        depositPercent={depositPercent}
+        anyPaid={anyPaid}
+        quoteStatus={quote.quoteStatus}
+        quoteUrl={quote.quoteUrl}
+        quoteSentAt={quote.quoteSentAt}
+      />
+
       <div className="text-sm font-medium text-ink">
         {gate.exempt
           ? gate.reason
@@ -248,21 +344,14 @@ export default function PaymentsSection({
       ) : (
         <div className="divide-y divide-border rounded-lg border border-border">
           {payments.map((p) => (
-            <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+            <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="w-16 shrink-0 capitalize text-sm text-ink">{p.type}</span>
                 <span className="text-sm text-gray-dark">{fmtUSD(p.amount, { cents: true })}</span>
                 <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
-                {p.quickbooksRef && (
-                  <a
-                    href={p.quickbooksRef}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-blue transition-colors hover:underline"
-                  >
-                    View in QuickBooks
-                  </a>
-                )}
+                {p.source === "terms" && <span className="badge badge-gray">from terms</span>}
+                {p.dueNote && <span className="text-xs text-gray-dark">{p.dueNote}</span>}
+                <QuickBooksLinkControl payment={p} />
               </div>
               <div className="flex items-center gap-2.5">
                 {p.status === "pending" && (

@@ -22,6 +22,7 @@ model User {
   lineItems     LineItem[]    @relation("ItemAssignee")
   tasks         Task[]        @relation("TaskAssignee")
   taskComments  TaskComment[]
+  serviceIssues ServiceIssue[] @relation("IssueAssignee")
   createdAt     DateTime      @default(now())
 }
 
@@ -50,7 +51,31 @@ model Company {
   suppliedItems  LineItem[]    @relation("ItemSupplier")
   purchaseOrders PurchaseOrder[] @relation("PoSupplier")
   supplierProfile SupplierProfile?
+  locations      Location[]
+  serviceIssues  ServiceIssue[]
   createdAt      DateTime      @default(now())
+}
+
+// A physical site belonging to a business (multi-location customers). Deals and
+// orders point at one; the free-text locationName/deliveryAddress on those rows
+// stay as the snapshot actually used for delivery - picking a location copies
+// its name/address into them.
+model Location {
+  id            String    @id @default(cuid())
+  company       Company   @relation(fields: [companyId], references: [id])
+  companyId     String
+  name          String
+  address       String
+  deliveryNotes String?
+  contactName   String?
+  contactPhone  String?
+  isDefault     Boolean   @default(false)
+  opportunities Opportunity[]
+  orders        Order[]
+  serviceIssues ServiceIssue[]
+  createdAt     DateTime  @default(now())
+
+  @@index([companyId])
 }
 
 model SupplierProfile {
@@ -113,6 +138,8 @@ model Opportunity {
   openingSize      String?
   installationNeeded Boolean @default(false)
   designStatus     String    @default("none") // none | rendering_in_progress | rendering_approved
+  location         Location? @relation(fields: [locationId], references: [id])
+  locationId       String?
   locationName     String?
   deliveryAddress  String?
   submittedVia     String    @default("manual") // form | manual
@@ -126,6 +153,7 @@ model Opportunity {
   @@index([companyId])
   @@index([salespersonId])
   @@index([nextFollowUp])
+  @@index([locationId])
 }
 
 model LineItem {
@@ -136,6 +164,8 @@ model LineItem {
   orderId        String?
   purchaseOrder  PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   purchaseOrderId String?
+  delivery       Delivery?    @relation(fields: [deliveryId], references: [id])
+  deliveryId     String?
   name           String
   description    String?
   moreDetails    String?
@@ -162,6 +192,7 @@ model LineItem {
   followedUp     Boolean      @default(false)
   notes          String?
   mondayId       String?      @unique
+  serviceIssues  ServiceIssue[]
   createdAt      DateTime     @default(now())
 
   @@index([rfqStatus])
@@ -169,6 +200,7 @@ model LineItem {
   @@index([opportunityId])
   @@index([orderId])
   @@index([purchaseOrderId])
+  @@index([deliveryId])
   @@index([supplierId])
   @@index([nextFollowUp])
 }
@@ -192,20 +224,33 @@ model Order {
   quickbooksInvoiceNo String?
   orderValue     Float?
   depositRequired Float? // agreed gate amount from the close dialog; null = derive from company depositPercent
+  location       Location?    @relation(fields: [locationId], references: [id])
+  locationId     String?
   deliveryAddress String?
   neededByDate   DateTime?
   nextFollowUp   DateTime?
+  // Payment terms agreed at close (see PAYMENT_TERMS in @/lib/constants). Applying
+  // terms writes depositRequired and the source = "terms" payments (see @/lib/terms).
+  paymentTerms   String? // deposit_balance | full_upfront | on_delivery | net_30 | custom
+  termsNotes     String?
+  // Customer-facing quote (projects need one before terms are set; straight orders do not).
+  quoteStatus    String       @default("not_needed") // not_needed | needed | sent | accepted
+  quoteUrl       String?
+  quoteSentAt    DateTime?
   notes          String?
   mondayId       String?      @unique
   lineItems      LineItem[]
   purchaseOrders PurchaseOrder[]
   payments       Payment[]
+  deliveries     Delivery[]
+  serviceIssues  ServiceIssue[]
   createdAt      DateTime     @default(now())
 
   @@index([status])
   @@index([urgency])
   @@index([companyId])
   @@index([opportunityId])
+  @@index([locationId])
   @@index([neededByDate])
   @@index([nextFollowUp])
 }
@@ -217,29 +262,62 @@ model PurchaseOrder {
   supplier         Company?   @relation("PoSupplier", fields: [supplierId], references: [id])
   supplierId       String?
   poNumber         String?
+  autoQuotesPoNumber String? // the PO number typed into AutoQuotes for this vendor order
   status           String     @default("draft") // draft | sent | acknowledged | shipped | received
   shipTo           String     @default("hss") // hss | client_direct
   sentDate         DateTime?
   ackDate          DateTime?
-  trackingUrl      String?
-  trackingCarrier  String?
-  expectedDelivery DateTime?
-  // Real-world delivery leg, modeled on the HSS Delivery Sheet (Google Sheets):
-  // pickup vendor -> trucker/courier -> client address, with its own cost + billing flag.
-  trucker              String?   // carrier or named driver, e.g. "ANDY", "UBER", "UPS DROPSHIP"
-  pickupAddress        String?   // defaults from supplier's address, overridable per shipment
-  scheduledDeliveryDate DateTime? // the "Schedule Delivery & Trucker" step
-  shipCost             Float?    // trucking/delivery cost
-  chargedToCustomer    Boolean   @default(false) // was shipCost billed back to the client?
-  deliveryContactPhone String?   // day-of-delivery contact number
-  deliveryStatus       String    @default("pending") // pending | scheduled | delivered_partial | delivered_full
+  // Logistics live on Delivery (one or more legs per PO): trucker, pickup
+  // address, scheduled date, ship cost, charged-to-customer, delivery contact
+  // phone, delivery status, carrier tracking and ETA. The old PurchaseOrder
+  // columns were backfilled into Delivery by
+  // prisma/sql/20260903_sales_orders_delivery.sql and are gone from the schema
+  // as of Phase 2a-B; the database columns themselves stay in place (no
+  // destructive DDL this pass), Prisma simply no longer maps them.
   notes            String?
   lineItems        LineItem[]
+  deliveries       Delivery[]
   createdAt        DateTime   @default(now())
 
   @@unique([orderId, poNumber])
   @@index([orderId])
   @@index([supplierId])
+  @@index([status])
+}
+
+// One delivery leg. Default: one PO -> one Delivery, created with the PO; a
+// delivery can be split (items move whole to a second Delivery on the same PO).
+// HSS-stock deliveries have no PO. Modes describe which legs apply:
+//   manufacturer_to_customer         leg 1 only (drop-ship, carrier tracking)
+//   hss_to_customer                  leg 2 only (HSS trucker from stock)
+//   manufacturer_to_hss_to_customer  both legs
+model Delivery {
+  id              String         @id @default(cuid())
+  order           Order          @relation(fields: [orderId], references: [id])
+  orderId         String
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String?
+  mode            String         @default("manufacturer_to_hss_to_customer") // manufacturer_to_customer | hss_to_customer | manufacturer_to_hss_to_customer
+  status          String         @default("pending") // pending | scheduled | in_transit | delivered_partial | delivered_full
+  // Leg 1 - manufacturer shipment (modes manufacturer_*): carrier tracking + ETA
+  trackingCarrier  String?
+  trackingUrl      String?
+  expectedDelivery DateTime?
+  // Leg 2 - HSS trucker to the customer (modes *_to_customer via HSS), modeled on
+  // the HSS Delivery Sheet: pickup -> trucker -> client address, cost + billing flag.
+  trucker               String?   // carrier or named driver, e.g. "ANDY", "UBER", "UPS DROPSHIP"
+  pickupAddress         String?   // defaults from the supplier's address, overridable per leg
+  scheduledDeliveryDate DateTime? // the "Schedule Delivery & Trucker" step
+  shipCost              Float?    // trucking/delivery cost
+  chargedToCustomer     Boolean   @default(false) // was shipCost billed back to the client?
+  deliveryContactPhone  String?   // day-of-delivery contact number
+  deliveredAt     DateTime?
+  notes           String?
+  lineItems       LineItem[]
+  createdAt       DateTime       @default(now())
+
+  @@index([orderId])
+  @@index([purchaseOrderId])
   @@index([status])
 }
 
@@ -252,6 +330,8 @@ model Payment {
   status        String   @default("pending") // pending | invoiced | paid
   quickbooksRef String?
   date          DateTime?
+  source        String   @default("manual") // manual | terms (auto-created by applyTermsToOrder)
+  dueNote       String? // e.g. "Balance due before delivery"
   notes         String?
   createdAt     DateTime @default(now())
 
@@ -314,6 +394,12 @@ model Document {
   kind       String   @default("other") // quote | invoice | drawing | po | tracking | other
   fileUrl    String
   fileName   String?
+  source     String   @default("link") // link | upload | google_drive
+  mimeType   String?
+  sizeBytes  Int?
+  storagePath String? // Supabase Storage object path for source = upload
+  uploadedBy String?
+  note       String?
   uploadedAt DateTime @default(now())
 
   @@index([linkedType, linkedId])
@@ -342,4 +428,55 @@ model FieldRequirement {
   required Boolean @default(true)
 
   @@unique([entity, field])
+}
+
+// Customer-service log. An issue can hang off a company, one of its locations,
+// an order and/or a single line item - whichever is known when it is reported.
+model ServiceIssue {
+  id          String    @id @default(cuid())
+  company     Company?  @relation(fields: [companyId], references: [id])
+  companyId   String?
+  location    Location? @relation(fields: [locationId], references: [id])
+  locationId  String?
+  order       Order?    @relation(fields: [orderId], references: [id])
+  orderId     String?
+  lineItem    LineItem? @relation(fields: [lineItemId], references: [id])
+  lineItemId  String?
+  title       String
+  description String?
+  status      String    @default("open") // open | in_progress | resolved | closed
+  priority    String    @default("medium") // low | medium | high | critical (TASK_PRIORITIES)
+  assignee    User?     @relation("IssueAssignee", fields: [assigneeId], references: [id])
+  assigneeId  String?
+  reportedAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolution  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([orderId])
+  @@index([companyId])
+  @@index([locationId])
+  @@index([lineItemId])
+}
+
+// Admin-configurable per-role overrides of the shipped permission matrix in
+// @/lib/permissions - same pattern as FieldRequirement: a missing row means
+// "use the shipped default" (see getRolePermissions in @/lib/permissionsServer).
+model RolePermission {
+  id         String  @id @default(cuid())
+  role       String // admin | sales | purchasing | billing | design | viewer
+  permission String // e.g. deals.close, pos.edit (see PERMISSIONS)
+  allowed    Boolean @default(true)
+
+  @@unique([role, permission])
+}
+
+// Key/value app settings (company details for PO PDFs, default service
+// assignee, ...). Typed keys live in @/lib/settings.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

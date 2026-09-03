@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/log";
 import { isValidValue } from "@/lib/constants";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { CONTACT_STATUSES } from "./_ui";
+import { requirePermission } from "@/lib/permissionsServer";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -62,6 +63,8 @@ async function resolveCompanyId(formData: FormData, existing: string | null) {
 }
 
 export async function createContact(formData: FormData) {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) redirect("/contacts/new?error=not_allowed");
   const data = readContactFields(formData);
   const back = str(formData, "returnTo");
 
@@ -102,6 +105,8 @@ export async function createContact(formData: FormData) {
 export async function updateContact(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing contact id");
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) redirect(`/contacts/${id}/edit?error=not_allowed`);
   const data = readContactFields(formData);
 
   if (!isValidValue(CONTACT_STATUSES, data.status)) {

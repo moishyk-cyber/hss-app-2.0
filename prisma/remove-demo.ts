@@ -60,6 +60,9 @@ async function main() {
   // Line items reference purchase orders, orders and opportunities — go first.
   counts.LineItem = (await prisma.lineItem.deleteMany({ where: demoNotes })).count;
 
+  // Delivery legs sit between the line items and the PO/order they belong to.
+  counts.Delivery = (await prisma.delivery.deleteMany({ where: demoNotes })).count;
+
   counts.PurchaseOrder = (await prisma.purchaseOrder.deleteMany({ where: demoNotes })).count;
 
   counts.Task = (await prisma.task.deleteMany({ where: demoNotes })).count;

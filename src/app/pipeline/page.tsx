@@ -2,9 +2,10 @@ import { Suspense } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { OPPORTUNITY_STAGES, OPEN_SERVICE_ISSUE_STATUSES } from "@/lib/constants";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
+import { opportunityBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { KanbanBoard, type KanbanCard } from "./KanbanBoard";
 import { PipelineList } from "./PipelineList";
 import {
@@ -37,6 +38,36 @@ const PIPELINE_ORDER: Record<
 };
 
 const DEFAULT_ORDER: Prisma.OpportunityOrderByWithRelationInput[] = [{ createdAt: "desc" }];
+
+/**
+ * Just enough of an Order to compute orderBall() - a narrower stand-in for
+ * ORDER_BALL_INCLUDE (@/lib/flow) so a list page of many deals isn't dragging
+ * full payment/PO/delivery rows along for a badge. Kept structurally in sync
+ * with OrderBallInput by hand; a tsc failure here means it drifted.
+ */
+const ORDER_BALL_SELECT = {
+  status: true,
+  orderType: true,
+  orderValue: true,
+  depositRequired: true,
+  quoteStatus: true,
+  paymentTerms: true,
+  payments: { select: { status: true, amount: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true } },
+  lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
+  purchaseOrders: { select: { status: true } },
+  deliveries: { select: { status: true } },
+  _count: {
+    select: { serviceIssues: { where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
+  },
+} satisfies Prisma.OrderSelect;
+
+type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+
+function toOrderBallInput(order: OrderBallRow): OrderBallInput {
+  const { _count, ...rest } = order;
+  return { ...rest, openIssueCount: _count.serviceIssues };
+}
 
 /**
  * Date filters read as "due on or before this day" - the useful question for a
@@ -113,6 +144,8 @@ export default async function PipelinePage({
       createdAt: true,
       nextFollowUp: true,
       company: { select: { id: true, name: true } },
+      lineItems: { select: { rfqStatus: true } },
+      orders: { select: ORDER_BALL_SELECT, take: 1 },
     },
   });
 
@@ -146,6 +179,11 @@ export default async function PipelinePage({
     daysInStage: daysSince(lastStageChange.get(o.id) ?? o.createdAt),
     followUpLabel: o.nextFollowUp ? fmtDate(o.nextFollowUp) : null,
     followUpOverdue: isOverdue(o.nextFollowUp),
+    ball: opportunityBall({
+      stage: o.stage,
+      lineItems: o.lineItems,
+      order: o.orders[0] ? toOrderBallInput(o.orders[0]) : null,
+    }),
   }));
 
   const openCards = cards.filter((c) => !CLOSED_STAGES.includes(c.stage));

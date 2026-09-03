@@ -2,11 +2,50 @@ import Link from "next/link";
 import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ORDER_STATUSES, ORDER_URGENCIES, URGENCY_COLORS, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import {
+  ORDER_STATUSES,
+  ORDER_URGENCIES,
+  URGENCY_COLORS,
+  ORDER_STATUS_COLORS,
+  OPEN_SERVICE_ISSUE_STATUSES,
+  labelFor,
+} from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
+import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
+import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
+
+/**
+ * Just enough of an Order to compute orderBall() - a narrower stand-in for
+ * ORDER_BALL_INCLUDE (@/lib/flow) so this list isn't dragging every payment/
+ * PO/delivery column along for a badge. Kept structurally in sync with
+ * OrderBallInput by hand; a tsc failure here means it drifted.
+ */
+const ORDER_BALL_SELECT = {
+  status: true,
+  orderType: true,
+  orderValue: true,
+  depositRequired: true,
+  quoteStatus: true,
+  paymentTerms: true,
+  payments: { select: { status: true, amount: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true } },
+  lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
+  purchaseOrders: { select: { status: true } },
+  deliveries: { select: { status: true } },
+  _count: {
+    select: { serviceIssues: { where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
+  },
+} satisfies Prisma.OrderSelect;
+
+type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+
+function toOrderBallInput(order: OrderBallRow): OrderBallInput {
+  const { _count, ...rest } = order;
+  return { ...rest, openIssueCount: _count.serviceIssues };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +56,28 @@ const ORDER_TYPE_OPTIONS = [
   { value: "order", label: "Order" },
   { value: "project", label: "Project" },
 ] as const;
+
+/** RFQ statuses that mean the office is still pricing it (see ItemStatusChips). */
+const BEING_PRICED = new Set(["needs_pricing", "rfq_sent", "quote_received"]);
+
+/**
+ * The row's one-line answer to "where is this order's stuff?" - the same
+ * grouping the order header's item chips use, squeezed into a phrase:
+ * "3/5 delivered · 1 pricing · 2 no PO". Null when there is nothing to say.
+ */
+function itemSummary(
+  items: { rfqStatus: string; deliveryStatus: string; purchaseOrderId: string | null }[]
+): string | null {
+  const live = items.filter((i) => i.rfqStatus !== "removed");
+  if (live.length === 0) return null;
+  const delivered = live.filter((i) => i.deliveryStatus === "arrived_complete").length;
+  const pricing = live.filter((i) => BEING_PRICED.has(i.rfqStatus)).length;
+  const noPo = live.filter((i) => !BEING_PRICED.has(i.rfqStatus) && !i.purchaseOrderId).length;
+  const parts = [`${delivered}/${live.length} delivered`];
+  if (pricing > 0) parts.push(`${pricing} pricing`);
+  if (noPo > 0) parts.push(`${noPo} no PO`);
+  return parts.join(" · ");
+}
 
 type OrdersSearchParams = { status?: string; due?: string } & Record<string, string | string[] | undefined>;
 
@@ -84,9 +145,13 @@ export default async function OrdersPage({
   const orders = await prisma.order.findMany({
     where,
     include: {
-      company: { select: { id: true, name: true } },
+      company: { select: { id: true, name: true, requiresDeposit: true, depositPercent: true } },
       owner: { select: { id: true, name: true } },
-      payments: { select: { status: true } },
+      payments: ORDER_BALL_SELECT.payments,
+      lineItems: ORDER_BALL_SELECT.lineItems,
+      purchaseOrders: ORDER_BALL_SELECT.purchaseOrders,
+      deliveries: ORDER_BALL_SELECT.deliveries,
+      _count: ORDER_BALL_SELECT._count,
     },
     ...(orderBy ? { orderBy } : {}),
   });
@@ -152,6 +217,8 @@ export default async function OrdersPage({
                   ? "border-l-4 border-orange"
                   : "";
               const ps = paymentState(order.payments);
+              const summary = itemSummary(order.lineItems);
+              const ball = orderBall(toOrderBallInput(order));
               return (
                 <li
                   key={order.id}
@@ -165,6 +232,12 @@ export default async function OrdersPage({
                   >
                     {order.title}
                   </Link>
+
+                  {summary ? (
+                    <span className="hidden shrink-0 text-[12px] text-gray-dark xl:block">
+                      {summary}
+                    </span>
+                  ) : null}
 
                   <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
                     {fmtMoney(order.orderValue)}
@@ -192,6 +265,10 @@ export default async function OrdersPage({
                       <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
                     </span>
                   ) : null}
+
+                  <span className="hidden shrink-0 xl:block">
+                    <BallInCourtBadge ball={ball} />
+                  </span>
 
                   <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
                     {fmtDate(order.neededByDate)}

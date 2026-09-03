@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
+import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { COMPANY_TYPES, COMPANY_VERTICALS, isValidValue } from "@/lib/constants";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { findCompanyByNormalizedName } from "./nameMatch";
+import { requirePermission } from "@/lib/permissionsServer";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -65,6 +67,8 @@ async function companyMeetsRequirements(data: ReturnType<typeof readCompanyField
 }
 
 export async function createCompany(formData: FormData) {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) redirect("/companies/new?error=not_allowed");
   const data = readCompanyFields(formData);
   if (!companyEnumsValid(data)) redirect("/companies/new?error=invalid_value");
   if (!(await companyMeetsRequirements(data))) redirect("/companies/new?error=missing_required");
@@ -98,6 +102,8 @@ export async function createCompany(formData: FormData) {
 export async function updateCompany(formData: FormData) {
   const id = str(formData, "id");
   if (!id) throw new Error("Missing company id");
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) redirect(`/companies/${id}/edit?error=not_allowed`);
   const data = readCompanyFields(formData);
   if (!companyEnumsValid(data)) redirect(`/companies/${id}/edit?error=invalid_value`);
   if (!(await companyMeetsRequirements(data))) redirect(`/companies/${id}/edit?error=missing_required`);
@@ -117,4 +123,197 @@ export async function updateCompany(formData: FormData) {
   revalidatePath("/companies");
   revalidatePath(`/companies/${id}`);
   redirect(`/companies/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Locations - the physical sites a business takes delivery at.
+//
+// The free-text locationName / deliveryAddress on Opportunity and Order stay the
+// snapshot fulfillment actually uses; picking a Location copies its name and
+// address into them (see the intake form and the Close panel). That is why these
+// actions never rewrite a deal's address behind its back: reassigning a deleted
+// location only re-points the foreign key.
+// ---------------------------------------------------------------------------
+
+export type LocationInput = {
+  name: string;
+  address: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  deliveryNotes?: string | null;
+};
+
+function clean(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/** Shared shape/validation for create + update. Returns null when the input is unusable. */
+function readLocationInput(input: LocationInput): {
+  name: string;
+  address: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  deliveryNotes: string | null;
+} | null {
+  const name = (input.name ?? "").trim();
+  const address = (input.address ?? "").trim();
+  if (!name || !address) return null;
+  return {
+    name,
+    address,
+    contactName: clean(input.contactName),
+    contactPhone: clean(input.contactPhone),
+    deliveryNotes: clean(input.deliveryNotes),
+  };
+}
+
+function revalidateLocations(companyId: string) {
+  revalidatePath(`/companies/${companyId}`);
+  revalidatePath("/companies");
+  revalidatePath("/phonebook");
+  // The location pickers on intake, the Close panel and the deal edit form all
+  // read this list.
+  revalidatePath("/intake");
+  revalidatePath("/pipeline");
+  revalidatePath("/orders");
+}
+
+export async function createLocation(companyId: string, input: LocationInput): Promise<ActionResult> {
+  const data = readLocationInput(input);
+  if (!data) return { ok: false, message: "A location needs a name and an address." };
+  return safeAction(async () => {
+    const existingCount = await prisma.location.count({ where: { companyId } });
+    const location = await prisma.location.create({
+      data: { ...data, companyId, isDefault: existingCount === 0 },
+    });
+    await logActivity(
+      "company",
+      companyId,
+      "location_added",
+      `Location "${location.name}" added (${location.address})`
+    );
+    revalidateLocations(companyId);
+  }, "Could not add the location. Please try again.");
+}
+
+export async function updateLocation(locationId: string, input: LocationInput): Promise<ActionResult> {
+  const data = readLocationInput(input);
+  if (!data) return { ok: false, message: "A location needs a name and an address." };
+  return safeAction(async () => {
+    const location = await prisma.location.update({ where: { id: locationId }, data });
+    await logActivity(
+      "company",
+      location.companyId,
+      "location_updated",
+      `Location "${location.name}" updated (${location.address})`
+    );
+    revalidateLocations(location.companyId);
+  }, "Could not save the location. Please try again.");
+}
+
+/** Exactly one default per business - the picker prefills with it. */
+export async function setDefaultLocation(locationId: string): Promise<ActionResult> {
+  return safeAction(async () => {
+    const location = await prisma.location.findUnique({
+      where: { id: locationId },
+      select: { id: true, name: true, companyId: true },
+    });
+    if (!location) throw new Error("Location not found");
+    await prisma.$transaction([
+      prisma.location.updateMany({
+        where: { companyId: location.companyId, isDefault: true },
+        data: { isDefault: false },
+      }),
+      prisma.location.update({ where: { id: location.id }, data: { isDefault: true } }),
+    ]);
+    await logActivity(
+      "company",
+      location.companyId,
+      "location_default_set",
+      `Location "${location.name}" is now the default site`
+    );
+    revalidateLocations(location.companyId);
+  }, "Could not set the default location. Please try again.");
+}
+
+/**
+ * Delete a location. A location a deal or an order points at is never silently
+ * dropped: the call is refused with a count, and the card then offers to move
+ * those records to another location (pass `reassignToId`) before deleting.
+ */
+export async function deleteLocation(
+  locationId: string,
+  reassignToId?: string | null
+): Promise<ActionResult> {
+  const location = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: {
+      id: true,
+      name: true,
+      companyId: true,
+      isDefault: true,
+      _count: { select: { opportunities: true, orders: true, serviceIssues: true } },
+    },
+  });
+  if (!location) return { ok: false, message: "That location no longer exists." };
+
+  const referenced =
+    location._count.opportunities + location._count.orders + location._count.serviceIssues;
+  const target = reassignToId ?? null;
+
+  if (referenced > 0 && !target) {
+    const parts = [
+      location._count.opportunities > 0
+        ? `${location._count.opportunities} deal${location._count.opportunities === 1 ? "" : "s"}`
+        : null,
+      location._count.orders > 0
+        ? `${location._count.orders} order${location._count.orders === 1 ? "" : "s"}`
+        : null,
+      location._count.serviceIssues > 0
+        ? `${location._count.serviceIssues} service issue${location._count.serviceIssues === 1 ? "" : "s"}`
+        : null,
+    ].filter(Boolean);
+    return {
+      ok: false,
+      message: `${parts.join(" and ")} still point at this location - pick another location to move them to first.`,
+    };
+  }
+
+  if (target) {
+    const replacement = await prisma.location.findUnique({
+      where: { id: target },
+      select: { id: true, companyId: true },
+    });
+    if (!replacement || replacement.companyId !== location.companyId || replacement.id === location.id) {
+      return { ok: false, message: "Pick another location on this business to move them to." };
+    }
+  }
+
+  return safeAction(async () => {
+    await prisma.$transaction(async (tx) => {
+      if (target) {
+        await tx.opportunity.updateMany({ where: { locationId }, data: { locationId: target } });
+        await tx.order.updateMany({ where: { locationId }, data: { locationId: target } });
+        await tx.serviceIssue.updateMany({ where: { locationId }, data: { locationId: target } });
+      }
+      await tx.location.delete({ where: { id: locationId } });
+      // The business must keep a default site once it still has any.
+      if (location.isDefault) {
+        const next = await tx.location.findFirst({
+          where: { companyId: location.companyId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        if (next) await tx.location.update({ where: { id: next.id }, data: { isDefault: true } });
+      }
+    });
+    await logActivity(
+      "company",
+      location.companyId,
+      "location_deleted",
+      `Location "${location.name}" deleted${target ? " - its deals and orders were moved to another location" : ""}`
+    );
+    revalidateLocations(location.companyId);
+  }, "Could not delete the location. Please try again.");
 }
