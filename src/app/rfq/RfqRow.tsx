@@ -86,6 +86,16 @@ function PriceCell({ item }: { item: RfqItem }) {
           className="input-klyne w-24 px-1.5 py-1 text-xs"
           placeholder="$0.00"
           aria-label={`Price for ${item.name}`}
+          // Enter should submit like clicking Save. Browsers do this implicitly for a
+          // lone text field + submit button, but that implicit behavior is easy for an
+          // extension (autofill, password managers) or an ancestor keydown handler to
+          // swallow - request the submit explicitly so Enter is never a silent no-op.
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
         />
         <PendingButton
           className="btn btn-primary btn-sm active:scale-[0.99]"

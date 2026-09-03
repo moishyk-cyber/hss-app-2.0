@@ -4,6 +4,7 @@ import Link from "next/link";
 import Nav from "./nav";
 import WhoAmI from "./who-am-i";
 import { prisma } from "@/lib/prisma";
+import { currentUserId } from "@/lib/identityServer";
 import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
 
@@ -27,11 +28,14 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const users = await prisma.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  const [users, initialUserId] = await Promise.all([
+    prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    currentUserId(),
+  ]);
   return (
     <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">
@@ -56,7 +60,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               </Link>
             </div>
             <Nav />
-            <WhoAmI users={users} />
+            <WhoAmI users={users} initialUserId={initialUserId} />
             <div className="px-6 py-5 text-[11px] text-gray">
               Built by Klyne &amp; Co.
             </div>

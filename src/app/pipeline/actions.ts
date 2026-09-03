@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { OPPORTUNITY_STAGES, RFQ_STATUSES, isValidValue, labelFor } from "@/lib/constants";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
-import { recomputeOrderStatus } from "@/lib/flow";
+import { recomputeOrderStatus, syncOrderValueFromLineItems } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
@@ -74,6 +74,8 @@ export async function updateLineItemQty(lineItemId: string, qty: number): Promis
       "qty_changed",
       `"${item.name}" quantity set to ${safeQty}`
     );
+    // Qty feeds the order total the same as price does (Sep 3 QA #4's sync rule).
+    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
     revalidateLineItem(item);
   }, "Could not update quantity. Please try again.");
 }
@@ -128,6 +130,9 @@ export async function updateLineItemPricing(
       "pricing_changed",
       `"${item.name}" cost ${unitCost ?? "cleared"} / price ${unitPrice ?? "cleared"}`
     );
+    // Same order-total drift the RFQ queue's pricing save fixes (Sep 3 QA #4) -
+    // this is the other place an already-won deal's item price can change.
+    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
     revalidateLineItem(item);
   }, "Could not update pricing. Please try again.");
 }
@@ -147,6 +152,8 @@ export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: str
       "rfq_status_changed",
       `"${item.name}" RFQ status set to ${labelFor(RFQ_STATUSES, rfqStatus)}`
     );
+    // Moving into/out of "removed" changes which items count toward the order total.
+    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
     revalidateLineItem(item);
   }, "Could not update RFQ status. Please try again.");
 }

@@ -11,6 +11,7 @@ import { BackLink } from "@/lib/BackLink";
 import { evaluatePaymentGate, canCompleteOrder } from "@/lib/flow";
 import { ActionButton } from "@/lib/ui";
 import { acknowledgeAllSentPos, markOrderComplete } from "../actions";
+import { fmtDate } from "../utils";
 
 export const dynamic = "force-dynamic";
 
@@ -201,7 +202,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <div className="field-label">Needed By</div>
             <div className="text-ink">
               {order.neededByDate ? (
-                new Date(order.neededByDate).toLocaleDateString()
+                // Deterministic UTC formatting (see @/lib/dates): this was the
+                // last locale/timezone-dependent date on the page, so it could
+                // read a day earlier than the orders list for the same record.
+                fmtDate(order.neededByDate)
               ) : (
                 <span className="empty-value">not set</span>
               )}
