@@ -227,7 +227,9 @@ export default async function OpportunityDetailPage({
           </>
         }
         secondary={
-          !closed || stage === "won" ? (
+          // One edit button, not two: when the primary action already IS
+          // "Edit deal", the secondary Edit would be a duplicate.
+          (!closed || stage === "won") && !primaryAction.href.endsWith("/edit") ? (
             <Link
               href={`/pipeline/${opportunity.id}/edit`}
               className="btn active:scale-[0.99]"
