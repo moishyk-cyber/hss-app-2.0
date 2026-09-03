@@ -5,12 +5,27 @@
 // files importing each other.
 
 import { useOptimistic, useTransition } from "react";
+import { useToast } from "@/lib/toast";
 import { setTaskStatus } from "./actions";
 
-/** The checkbox IS the done/not-done toggle - unchecking sends it back to Not Started. */
-export function TaskCheckbox({ taskId, done }: { taskId: string; done: boolean }) {
+/**
+ * The checkbox IS the done/not-done toggle. Completing announces itself with
+ * an Undo toast (Sep 2 QA: "every row has a 'Mark task done' check with no
+ * undo") - undo restores the status the task had before the click.
+ */
+export function TaskCheckbox({
+  taskId,
+  done,
+  undoStatus = "not_started",
+}: {
+  taskId: string;
+  done: boolean;
+  /** Status to restore when Undo is clicked (the task's status before "done"). */
+  undoStatus?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [optimisticDone, setOptimisticDone] = useOptimistic(done);
+  const { toast } = useToast();
 
   return (
     <button
@@ -24,7 +39,20 @@ export function TaskCheckbox({ taskId, done }: { taskId: string; done: boolean }
         const next = !optimisticDone;
         startTransition(async () => {
           setOptimisticDone(next);
-          await setTaskStatus(taskId, next ? "done" : "not_started");
+          const restore = next && undoStatus !== "done" ? undoStatus : "not_started";
+          const result = await setTaskStatus(taskId, next ? "done" : "not_started");
+          if (result && result.ok === false) {
+            toast({ kind: "error", message: result.message });
+            return;
+          }
+          if (next) {
+            toast({
+              kind: "success",
+              message: "Task marked done",
+              actionLabel: "Undo",
+              onAction: () => setTaskStatus(taskId, restore),
+            });
+          }
         });
       }}
       className={

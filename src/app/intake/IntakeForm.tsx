@@ -4,9 +4,16 @@
 // numbered sections that unlock as they're answered, instead of a two-column
 // wall of panels. Still a single <form> - progressive disclosure only hides
 // what hasn't been reached yet, so nothing is a separate route or a lost draft.
+//
+// Sep 2 QA round added two more jobs:
+// - REAL validation, inline and early: submit stays disabled until there's a
+//   business AND at least one item with a name and a quantity of 1+; phone and
+//   email formats complain on the field itself, not three steps later.
+// - Drafts survive: everything typed autosaves to this browser, a refresh
+//   offers to restore it, and a successful submit clears it silently.
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FormAlert, PendingButton } from "@/lib/ui";
 import { readStoredUserId, storeUserId } from "@/lib/identityClient";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
@@ -14,6 +21,9 @@ import { submitIntake } from "./actions";
 
 const MAX_COMPANY_RESULTS = 8;
 const MAX_CONTACT_RESULTS = 8;
+
+const DRAFT_KEY = "hss.intakeDraft";
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function subscribeToStoredSalesperson(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -24,6 +34,11 @@ function subscribeToStoredSalesperson(onChange: () => void) {
 function noStoredSalesperson(): string | null {
   return null;
 }
+
+// Hydration-safe mounted flag (no setState-in-effect).
+const noopSubscribe = () => () => {};
+const clientTrue = () => true;
+const serverFalse = () => false;
 
 type IntakeContact = {
   id: string;
@@ -41,11 +56,115 @@ type IntakeCompany = {
 
 type ItemRow = { key: number; name: string; details: string; qty: string };
 
+/** Everything a saved draft needs to rebuild the form. */
+type IntakeDraft = {
+  savedAt: number;
+  /** Set the moment the form submits; a later clean mount treats it as done. */
+  submitting?: boolean;
+  ui: {
+    openSection: number;
+    clientMode: "existing" | "new";
+    companyQuery: string;
+    companyId: string;
+    newCompanyName: string;
+    overrideDelivery: boolean;
+    contactMode: "existing" | "new";
+    contactQuery: string;
+    contactId: string;
+    newContactFirstName: string;
+    orderType: "project" | "order";
+    deliveryType: "curbside" | "inside";
+    installationNeeded: string;
+    needsPricing: string;
+    items: ItemRow[];
+    fieldValues: Record<string, string>;
+  };
+  /** Raw values of the UNCONTROLLED inputs, keyed by input name. */
+  fields: Record<string, string | string[]>;
+};
+
+/** Input names whose values live in React state - never restored via the DOM. */
+const CONTROLLED_FIELDS = new Set([
+  "clientMode",
+  "contactMode",
+  "orderType",
+  "needsPricing",
+  "installationNeeded",
+  "companyId",
+  "contactId",
+  "salespersonId",
+  "itemName",
+  "itemDetails",
+  "itemQty",
+  "newCompanyName",
+  "newContactFirstName",
+  "deliveryType",
+  "newCompanyPhone",
+  "newCompanyCellPhone",
+  "newCompanyEmail",
+  "newContactPhone",
+  "newContactCellPhone",
+  "newContactEmail",
+]);
+
+function readDraft(): IntakeDraft | null {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as IntakeDraft;
+    if (!parsed || typeof parsed.savedAt !== "number" || !parsed.ui) return null;
+    if (Date.now() - parsed.savedAt > DRAFT_MAX_AGE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 const inputClass = "input-klyne w-full";
 const labelClass = "field-label";
 
 function contactName(contact: IntakeContact): string {
   return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+}
+
+/** null when fine or empty; a message when the text can't be a phone number. */
+function phoneProblem(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  const digits = t.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15 || !/^[0-9+()\-.\s,xX#*\/]+$/.test(t)) {
+    return "That doesn't look like a phone number.";
+  }
+  return null;
+}
+
+/** null when fine or empty; a message when the text can't be an email. */
+function emailProblem(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  return /^\S+@\S+\.\S+$/.test(t) ? null : "That doesn't look like an email address.";
+}
+
+const FIELD_VALIDATORS: Record<string, (v: string) => string | null> = {
+  newCompanyPhone: phoneProblem,
+  newCompanyCellPhone: phoneProblem,
+  newCompanyEmail: emailProblem,
+  newContactPhone: phoneProblem,
+  newContactCellPhone: phoneProblem,
+  newContactEmail: emailProblem,
+};
+
+function rowQtyValid(row: ItemRow): boolean {
+  const qty = Number.parseInt(row.qty.trim(), 10);
+  return Number.isFinite(qty) && qty >= 1;
 }
 
 /**
@@ -244,9 +363,177 @@ export function IntakeForm({
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
   const [autoFocusKey, setAutoFocusKey] = useState(0);
 
+  // Phone/email fields validated inline (Sep 2 QA: errors surfaced 3 steps late).
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  // ---------------- draft autosave / restore ----------------
+  const formRef = useRef<HTMLFormElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useSyncExternalStore(noopSubscribe, clientTrue, serverFalse);
+  // The draft found at mount. Lazy initializer: null on the server, the stored
+  // draft on the client - and the banner below only renders once `mounted` is
+  // true, so hydration output stays identical either way.
+  const [initialDraft, setInitialDraft] = useState<IntakeDraft | null>(() =>
+    typeof window === "undefined" ? null : readDraft()
+  );
+  const skipFirstAutosave = useRef(true);
+
+  // A draft marked "submitting" on a mount with no error means the submit
+  // succeeded (we came back fresh) - drop it from storage. The banner already
+  // excludes it, so no state changes here.
+  useEffect(() => {
+    if (initialDraft?.submitting && !error) clearDraft();
+  }, [initialDraft, error]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
+
+  function buildDraft(submitting: boolean): IntakeDraft | null {
+    const form = formRef.current;
+    if (!form) return null;
+    const fields: Record<string, string | string[]> = {};
+    const fd = new FormData(form);
+    for (const [k, v] of fd.entries()) {
+      if (typeof v !== "string") continue;
+      const existing = fields[k];
+      if (existing === undefined) fields[k] = v;
+      else if (Array.isArray(existing)) existing.push(v);
+      else fields[k] = [existing, v];
+    }
+    return {
+      savedAt: Date.now(),
+      submitting,
+      ui: {
+        openSection,
+        clientMode,
+        companyQuery,
+        companyId,
+        newCompanyName,
+        overrideDelivery,
+        contactMode,
+        contactQuery,
+        contactId,
+        newContactFirstName,
+        orderType,
+        deliveryType,
+        installationNeeded,
+        needsPricing,
+        items,
+        fieldValues,
+      },
+      fields,
+    };
+  }
+
+  function saveDraftNow(submitting = false) {
+    const draft = buildDraft(submitting);
+    if (!draft) return;
+    try {
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+      // storage full/blocked - the app still works, drafts just don't persist
+    }
+  }
+
+  function scheduleDraftSave() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveDraftNow(false), 500);
+  }
+
+  // Controlled-state changes (segmented toggles, item rows, pickers) don't fire
+  // the form's onChange - autosave on them here. First run is the mount itself.
+  useEffect(() => {
+    if (skipFirstAutosave.current) {
+      skipFirstAutosave.current = false;
+      return;
+    }
+    scheduleDraftSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    openSection,
+    clientMode,
+    companyQuery,
+    companyId,
+    newCompanyName,
+    overrideDelivery,
+    contactMode,
+    contactQuery,
+    contactId,
+    newContactFirstName,
+    orderType,
+    deliveryType,
+    installationNeeded,
+    needsPricing,
+    items,
+    fieldValues,
+  ]);
+
+  function restoreDraft() {
+    const d = initialDraft;
+    if (!d) return;
+    const ui = d.ui;
+    setOpenSection(ui.openSection);
+    setClientMode(ui.clientMode);
+    setCompanyQuery(ui.companyQuery);
+    setCompanyId(ui.companyId);
+    setNewCompanyName(ui.newCompanyName);
+    setOverrideDelivery(ui.overrideDelivery);
+    setContactMode(ui.contactMode);
+    setContactQuery(ui.contactQuery);
+    setContactId(ui.contactId);
+    setNewContactFirstName(ui.newContactFirstName);
+    setOrderType(ui.orderType);
+    setDeliveryType(ui.deliveryType);
+    setInstallationNeeded(ui.installationNeeded);
+    setNeedsPricing(ui.needsPricing);
+    if (ui.items.length > 0) {
+      setItems(ui.items);
+      setNextKey(Math.max(...ui.items.map((r) => r.key)) + 1);
+    }
+    setFieldValues(ui.fieldValues ?? {});
+    setInitialDraft(null);
+    // The uncontrolled inputs (addresses, notes, dates) render after the state
+    // above lands - fill them straight from the saved DOM values then.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const form = formRef.current;
+        if (!form) return;
+        for (const [name, v] of Object.entries(d.fields)) {
+          if (CONTROLLED_FIELDS.has(name)) continue;
+          const el = form.elements.namedItem(name);
+          const value = Array.isArray(v) ? v[0] : v;
+          if (
+            (el instanceof HTMLInputElement &&
+              el.type !== "radio" &&
+              el.type !== "checkbox" &&
+              el.type !== "hidden") ||
+            el instanceof HTMLTextAreaElement ||
+            el instanceof HTMLSelectElement
+          ) {
+            if (!el.value) el.value = value;
+          }
+        }
+      })
+    );
+  }
+
+  function discardDraft() {
+    clearDraft();
+    setInitialDraft(null);
+  }
+
+  const showDraftBanner =
+    mounted &&
+    initialDraft != null &&
+    // A submitting draft with no error is a finished submit, not a lost draft.
+    !(initialDraft.submitting && !error);
+
+  // ---------------- identity ----------------
   // No auth yet: the sidebar's "Working as" identity is who this intake belongs to.
-  // The salesperson dropdown is gone from the form - it was one more thing to fill in
-  // mid-call, and it always meant "me".
   const storedSalespersonId = useSyncExternalStore(
     subscribeToStoredSalesperson,
     readStoredUserId,
@@ -290,11 +577,49 @@ export function IntakeForm({
   const clientReady =
     clientMode === "new" ? newCompanyName.trim() !== "" : companyId !== "";
 
-  const namedItemCount = items.filter((i) => i.name.trim() !== "").length;
+  // ---------------- validation (Sep 2 QA) ----------------
+  const validItems = items.filter((r) => r.name.trim() !== "" && rowQtyValid(r));
+  const badQtyRows = items.filter((r) => r.name.trim() !== "" && !rowQtyValid(r));
+  const itemsReady = validItems.length > 0 && badQtyRows.length === 0;
+
+  /** Which validated fields are actually on screen right now? */
+  const activeValidatedFields = [
+    ...(clientMode === "new" ? ["newCompanyPhone", "newCompanyCellPhone", "newCompanyEmail"] : []),
+    ...(clientMode === "new" || contactMode === "new"
+      ? ["newContactPhone", "newContactCellPhone", "newContactEmail"]
+      : []),
+  ];
+  const fieldErrors: Record<string, string> = {};
+  for (const name of activeValidatedFields) {
+    const problem = FIELD_VALIDATORS[name]?.(fieldValues[name] ?? "");
+    if (problem) fieldErrors[name] = problem;
+  }
+  const fieldsReady = Object.keys(fieldErrors).length === 0;
+
+  const blockReason = !clientReady
+    ? "Pick or create a business first"
+    : badQtyRows.length > 0
+      ? "Every item needs a quantity of at least 1"
+      : validItems.length === 0
+        ? "Add at least one item with a name"
+        : !fieldsReady
+          ? "Fix the highlighted phone/email fields"
+          : openSection < 3
+            ? "Work through the steps above"
+            : null;
+
   const clientLabel =
     clientMode === "new"
       ? newCompanyName.trim() || "New client"
       : (selectedCompany?.name ?? "No client selected");
+
+  function setField(name: string, value: string) {
+    setFieldValues((v) => ({ ...v, [name]: value }));
+  }
+
+  function touchField(name: string) {
+    setTouchedFields((t) => (t[name] ? t : { ...t, [name]: true }));
+  }
 
   function resetContact() {
     setContactMode("existing");
@@ -333,8 +658,15 @@ export function IntakeForm({
 
   return (
     <form
+      ref={formRef}
       action={submitIntake}
-      onSubmit={() => rememberSalesperson(salespersonId)}
+      onSubmit={() => {
+        rememberSalesperson(salespersonId);
+        // Snapshot as "submitting": if the server bounces back with an error,
+        // the draft is still here; if it succeeds, the next visit clears it.
+        saveDraftNow(true);
+      }}
+      onChange={scheduleDraftSave}
       className="mx-auto max-w-3xl pb-4"
     >
       {error === "duplicate_company" ? (
@@ -347,8 +679,30 @@ export function IntakeForm({
           </Link>{" "}
           and check its type: only customers and leads appear in this picker.
         </FormAlert>
+      ) : error === "items_required" ? (
+        <FormAlert>
+          Nothing was saved - the request needs at least one item with a name and a quantity of 1
+          or more.
+        </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : null}
+
+      {showDraftBanner ? (
+        <div className="banner-info mb-5 flex flex-wrap items-center justify-between gap-3">
+          <span>
+            You have an unsaved intake draft from{" "}
+            {new Date(initialDraft!.savedAt).toLocaleString()}.
+          </span>
+          <span className="flex gap-2">
+            <button type="button" className="btn btn-sm btn-primary" onClick={restoreDraft}>
+              Restore draft
+            </button>
+            <button type="button" className="btn btn-sm" onClick={discardDraft}>
+              Discard
+            </button>
+          </span>
+        </div>
       ) : null}
 
       {/* hidden mirrors of the branching state so the server action sees plain fields */}
@@ -491,6 +845,11 @@ export function IntakeForm({
                         <NewContactFields
                           firstName={newContactFirstName}
                           onFirstNameChange={setNewContactFirstName}
+                          fieldValues={fieldValues}
+                          fieldErrors={fieldErrors}
+                          touchedFields={touchedFields}
+                          onFieldChange={setField}
+                          onFieldBlur={touchField}
                         />
                       </>
                     )}
@@ -527,22 +886,40 @@ export function IntakeForm({
                     className={inputClass}
                   />
                 </label>
-                <label className="block">
-                  <span className={labelClass}>Phone</span>
-                  <input name="newCompanyPhone" className={inputClass} />
-                </label>
+                <ValidatedField
+                  label="Phone"
+                  name="newCompanyPhone"
+                  type="tel"
+                  value={fieldValues.newCompanyPhone ?? ""}
+                  error={fieldErrors.newCompanyPhone}
+                  touched={!!touchedFields.newCompanyPhone}
+                  onChange={setField}
+                  onBlur={touchField}
+                />
                 <label className="block">
                   <span className={labelClass}>Extension</span>
                   <input name="newCompanyPhoneExt" className={inputClass} />
                 </label>
-                <label className="block">
-                  <span className={labelClass}>Cell phone</span>
-                  <input name="newCompanyCellPhone" className={inputClass} />
-                </label>
-                <label className="block">
-                  <span className={labelClass}>Email</span>
-                  <input type="email" name="newCompanyEmail" className={inputClass} />
-                </label>
+                <ValidatedField
+                  label="Cell phone"
+                  name="newCompanyCellPhone"
+                  type="tel"
+                  value={fieldValues.newCompanyCellPhone ?? ""}
+                  error={fieldErrors.newCompanyCellPhone}
+                  touched={!!touchedFields.newCompanyCellPhone}
+                  onChange={setField}
+                  onBlur={touchField}
+                />
+                <ValidatedField
+                  label="Email"
+                  name="newCompanyEmail"
+                  type="email"
+                  value={fieldValues.newCompanyEmail ?? ""}
+                  error={fieldErrors.newCompanyEmail}
+                  touched={!!touchedFields.newCompanyEmail}
+                  onChange={setField}
+                  onBlur={touchField}
+                />
                 <label className="block">
                   <span className={labelClass}>Business address</span>
                   <input name="newCompanyAddress" className={inputClass} />
@@ -562,6 +939,11 @@ export function IntakeForm({
                 <NewContactFields
                   firstName={newContactFirstName}
                   onFirstNameChange={setNewContactFirstName}
+                  fieldValues={fieldValues}
+                  fieldErrors={fieldErrors}
+                  touchedFields={touchedFields}
+                  onFieldChange={setField}
+                  onFieldBlur={touchField}
                 />
               </div>
             </div>
@@ -636,52 +1018,61 @@ export function IntakeForm({
             <div className="space-y-2">
               {items.map((row, index) => {
                 const isLastRow = index === items.length - 1;
+                const qtyBad = row.name.trim() !== "" && !rowQtyValid(row);
                 return (
-                  <div key={row.key} className="flex items-end gap-2">
-                    <label className="block flex-1">
-                      <span className="sr-only">Item name</span>
-                      <input
-                        name="itemName"
-                        autoFocus={row.key === autoFocusKey}
-                        value={row.name}
-                        onChange={(e) => updateItem(row.key, { name: e.target.value })}
-                        onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
-                        placeholder="e.g. Double convection oven"
-                        className={inputClass}
-                      />
-                    </label>
-                    <label className="block flex-1">
-                      <span className="sr-only">Item details</span>
-                      <input
-                        name="itemDetails"
-                        value={row.details}
-                        onChange={(e) => updateItem(row.key, { details: e.target.value })}
-                        onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
-                        placeholder="Brand, model, notes…"
-                        className={inputClass}
-                      />
-                    </label>
-                    <label className="block w-16">
-                      <span className="sr-only">Quantity</span>
-                      <input
-                        name="itemQty"
-                        type="number"
-                        min="1"
-                        value={row.qty}
-                        onChange={(e) => updateItem(row.key, { qty: e.target.value })}
-                        onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
-                        className={inputClass}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(row.key)}
-                      disabled={items.length === 1}
-                      aria-label="Remove item"
-                      className="btn btn-danger btn-sm mb-0.5 transition-colors active:scale-[0.99] disabled:opacity-40"
-                    >
-                      ✕
-                    </button>
+                  <div key={row.key}>
+                    <div className="flex items-end gap-2">
+                      <label className="block flex-1">
+                        <span className="sr-only">Item name</span>
+                        <input
+                          name="itemName"
+                          autoFocus={row.key === autoFocusKey}
+                          value={row.name}
+                          onChange={(e) => updateItem(row.key, { name: e.target.value })}
+                          onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
+                          placeholder="e.g. Double convection oven"
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block flex-1">
+                        <span className="sr-only">Item details</span>
+                        <input
+                          name="itemDetails"
+                          value={row.details}
+                          onChange={(e) => updateItem(row.key, { details: e.target.value })}
+                          onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
+                          placeholder="Brand, model, notes…"
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block w-16">
+                        <span className="sr-only">Quantity</span>
+                        <input
+                          name="itemQty"
+                          type="number"
+                          min="1"
+                          value={row.qty}
+                          onChange={(e) => updateItem(row.key, { qty: e.target.value })}
+                          onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
+                          aria-invalid={qtyBad}
+                          className={`${inputClass} ${qtyBad ? "!border-red" : ""}`}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(row.key)}
+                        disabled={items.length === 1}
+                        aria-label="Remove item"
+                        className="btn btn-danger btn-sm mb-0.5 transition-colors active:scale-[0.99] disabled:opacity-40"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {qtyBad ? (
+                      <p role="alert" className="mt-1 text-xs text-red">
+                        Quantity has to be at least 1.
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
@@ -774,7 +1165,17 @@ export function IntakeForm({
           ) : null}
 
           {openSection < 3 ? (
-            <NextButton onClick={() => setOpenSection(3)}>Next - when do they need it?</NextButton>
+            <NextButton
+              onClick={() => setOpenSection(3)}
+              disabled={!itemsReady}
+              disabledReason={
+                badQtyRows.length > 0
+                  ? "Every item needs a quantity of at least 1"
+                  : "Add at least one item with a name"
+              }
+            >
+              Next - when do they need it?
+            </NextButton>
           ) : null}
         </Section>
 
@@ -842,7 +1243,7 @@ export function IntakeForm({
             <p className="mt-1">
               {orderType === "project" ? "Project" : "Order"}
               <span className="mx-1.5 text-gray">·</span>
-              {namedItemCount} item{namedItemCount === 1 ? "" : "s"}
+              {validItems.length} item{validItems.length === 1 ? "" : "s"}
               <span className="mx-1.5 text-gray">·</span>
               {goesToPipeline ? "goes to the pipeline" : "becomes an order straight away"}
             </p>
@@ -855,14 +1256,14 @@ export function IntakeForm({
         <div className="card flex flex-wrap items-center justify-between gap-4 bg-surface/90 backdrop-blur">
           <p className="text-[13px] text-gray-dark">
             <span className="font-medium text-ink">
-              {namedItemCount} item{namedItemCount === 1 ? "" : "s"}
+              {validItems.length} item{validItems.length === 1 ? "" : "s"}
             </span>
             <span className="mx-1.5 text-gray">·</span>
             {orderType === "project" ? "Project" : "Order"}
             <span className="mx-1.5 text-gray">·</span>
             <span className={clientReady ? "" : "text-gray"}>{clientLabel}</span>
           </p>
-          {clientReady && openSection >= 3 ? (
+          {blockReason == null ? (
             <PendingButton
               className="btn btn-primary active:scale-[0.99]"
               pendingText={goesToPipeline ? "Creating opportunity…" : "Creating order…"}
@@ -873,7 +1274,7 @@ export function IntakeForm({
             // Why the button is dead has to be readable, not just a hover tooltip.
             <div className="flex flex-wrap items-center gap-2.5">
               <p id="intake-cta-reason" className="text-[13px] font-medium text-ink">
-                {clientReady ? "Work through the steps above" : "Pick or create a business first"}
+                {blockReason}
               </p>
               <button
                 type="button"
@@ -891,12 +1292,66 @@ export function IntakeForm({
   );
 }
 
+/** Controlled input with inline validation (shows its error once touched). */
+function ValidatedField({
+  label,
+  name,
+  type = "text",
+  value,
+  error,
+  touched,
+  onChange,
+  onBlur,
+  className,
+}: {
+  label: string;
+  name: string;
+  type?: string;
+  value: string;
+  error?: string;
+  touched: boolean;
+  onChange: (name: string, value: string) => void;
+  onBlur: (name: string) => void;
+  className?: string;
+}) {
+  const showError = touched && !!error;
+  return (
+    <label className={`block ${className ?? ""}`}>
+      <span className={labelClass}>{label}</span>
+      <input
+        name={name}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(name, e.target.value)}
+        onBlur={() => onBlur(name)}
+        aria-invalid={showError}
+        className={`${inputClass} ${showError ? "!border-red" : ""}`}
+      />
+      {showError ? (
+        <span role="alert" className="mt-1 block text-xs text-red">
+          {error}
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
 function NewContactFields({
   firstName,
   onFirstNameChange,
+  fieldValues,
+  fieldErrors,
+  touchedFields,
+  onFieldChange,
+  onFieldBlur,
 }: {
   firstName: string;
   onFirstNameChange: (next: string) => void;
+  fieldValues: Record<string, string>;
+  fieldErrors: Record<string, string>;
+  touchedFields: Record<string, boolean>;
+  onFieldChange: (name: string, value: string) => void;
+  onFieldBlur: (name: string) => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -939,22 +1394,41 @@ function NewContactFields({
           <option value="Head Chef" />
         </datalist>
       </label>
-      <label className="block">
-        <span className={labelClass}>Email</span>
-        <input type="email" name="newContactEmail" className={inputClass} />
-      </label>
-      <label className="block">
-        <span className={labelClass}>Phone</span>
-        <input name="newContactPhone" className={inputClass} />
-      </label>
+      <ValidatedField
+        label="Email"
+        name="newContactEmail"
+        type="email"
+        value={fieldValues.newContactEmail ?? ""}
+        error={fieldErrors.newContactEmail}
+        touched={!!touchedFields.newContactEmail}
+        onChange={onFieldChange}
+        onBlur={onFieldBlur}
+      />
+      <ValidatedField
+        label="Phone"
+        name="newContactPhone"
+        type="tel"
+        value={fieldValues.newContactPhone ?? ""}
+        error={fieldErrors.newContactPhone}
+        touched={!!touchedFields.newContactPhone}
+        onChange={onFieldChange}
+        onBlur={onFieldBlur}
+      />
       <label className="block">
         <span className={labelClass}>Extension</span>
         <input name="newContactPhoneExt" className={inputClass} />
       </label>
-      <label className="block sm:col-span-2">
-        <span className={labelClass}>Cell</span>
-        <input name="newContactCellPhone" className={inputClass} />
-      </label>
+      <ValidatedField
+        label="Cell"
+        name="newContactCellPhone"
+        type="tel"
+        value={fieldValues.newContactCellPhone ?? ""}
+        error={fieldErrors.newContactCellPhone}
+        touched={!!touchedFields.newContactCellPhone}
+        onChange={onFieldChange}
+        onBlur={onFieldBlur}
+        className="sm:col-span-2"
+      />
     </div>
   );
 }

@@ -8,6 +8,19 @@ import { createPortal, useFormStatus } from "react-dom";
 import { useTransition, useOptimistic, useRef, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ActionResult } from "./actionResult";
+import { ConfirmDialog } from "./ConfirmDialog";
+
+/**
+ * Returned by a select's `confirm` callback when picking that value should be
+ * double-checked first (role changes, deactivations). Return null for values
+ * that can apply straight away.
+ */
+export type ConfirmSpec = {
+  title: string;
+  body?: React.ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+};
 
 /** Pulls a failure message out of an action's result, if it failed. */
 function errorFrom(result: ActionResult | void): string | null {
@@ -50,10 +63,13 @@ export function PendingButton({
   children,
   className = "btn",
   pendingText,
+  ariaLabel,
 }: {
   children: React.ReactNode;
   className?: string;
   pendingText?: string;
+  /** Accessible name - use where identical buttons repeat down a list. */
+  ariaLabel?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -62,6 +78,7 @@ export function PendingButton({
       disabled={pending}
       className={`${className} ${pending ? "opacity-60 cursor-progress" : ""}`}
       aria-busy={pending}
+      aria-label={ariaLabel}
     >
       {pending ? (
         <span className="inline-flex items-center gap-1.5">
@@ -108,6 +125,40 @@ function useOptimisticAction(value: string, action: (next: string) => Promise<Ac
     });
   }
   return { isPending, optimistic, error, run };
+}
+
+/**
+ * Arrow-key navigation for the popover menus (a11y round, Sep 2): attach to the
+ * wrapper element - portal children bubble key events through the React tree,
+ * so this catches keys whether focus sits on the trigger or inside the menu.
+ */
+export function menuArrowNav(e: React.KeyboardEvent, menuRef: React.RefObject<HTMLElement | null>) {
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const root = menuRef.current;
+  if (!root) return;
+  const items = Array.from(
+    root.querySelectorAll<HTMLElement>('[role="option"] button, [role="menuitem"]')
+  ).filter((el) => !el.hasAttribute("disabled"));
+  if (items.length === 0) return;
+  e.preventDefault();
+  const idx = items.indexOf(document.activeElement as HTMLElement);
+  const next =
+    e.key === "ArrowDown" ? (idx + 1) % items.length : idx <= 0 ? items.length - 1 : idx - 1;
+  items[next]?.focus();
+}
+
+/** Moves focus onto the selected (or first) option when a popover menu opens. */
+export function useMenuFocusOnOpen(open: boolean, menuRef: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => {
+      const el =
+        menuRef.current?.querySelector<HTMLElement>('[aria-selected="true"] button') ??
+        menuRef.current?.querySelector<HTMLElement>('[role="option"] button');
+      el?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open, menuRef]);
 }
 
 /** Dismiss-on-outside-click / Escape for the custom dropdown menus. */
@@ -203,6 +254,8 @@ export function OptimisticSelect({
   action,
   className = "input-klyne",
   render,
+  confirm,
+  ariaLabel,
 }: {
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
@@ -210,20 +263,39 @@ export function OptimisticSelect({
   className?: string;
   /** Optional: render the current value as a badge/label next to the control. */
   render?: (optimisticValue: string, pending: boolean) => React.ReactNode;
+  /** Return a ConfirmSpec to double-check a pick before it applies; null = apply now. */
+  confirm?: (next: string) => ConfirmSpec | null;
+  ariaLabel?: string;
 }) {
   const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState<{ next: string; spec: ConfirmSpec } | null>(null);
   const boxRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
+  useMenuFocusOnOpen(open, menuRef);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic ?? "";
+
+  function choose(next: string) {
+    setOpen(false);
+    if (next === optimistic) return;
+    const spec = confirm?.(next);
+    if (spec) setConfirming({ next, spec });
+    else run(next);
+  }
+
   return (
-    <span ref={boxRef} className="relative inline-flex items-center gap-2">
+    <span
+      ref={boxRef}
+      className="relative inline-flex items-center gap-2"
+      onKeyDown={(e) => menuArrowNav(e, menuRef)}
+    >
       {render?.(optimistic, isPending)}
       <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={ariaLabel}
         disabled={isPending}
         onClick={() => setOpen((o) => !o)}
         className={`${className} inline-flex cursor-pointer items-center justify-between gap-1.5 text-left ${
@@ -241,10 +313,7 @@ export function OptimisticSelect({
             <li key={o.value} role="option" aria-selected={o.value === optimistic}>
               <button
                 type="button"
-                onClick={() => {
-                  setOpen(false);
-                  if (o.value !== optimistic) run(o.value);
-                }}
+                onClick={() => choose(o.value)}
                 className={`w-full whitespace-nowrap px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-hover ${
                   o.value === optimistic ? "font-semibold text-ink" : "text-gray-dark"
                 }`}
@@ -255,6 +324,22 @@ export function OptimisticSelect({
           ))}
         </ul>
       </DropMenu>
+      {confirming ? (
+        <ConfirmDialog
+          open
+          title={confirming.spec.title}
+          confirmLabel={confirming.spec.confirmLabel}
+          danger={confirming.spec.danger}
+          onConfirm={() => {
+            const next = confirming.next;
+            setConfirming(null);
+            run(next);
+          }}
+          onClose={() => setConfirming(null)}
+        >
+          {confirming.spec.body}
+        </ConfirmDialog>
+      ) : null}
       {error && <InlineError message={error} />}
     </span>
   );
@@ -271,26 +356,46 @@ export function BadgeSelect({
   action,
   colorMap,
   fallback = "badge-gray",
+  confirm,
+  ariaLabel = "Change status",
 }: {
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
   action: (next: string) => Promise<ActionResult | void>;
   colorMap: Record<string, string>;
   fallback?: string;
+  /** Return a ConfirmSpec to double-check a pick before it applies; null = apply now. */
+  confirm?: (next: string) => ConfirmSpec | null;
+  ariaLabel?: string;
 }) {
   const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState<{ next: string; spec: ConfirmSpec } | null>(null);
   const boxRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
+  useMenuFocusOnOpen(open, menuRef);
   const label = options.find((o) => o.value === optimistic)?.label ?? optimistic;
+
+  function choose(next: string) {
+    setOpen(false);
+    if (next === optimistic) return;
+    const spec = confirm?.(next);
+    if (spec) setConfirming({ next, spec });
+    else run(next);
+  }
+
   return (
-    <span ref={boxRef} className="relative inline-block">
+    <span
+      ref={boxRef}
+      className="relative inline-block"
+      onKeyDown={(e) => menuArrowNav(e, menuRef)}
+    >
       <button
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Change status"
+        aria-label={ariaLabel}
         disabled={isPending}
         onClick={() => setOpen((o) => !o)}
         className={`badge cursor-pointer select-none ${colorMap[optimistic] ?? fallback} ${
@@ -309,10 +414,7 @@ export function BadgeSelect({
             <li key={o.value} role="option" aria-selected={o.value === optimistic}>
               <button
                 type="button"
-                onClick={() => {
-                  setOpen(false);
-                  if (o.value !== optimistic) run(o.value);
-                }}
+                onClick={() => choose(o.value)}
                 className={`flex w-full items-center rounded-md px-1.5 py-1 transition-colors hover:bg-hover ${
                   o.value === optimistic ? "bg-hover" : ""
                 }`}
@@ -323,6 +425,22 @@ export function BadgeSelect({
           ))}
         </ul>
       </DropMenu>
+      {confirming ? (
+        <ConfirmDialog
+          open
+          title={confirming.spec.title}
+          confirmLabel={confirming.spec.confirmLabel}
+          danger={confirming.spec.danger}
+          onConfirm={() => {
+            const next = confirming.next;
+            setConfirming(null);
+            run(next);
+          }}
+          onClose={() => setConfirming(null)}
+        >
+          {confirming.spec.body}
+        </ConfirmDialog>
+      ) : null}
       {error && <InlineError message={error} />}
     </span>
   );
@@ -333,10 +451,15 @@ export function ActionButton({
   action,
   children,
   className = "btn btn-sm",
+  ariaLabel,
+  title,
 }: {
   action: () => Promise<ActionResult | void>;
   children: React.ReactNode;
   className?: string;
+  /** Accessible name - REQUIRED at call sites whose children are icon-only. */
+  ariaLabel?: string;
+  title?: string;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -347,6 +470,8 @@ export function ActionButton({
         type="button"
         disabled={isPending}
         aria-busy={isPending}
+        aria-label={ariaLabel}
+        title={title}
         className={`${className} ${isPending ? "opacity-60 cursor-progress" : ""}`}
         onClick={() =>
           startTransition(async () => {
@@ -384,10 +509,12 @@ export function InstantSearch({
   paramKey = "q",
   placeholder = "Search…",
   className = "input-klyne",
+  ariaLabel = "Search",
 }: {
   paramKey?: string;
   placeholder?: string;
   className?: string;
+  ariaLabel?: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -395,28 +522,51 @@ export function InstantSearch({
   const [isPending, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  function pushValue(next: string, debounceMs: number) {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      const sp = new URLSearchParams(window.location.search);
+      if (next) sp.set(paramKey, next);
+      else sp.delete(paramKey);
+      startTransition(() => {
+        const query = sp.toString();
+        router.replace(query ? `${window.location.pathname}?${query}` : window.location.pathname, {
+          scroll: false,
+        });
+      });
+    }, debounceMs);
+  }
+
   return (
     <span className="relative inline-flex items-center">
       <input
         type="search"
-        className={className}
+        className={`${className} pr-8`}
         placeholder={placeholder}
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => {
           const next = e.target.value;
           setValue(next);
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => {
-            const sp = new URLSearchParams(window.location.search);
-            if (next) sp.set(paramKey, next);
-            else sp.delete(paramKey);
-            startTransition(() => {
-              router.replace(`${window.location.pathname}?${sp.toString()}`, { scroll: false });
-            });
-          }, 250);
+          pushValue(next, 250);
         }}
       />
-      {isPending && <Spinner className="absolute right-8 text-gray" />}
+      {isPending ? (
+        <Spinner className="absolute right-8 text-gray" />
+      ) : value ? (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => {
+            setValue("");
+            pushValue("", 0);
+          }}
+          className="absolute right-2.5 rounded px-0.5 text-gray transition-colors hover:text-ink"
+        >
+          ✕
+        </button>
+      ) : null}
     </span>
   );
 }

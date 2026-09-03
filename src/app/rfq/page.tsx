@@ -145,7 +145,9 @@ export default async function RfqPage({
               </div>
             ) : (
               <div className="card card-flush overflow-hidden overflow-x-auto">
-                <table className="table-klyne min-w-[820px]">
+                {/* 7 tighter columns (lead time folded under the item name) so the
+                    whole table fits a plain desktop without cutting off Assignee. */}
+                <table className="table-klyne min-w-[840px]">
                   <thead>
                     <tr>
                       <th>Item</th>
@@ -153,9 +155,8 @@ export default async function RfqPage({
                       <th>Parent</th>
                       <th>Waiting</th>
                       <th>Price</th>
-                      <th>Lead (days)</th>
                       <th>Assignee</th>
-                      <th>Actions</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>

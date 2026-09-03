@@ -78,6 +78,12 @@ export async function submitIntake(formData: FormData) {
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
+  // Server-side backstop for the client-side gate (Sep 2 QA: an intake could
+  // submit with zero real items and create an empty pipeline record).
+  if (items.length === 0) {
+    redirect("/intake?error=items_required");
+  }
+
   // The salesperson dropdown is gone from the form (feedback: one more thing to fill
   // in mid-call, and it always meant "me"). Fall back to the sidebar identity - and
   // if there isn't one either, save it unassigned rather than blocking a live call.

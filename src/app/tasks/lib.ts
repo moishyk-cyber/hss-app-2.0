@@ -1,6 +1,8 @@
 // Shared, non-action helpers for the tasks module (plain functions/data, safe to
 // import from both server and client components).
 
+import { fmtDateUTC, isPastDay } from "@/lib/dates";
+
 export const TYPE_LABELS: Record<string, string> = {
   opportunity: "Opportunity",
   order: "Order",
@@ -45,7 +47,10 @@ export function linkedHref(type: string | null | undefined, id: string | null | 
 
 export function isOverdue(dueDate: Date | string | null, status: string): boolean {
   if (!dueDate || status === "done") return false;
-  return new Date(dueDate) < new Date(new Date().toDateString());
+  // Day-string comparison (UTC-stored day vs local calendar day): the old
+  // Date-object comparison flagged tasks overdue hours before their day ended,
+  // and rendered differently on server vs client (hydration mismatch).
+  return isPastDay(dueDate);
 }
 
 export function fmtRelative(date: Date | string): string {
@@ -58,5 +63,5 @@ export function fmtRelative(date: Date | string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString();
+  return fmtDateUTC(d);
 }

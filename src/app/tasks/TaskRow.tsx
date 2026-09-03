@@ -14,6 +14,7 @@ import { Avatar } from "@/lib/Avatar";
 import { TaskCheckbox } from "./TaskCheckbox";
 import TaskModal from "./TaskModal";
 import { TYPE_LABELS, linkedHref, isOverdue } from "./lib";
+import { fmtDateUTC } from "@/lib/dates";
 
 export type TaskRowData = {
   id: string;
@@ -61,7 +62,7 @@ export default function TaskRow({
         }}
         className="flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors hover:bg-hover"
       >
-        <TaskCheckbox taskId={task.id} done={done} />
+        <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -80,9 +81,9 @@ export default function TaskRow({
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray">
             {task.dueDate &&
               (overdue ? (
-                <span className="badge badge-red">Overdue · {new Date(task.dueDate).toLocaleDateString()}</span>
+                <span className="badge badge-red">Overdue · {fmtDateUTC(task.dueDate)}</span>
               ) : (
-                <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+                <span>{fmtDateUTC(task.dueDate)}</span>
               ))}
             <span className="capitalize">{labelFor(TASK_PRIORITIES, task.priority)}</span>
             {task.assigneeName ? (

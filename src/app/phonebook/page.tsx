@@ -111,12 +111,19 @@ export default async function PhoneBookPage({
   // Stored numbers are digits-only, so a search of "(718) 871" should still hit.
   const digits = search.replace(/\D/g, "");
 
+  // Sep 2 QA (twice): search "definitively dead". Two causes fixed here:
+  // every `contains` is now case-insensitive (Postgres is case-sensitive by
+  // default, so "berel" matched nothing), and a search no longer dumps EVERY
+  // person of a matched business into the results - only people who match
+  // render as people rows, so unrelated names disappear from the list.
+  const insensitive = { mode: "insensitive" as const };
+
   const contactMatch: Prisma.ContactWhereInput | undefined = search
     ? {
         OR: [
-          { firstName: { contains: search } },
-          { lastName: { contains: search } },
-          { email: { contains: search } },
+          { firstName: { contains: search, ...insensitive } },
+          { lastName: { contains: search, ...insensitive } },
+          { email: { contains: search, ...insensitive } },
           { phone: { contains: search } },
           { cellPhone: { contains: search } },
           ...(digits.length >= 3
@@ -131,24 +138,25 @@ export default async function PhoneBookPage({
     ...(search && contactMatch
       ? {
           OR: [
-            { name: { contains: search } },
-            { email: { contains: search } },
+            { name: { contains: search, ...insensitive } },
+            { email: { contains: search, ...insensitive } },
             { phone: { contains: search } },
             { cellPhone: { contains: search } },
-            { locationName: { contains: search } },
-            { deliveryAddress: { contains: search } },
-            { billingAddress: { contains: search } },
+            { locationName: { contains: search, ...insensitive } },
+            { deliveryAddress: { contains: search, ...insensitive } },
+            { billingAddress: { contains: search, ...insensitive } },
             ...(digits.length >= 3
               ? [{ phone: { contains: digits } }, { cellPhone: { contains: digits } }]
               : []),
-            // A person matching pulls their whole business into the results.
+            // A person matching pulls their business's ROW in (for context) -
+            // not the rest of its people.
             { contacts: { some: contactMatch } },
           ],
         }
       : {}),
   };
 
-  const [companies, unassigned, allCompanies] = await Promise.all([
+  const [companies, matchedContacts, unassigned, allCompanies] = await Promise.all([
     prisma.company.findMany({
       where: companyWhere,
       orderBy: { name: "asc" },
@@ -156,6 +164,18 @@ export default async function PhoneBookPage({
         contacts: { orderBy: [{ firstName: "asc" }, { lastName: "asc" }] },
       },
     }),
+    // While searching, people rows come from THIS query - matching people only.
+    search && contactMatch
+      ? prisma.contact.findMany({
+          where: {
+            ...contactMatch,
+            companyId: { not: null },
+            ...(typeFilter ? { company: { type: typeFilter } } : {}),
+          },
+          include: { company: { select: { id: true, name: true, type: true } } },
+          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        })
+      : Promise.resolve([]),
     // Orphans only make sense when we aren't filtering by a business type.
     typeFilter
       ? Promise.resolve([])
@@ -181,20 +201,36 @@ export default async function PhoneBookPage({
       href: `/companies/${company.id}`,
       priority: company.priorityClient,
     });
-    for (const contact of company.contacts) {
-      rows.push({
-        key: `contact-${contact.id}`,
-        kind: "person",
-        name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
-        subtitle: company.name,
-        email: contact.email,
-        phone: contact.phone ?? contact.cellPhone,
-        phoneExt: contact.phone ? contact.phoneExt : null,
-        type: company.type,
-        href: `/contacts/${contact.id}`,
-        priority: false,
-      });
+    if (!search) {
+      for (const contact of company.contacts) {
+        rows.push({
+          key: `contact-${contact.id}`,
+          kind: "person",
+          name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+          subtitle: company.name,
+          email: contact.email,
+          phone: contact.phone ?? contact.cellPhone,
+          phoneExt: contact.phone ? contact.phoneExt : null,
+          type: company.type,
+          href: `/contacts/${contact.id}`,
+          priority: false,
+        });
+      }
     }
+  }
+  for (const contact of matchedContacts) {
+    rows.push({
+      key: `contact-${contact.id}`,
+      kind: "person",
+      name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+      subtitle: contact.company?.name ?? null,
+      email: contact.email,
+      phone: contact.phone ?? contact.cellPhone,
+      phoneExt: contact.phone ? contact.phoneExt : null,
+      type: contact.company?.type ?? "customer",
+      href: `/contacts/${contact.id}`,
+      priority: false,
+    });
   }
   rows.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -263,18 +299,22 @@ export default async function PhoneBookPage({
       <div className="sticky top-0 z-20 -mx-1 mb-4 px-1 pb-3 pt-1">
         <div className="card space-y-3 bg-surface/95 backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <InstantSearch
-              paramKey="q"
-              placeholder="Search business, person, phone or email…"
-              className="input-klyne w-full sm:w-96"
-            />
-            <p className="text-[13px] text-gray">
+            {/* useSearchParams needs a boundary even on a force-dynamic page. */}
+            <Suspense fallback={<div className="input-klyne h-9 w-full animate-pulse sm:w-96" />}>
+              <InstantSearch
+                paramKey="q"
+                placeholder="Search business, person, phone or email…"
+                className="input-klyne w-full sm:w-96"
+                ariaLabel="Search the phone book"
+              />
+            </Suspense>
+            <p className="text-[13px] text-gray" role="status">
               {businessCount} business{businessCount === 1 ? "" : "es"} · {peopleCount}{" "}
               {peopleCount === 1 ? "person" : "people"}
+              {search ? <> matching &ldquo;{search}&rdquo;</> : null}
             </p>
           </div>
 
-          {/* useSearchParams needs a boundary even on a force-dynamic page. */}
           <Suspense fallback={<div className="h-8" />}>
             <ListControls fields={PHONEBOOK_FIELDS} />
           </Suspense>

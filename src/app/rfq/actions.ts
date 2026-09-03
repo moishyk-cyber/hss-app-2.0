@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, RFQ_STATUSES } from "@/lib/constants";
+import { roundCents } from "@/lib/money";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("line_item", linkedId, action, detail);
@@ -26,19 +27,110 @@ async function revalidateLineItem(lineItemId: string) {
   if (item?.orderId) revalidatePath(`/orders/${item.orderId}`);
 }
 
+/**
+ * Sep 2 QA P0 fixes baked in here:
+ * - a non-finite or non-positive price is REJECTED with a message instead of
+ *   silently writing garbage (a negative price used to just clear the field);
+ * - money is rounded to cents at the write boundary (floats were storing
+ *   1234.56 as 1234.56005859375);
+ * - saving a real price on a needs_pricing item advances it to quote_received,
+ *   so the queue and the deal reflect that a quote now exists.
+ */
 export async function updateLineItemPricing(
   lineItemId: string,
   unitCost: number | null,
   unitPrice: number | null
 ): Promise<ActionResult> {
+  if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
+    return { ok: false, message: "Enter a price greater than $0." };
+  }
+  if (unitCost != null && !Number.isFinite(unitCost)) {
+    return { ok: false, message: "Enter a valid cost." };
+  }
+  const price = unitPrice == null ? null : roundCents(unitPrice);
+  const cost = unitCost == null ? null : roundCents(unitCost);
   return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { rfqStatus: true, name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    const advance = price != null && before.rfqStatus === "needs_pricing";
     await prisma.lineItem.update({
       where: { id: lineItemId },
-      data: { unitCost, unitPrice },
+      data: {
+        unitCost: cost,
+        unitPrice: price,
+        ...(advance ? { rfqStatus: "quote_received" } : {}),
+      },
     });
-    await log(lineItemId, "rfq_pricing_updated", `Price updated to ${unitPrice ?? "not set"}`);
+    await log(
+      lineItemId,
+      "rfq_pricing_updated",
+      `Price ${price != null ? `set to $${price}` : "cleared"} on "${before.name}"${
+        advance ? " - status advanced to quote_received" : ""
+      }`
+    );
+    await syncOpportunityPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not update pricing. Please try again.");
+}
+
+/**
+ * Keep the parent deal honest after a pricing edit (Sep 2 QA: items were priced
+ * but the deal still read "not quoted yet / Needs pricing: Yes"). Once no live
+ * item is left waiting on a quote, the deal's needsPricing flag flips off; and
+ * if the deal has no value yet but every live item now carries a price, the
+ * item total becomes the deal's starting value (still editable, and the Close
+ * panel still asks for the price actually agreed).
+ */
+async function syncOpportunityPricing(lineItemId: string): Promise<void> {
+  const item = await prisma.lineItem.findUnique({
+    where: { id: lineItemId },
+    select: { opportunityId: true },
+  });
+  if (!item?.opportunityId) return;
+  const opportunity = await prisma.opportunity.findUnique({
+    where: { id: item.opportunityId },
+    select: {
+      id: true,
+      needsPricing: true,
+      value: true,
+      stage: true,
+      lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } },
+    },
+  });
+  if (!opportunity || opportunity.stage === "won" || opportunity.stage === "lost") return;
+
+  const live = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
+  const unpriced = live.filter(
+    (li) => li.rfqStatus === "needs_pricing" || li.rfqStatus === "rfq_sent"
+  );
+  const data: { needsPricing?: boolean; value?: number } = {};
+  if (opportunity.needsPricing && live.length > 0 && unpriced.length === 0) {
+    data.needsPricing = false;
+  }
+  if (
+    opportunity.value == null &&
+    live.length > 0 &&
+    live.every((li) => li.unitPrice != null && li.unitPrice > 0)
+  ) {
+    const total = live.reduce((sum, li) => sum + (li.unitPrice ?? 0) * li.qty, 0);
+    data.value = Math.round((total + Number.EPSILON) * 100) / 100;
+  }
+  if (Object.keys(data).length === 0) return;
+  await prisma.opportunity.update({ where: { id: opportunity.id }, data });
+  await logActivity(
+    "opportunity",
+    opportunity.id,
+    "pricing_synced",
+    [
+      data.needsPricing === false ? "All items priced - needs-pricing flag cleared" : null,
+      data.value != null ? `Deal value set to $${data.value} from priced items` : null,
+    ]
+      .filter(Boolean)
+      .join("; ")
+  );
 }
 
 export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string): Promise<ActionResult> {

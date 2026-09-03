@@ -4,12 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
-import {
-  addLineItem,
-  markOpportunityLost,
-  markOpportunityWon,
-  moveStageFromStepper,
-} from "../actions";
+import { addLineItem, moveStageFromStepper } from "../actions";
+import { ClosePanel } from "../ClosePanel";
 import { LineItemRow } from "../LineItemRow";
 import {
   Card,
@@ -233,6 +229,14 @@ export default async function OpportunityDetailPage({
           </Link>
           .
         </div>
+      ) : error === "destination_required" ? (
+        <div className="banner-alert mb-4">
+          The order needs a delivery address and a needed-by date before it can be created -{" "}
+          <Link href="#close" className="underline">
+            fill them in on the Close panel
+          </Link>
+          .
+        </div>
       ) : error === "item_name_required" ? (
         <div className="banner-alert mb-4">Give the item a name before adding it.</div>
       ) : error === "save_failed" ? (
@@ -435,102 +439,22 @@ export default async function OpportunityDetailPage({
                   </p>
                 ) : null}
 
-                <div
-                  className={`grid grid-cols-1 gap-6 ${
-                    needsOrderRecovery ? "" : "md:grid-cols-2"
-                  }`}
-                >
-                  <form action={markOpportunityWon} className="space-y-3">
-                    <input type="hidden" name="id" value={opportunity.id} />
-                    {/* Tells the action these fields were really asked (an unticked box
-                        means "no deposit agreed", not "this form didn't ask"). */}
-                    <input type="hidden" name="closePanel" value="1" />
-
-                    <p className="section-label !mb-0">Won</p>
-
-                    <label className="block">
-                      <span className="field-label">Total price agreed</span>
-                      <input
-                        type="number"
-                        name="value"
-                        min="1"
-                        step="any"
-                        required
-                        defaultValue={opportunity.value ?? ""}
-                        placeholder="0"
-                        className="input-klyne w-full"
-                      />
-                    </label>
-
-                    {isProject ? (
-                      <div className="rounded-[10px] border border-border bg-panel p-3">
-                        <label className="flex items-center gap-2 text-[13px] text-ink">
-                          <input
-                            type="checkbox"
-                            name="requireDeposit"
-                            value="1"
-                            defaultChecked={requiresDeposit}
-                            className="h-4 w-4 rounded border-border accent-primary"
-                          />
-                          Deposit required?
-                        </label>
-                        <label className="mt-3 block">
-                          <span className="field-label">Deposit amount</span>
-                          <input
-                            type="number"
-                            name="depositAmount"
-                            min="0"
-                            step="any"
-                            defaultValue={suggestedDeposit || ""}
-                            placeholder="0"
-                            className="input-klyne w-full"
-                          />
-                        </label>
-                        <p className="mt-1.5 text-xs text-gray">
-                          Prefilled at {depositPercent}% for this account - change it to whatever
-                          was agreed. Untick the box and POs won&rsquo;t wait for a payment.
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-[13px] text-gray-dark">
-                        A straight order stages the full payment - POs go out once it&rsquo;s paid.
-                      </p>
-                    )}
-
-                    {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
-                    <PendingButton className="btn active:scale-[0.99]" pendingText="Creating order…">
-                      {needsOrderRecovery ? "Create the order" : "Mark won - create the order"}
-                    </PendingButton>
-                  </form>
-
-                  {needsOrderRecovery ? null : (
-                    <form action={markOpportunityLost} className="space-y-3">
-                      <input type="hidden" name="id" value={opportunity.id} />
-                      <p className="section-label !mb-0">Lost</p>
-                      <label className="block">
-                        <span className="field-label">Lost reason (required)</span>
-                        <input
-                          type="text"
-                          name="lostReason"
-                          required
-                          defaultValue={opportunity.lostReason ?? ""}
-                          placeholder="Why did we lose it?"
-                          className="input-klyne w-full"
-                        />
-                      </label>
-                      <p className="text-[13px] text-gray-dark">
-                        Closes the deal and drops it out of the follow-up queue. No order is
-                        created.
-                      </p>
-                      <PendingButton
-                        className="btn btn-danger active:scale-[0.99]"
-                        pendingText="Closing…"
-                      >
-                        Mark lost
-                      </PendingButton>
-                    </form>
-                  )}
-                </div>
+                <ClosePanel
+                  opportunityId={opportunity.id}
+                  isProject={isProject}
+                  requiresDeposit={requiresDeposit}
+                  depositPercent={depositPercent}
+                  suggestedDeposit={suggestedDeposit}
+                  needsOrderRecovery={needsOrderRecovery}
+                  defaultValue={opportunity.value}
+                  defaultDeliveryAddress={opportunity.deliveryAddress}
+                  defaultNeededBy={
+                    opportunity.neededByDate
+                      ? opportunity.neededByDate.toISOString().slice(0, 10)
+                      : ""
+                  }
+                  defaultLostReason={opportunity.lostReason}
+                />
               </Card>
             </div>
           ) : null}
