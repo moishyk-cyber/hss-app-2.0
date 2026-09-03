@@ -192,3 +192,36 @@ export async function markLineItemRemoved(lineItemId: string): Promise<ActionRes
     await revalidateLineItem(lineItemId);
   }, "Could not remove the line item. Please try again.");
 }
+
+/**
+ * Estimated lead time in days, set from the RFQ row. Feeds the "Longest lead
+ * time" summary on the deal and the read-only lead-time columns on the deal
+ * and order line-item tables. `days === null` clears it.
+ */
+export async function setLineItemLeadTime(
+  lineItemId: string,
+  days: number | null
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  if (days != null && (!Number.isFinite(days) || days < 0 || days > 365)) {
+    return { ok: false, message: "Lead time has to be between 0 and 365 days." };
+  }
+  const leadTimeDays = days == null ? null : Math.round(days);
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({ where: { id: lineItemId }, data: { leadTimeDays } });
+    await log(
+      lineItemId,
+      "lead_time_set",
+      leadTimeDays != null
+        ? `Lead time set to ${leadTimeDays}d on "${before.name}"`
+        : `Lead time cleared on "${before.name}"`
+    );
+    await revalidateLineItem(lineItemId);
+  }, "Could not update lead time. Please try again.");
+}

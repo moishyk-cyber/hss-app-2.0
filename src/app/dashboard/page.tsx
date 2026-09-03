@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   OPPORTUNITY_STAGES,
@@ -14,6 +15,8 @@ import {
 } from "@/lib/constants";
 import { fmtDateUTC } from "@/lib/dates";
 import { currentUserId } from "@/lib/identityServer";
+import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
+import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
 import { HorizontalBarChart } from "./charts/HorizontalBarChart";
@@ -34,6 +37,36 @@ const RFQ_QUEUE_VALUES = RFQ_QUEUE_STATUSES.map((s) => s.value) as string[];
 /** Days between two dates, floored - used for every "N days ago / waiting" queue label. */
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / 86_400_000);
+}
+
+/**
+ * Just enough of an Order to compute orderBall() - a narrower stand-in for
+ * ORDER_BALL_INCLUDE (@/lib/flow) so the My Orders queue isn't dragging every
+ * payment/PO/delivery column along for a badge. Kept structurally in sync
+ * with OrderBallInput by hand; a tsc failure here means it drifted.
+ */
+const ORDER_BALL_SELECT = {
+  status: true,
+  orderType: true,
+  orderValue: true,
+  depositRequired: true,
+  quoteStatus: true,
+  paymentTerms: true,
+  payments: { select: { status: true, amount: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true } },
+  lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
+  purchaseOrders: { select: { status: true } },
+  deliveries: { select: { status: true } },
+  _count: {
+    select: { serviceIssues: { where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
+  },
+} satisfies Prisma.OrderSelect;
+
+type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+
+function toOrderBallInput(order: OrderBallRow): OrderBallInput {
+  const { _count, ...rest } = order;
+  return { ...rest, openIssueCount: _count.serviceIssues };
 }
 
 function StatTile({
@@ -209,12 +242,18 @@ export default async function DashboardPage({
     // shows its "pick your name" empty state instead. ----
     prisma.opportunity.findMany({
       where: { salespersonId: mineId, stage: { notIn: ["won", "lost"] } },
-      select: { id: true, title: true, stage: true, nextFollowUp: true },
+      select: {
+        id: true,
+        title: true,
+        stage: true,
+        nextFollowUp: true,
+        lineItems: { select: { rfqStatus: true } },
+      },
       orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
     }),
     prisma.order.findMany({
       where: { ownerId: mineId, status: { not: "complete" } },
-      select: { id: true, title: true, status: true, neededByDate: true },
+      select: { id: true, title: true, neededByDate: true, ...ORDER_BALL_SELECT },
       orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }],
     }),
     prisma.task.findMany({
@@ -533,8 +572,13 @@ export default async function DashboardPage({
             count={myDeals.length}
             viewAllHref="/pipeline"
             viewAllLabel="All deals"
-            rows={myDeals.slice(0, 8).map(
-              (d): QueueRow => ({
+            rows={myDeals.slice(0, 8).map((d): QueueRow => {
+              const ball = opportunityBall({
+                stage: d.stage,
+                lineItems: d.lineItems,
+                order: null,
+              });
+              return {
                 href: `/pipeline/${d.id}`,
                 primary: d.title,
                 secondary: (
@@ -543,14 +587,17 @@ export default async function DashboardPage({
                   </span>
                 ),
                 meta: (
-                  <DateChip
-                    date={d.nextFollowUp}
-                    overdue={!!d.nextFollowUp && d.nextFollowUp < startOfToday}
-                    prefix="Follow up"
-                  />
+                  <span className="flex flex-col items-end gap-1">
+                    <BallInCourtBadge ball={ball} />
+                    <DateChip
+                      date={d.nextFollowUp}
+                      overdue={!!d.nextFollowUp && d.nextFollowUp < startOfToday}
+                      prefix="Follow up"
+                    />
+                  </span>
                 ),
-              })
-            )}
+              };
+            })}
             emptyText="No open deals assigned to you. Deals land here when you are set as the salesperson."
           />
 
@@ -559,8 +606,9 @@ export default async function DashboardPage({
             count={myOrders.length}
             viewAllHref="/orders"
             viewAllLabel="All orders"
-            rows={myOrders.slice(0, 8).map(
-              (o): QueueRow => ({
+            rows={myOrders.slice(0, 8).map((o): QueueRow => {
+              const ball = orderBall(toOrderBallInput(o));
+              return {
                 href: `/orders/${o.id}`,
                 primary: o.title,
                 secondary: (
@@ -569,14 +617,17 @@ export default async function DashboardPage({
                   </span>
                 ),
                 meta: (
-                  <DateChip
-                    date={o.neededByDate}
-                    overdue={!!o.neededByDate && o.neededByDate < startOfToday}
-                    prefix="Needed"
-                  />
+                  <span className="flex flex-col items-end gap-1">
+                    <BallInCourtBadge ball={ball} />
+                    <DateChip
+                      date={o.neededByDate}
+                      overdue={!!o.neededByDate && o.neededByDate < startOfToday}
+                      prefix="Needed"
+                    />
+                  </span>
                 ),
-              })
-            )}
+              };
+            })}
             emptyText="No open orders assigned to you. Orders land here when you are set as the owner."
           />
 

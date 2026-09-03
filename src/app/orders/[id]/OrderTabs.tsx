@@ -1,27 +1,31 @@
 "use client";
 
 // Order detail tabs (Aug 31 feedback: "create tabs... Invoice tab, a PO tab,
-// a delivery tab"). Client tab bar wrapping three server-rendered panels.
+// a delivery tab"). Client tab bar wrapping five server-rendered panels.
 // Supports deep links via URL hash - #invoice, #purchase-orders, #delivery,
-// plus the legacy #payments anchor mapped onto Invoice. The FlowStepper above
+// #files, #service, plus the legacy #payments anchor mapped onto Invoice. The FlowStepper above
 // this component drives it via next/link `href`s that point at these same
 // hashes (same interaction language as the sales pipeline stepper).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type TabKey = "invoice" | "purchase-orders" | "delivery";
+export type TabKey = "invoice" | "purchase-orders" | "delivery" | "files" | "service";
 
 const HASH_TO_TAB: Record<string, TabKey> = {
   "#invoice": "invoice",
   "#payments": "invoice", // legacy anchor, kept working
   "#purchase-orders": "purchase-orders",
   "#delivery": "delivery",
+  "#files": "files",
+  "#service": "service",
 };
 
 const TABS: { key: TabKey; label: string; hash: string }[] = [
   { key: "invoice", label: "Invoice", hash: "#invoice" },
   { key: "purchase-orders", label: "Purchase Orders", hash: "#purchase-orders" },
   { key: "delivery", label: "Delivery", hash: "#delivery" },
+  { key: "files", label: "Files", hash: "#files" },
+  { key: "service", label: "Service", hash: "#service" },
 ];
 
 export function OrderTabs({
@@ -29,11 +33,15 @@ export function OrderTabs({
   invoice,
   purchaseOrders,
   delivery,
+  files,
+  service,
 }: {
   defaultTab: TabKey;
   invoice: React.ReactNode;
   purchaseOrders: React.ReactNode;
   delivery: React.ReactNode;
+  files: React.ReactNode;
+  service: React.ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>(defaultTab);
 
@@ -129,6 +137,8 @@ export function OrderTabs({
         <div className={tab === "invoice" ? "" : "hidden"}>{invoice}</div>
         <div className={tab === "purchase-orders" ? "" : "hidden"}>{purchaseOrders}</div>
         <div className={tab === "delivery" ? "" : "hidden"}>{delivery}</div>
+        <div className={tab === "files" ? "" : "hidden"}>{files}</div>
+        <div className={tab === "service" ? "" : "hidden"}>{service}</div>
       </div>
     </div>
   );

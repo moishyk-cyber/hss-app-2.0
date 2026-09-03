@@ -19,7 +19,7 @@ import {
   labelFor,
 } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
-import { advancePoStatus, createPurchaseOrder, markPoShipped } from "../actions";
+import { advancePoStatus, createPurchaseOrder, markPoShipped, setPoAutoQuotesNumber } from "../actions";
 import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
@@ -31,6 +31,7 @@ type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
   id: string;
   poNumber: string | null;
+  autoQuotesPoNumber: string | null;
   status: string;
   shipTo: string;
   sentDate: Date | null;
@@ -151,8 +152,19 @@ export default function PurchaseOrdersSection({
       setCreateError("Tick at least one item to put on this PO.");
       return;
     }
+    const autoQuotesPoNumber = String(formData.get("autoQuotesPoNumber") ?? "").trim();
+    if (autoQuotesPoNumber.length > 40) {
+      setCreateError("AutoQuotes PO # is too long (max 40 characters).");
+      return;
+    }
     setCreateError(null);
-    const result = await createPurchaseOrder(orderId, supplierId, lineItemIds, supplierId ? "" : typedVendor);
+    const result = await createPurchaseOrder(
+      orderId,
+      supplierId,
+      lineItemIds,
+      supplierId ? "" : typedVendor,
+      autoQuotesPoNumber
+    );
     if (result.ok) {
       setShowEmptyForm(false);
       setVendorQuery("");
@@ -206,6 +218,17 @@ export default function PurchaseOrdersSection({
             {/* The combobox is a display control; these carry the real values. */}
             <input type="hidden" name="supplierId" value={vendorId} />
             <input type="hidden" name="newVendorName" value={newVendorName} />
+          </div>
+          <div className="max-w-xs">
+            <label className="block">
+              <span className="field-label">AutoQuotes PO #</span>
+              <input
+                name="autoQuotesPoNumber"
+                maxLength={40}
+                placeholder="AutoQuotes PO #"
+                className="input-klyne w-full px-2 py-1.5 text-sm"
+              />
+            </label>
           </div>
           <div>
             <span className="field-label">Items</span>
@@ -291,6 +314,11 @@ export default function PurchaseOrdersSection({
                         {po.supplier?.name ?? "no vendor"}
                       </span>
                     </button>
+                    {po.autoQuotesPoNumber && (
+                      <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
+                        AQ# {po.autoQuotesPoNumber}
+                      </span>
+                    )}
                     <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
                       {po.lineItems.length} item{po.lineItems.length === 1 ? "" : "s"}
                     </span>
@@ -307,6 +335,16 @@ export default function PurchaseOrdersSection({
                       <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
                         {labelFor(PO_STATUSES, po.status)}
                       </span>
+                    </span>
+                    <span className="relative z-10 shrink-0">
+                      <a
+                        href={`/orders/${orderId}/po/${po.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-sm active:scale-[0.99]"
+                      >
+                        PDF
+                      </a>
                     </span>
                     {next && (
                       <span className="relative z-10">
@@ -327,7 +365,7 @@ export default function PurchaseOrdersSection({
         </div>
       )}
 
-      {openPo ? <PoDetailModal po={openPo} onClose={() => setOpenPoId(null)} /> : null}
+      {openPo ? <PoDetailModal orderId={orderId} po={openPo} onClose={() => setOpenPoId(null)} /> : null}
 
       {shipPo ? (
         <ShipPoDialog
@@ -344,7 +382,7 @@ export default function PurchaseOrdersSection({
 }
 
 /** PO popup: items, ship-to, the dates, and a read-only look at its delivery leg. */
-function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
+function PoDetailModal({ orderId, po, onClose }: { orderId: string; po: Po; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   // A split PO has more than one leg; the modal summarizes the first and sends
   // people to the Delivery tab for the rest.
@@ -404,6 +442,18 @@ function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
           {fmtDate(po.ackDate)} · Expected: {fmtDate(delivery?.expectedDelivery ?? null)}
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <AutoQuotesField po={po} />
+          <a
+            href={`/orders/${orderId}/po/${po.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-sm active:scale-[0.99]"
+          >
+            PDF
+          </a>
+        </div>
+
         <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
           {po.lineItems.map((li) => (
             <li key={li.id}>
@@ -415,6 +465,64 @@ function PoDetailModal({ po, onClose }: { po: Po; onClose: () => void }) {
         <DeliveryReadout delivery={delivery} />
       </div>
     </div>
+  );
+}
+
+/** Modal's inline edit for the AutoQuotes PO # - same 40-char validation as create. */
+function AutoQuotesField({ po }: { po: Po }) {
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  async function handleSave(formData: FormData) {
+    const value = String(formData.get("autoQuotesPoNumber") ?? "");
+    if (value.trim().length > 40) {
+      setError("AutoQuotes PO # is too long (max 40 characters).");
+      return;
+    }
+    const result = await setPoAutoQuotesNumber(po.id, value);
+    if (result.ok) {
+      setError(null);
+      setEditing(false);
+      toast({ kind: "success", message: "AutoQuotes PO # saved" });
+    } else {
+      setError(result.message);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span className="flex items-center gap-2 text-xs text-gray-dark">
+        AQ#: {po.autoQuotesPoNumber || <span className="empty-value">not set</span>}
+        <button
+          type="button"
+          className="text-gray transition-colors hover:text-ink hover:underline"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <form action={handleSave} className="flex items-center gap-2">
+      <input
+        name="autoQuotesPoNumber"
+        maxLength={40}
+        defaultValue={po.autoQuotesPoNumber ?? ""}
+        placeholder="AutoQuotes PO #"
+        autoFocus
+        className="input-klyne w-40 px-2 py-1 text-xs"
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
+        Save
+      </PendingButton>
+      <button type="button" className="btn btn-sm" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+      {error && <span className="banner-alert px-2 py-1 text-xs">{error}</span>}
+    </form>
   );
 }
 

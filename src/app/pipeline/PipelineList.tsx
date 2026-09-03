@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { OPPORTUNITY_STAGES } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
+import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { StageSelect } from "./StageSelect";
 import type { KanbanCard } from "./KanbanBoard";
 import { fmtMoney } from "./_ui";
@@ -90,6 +91,10 @@ export function PipelineList({
 
             <span className="relative z-10 shrink-0">
               <StageSelect opportunityId={card.id} stage={card.stage} />
+            </span>
+
+            <span className="hidden shrink-0 lg:block">
+              <BallInCourtBadge ball={card.ball} />
             </span>
 
             <span className="hidden w-24 shrink-0 text-right text-[13px] tabular-nums text-gray md:block">

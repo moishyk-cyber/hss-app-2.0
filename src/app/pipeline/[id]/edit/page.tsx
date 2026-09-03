@@ -98,6 +98,11 @@ export default async function EditOpportunityPage({
           </div>
         ) : error === "save_failed" ? (
           <div className="banner-alert">Something went wrong while saving. Please try again.</div>
+        ) : error === "not_allowed" ? (
+          <div className="banner-alert">
+            That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
+            admin.
+          </div>
         ) : null}
         <input type="hidden" name="id" value={opportunity.id} />
 

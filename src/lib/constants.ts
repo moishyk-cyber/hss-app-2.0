@@ -30,15 +30,6 @@ export const DELIVERY_STATUSES = [
   { value: "arrived_complete", label: "Arrived" },
 ] as const;
 
-// PO-level delivery/trucking status - modeled on the client's real delivery
-// tracking spreadsheet (pending -> scheduled -> partial/full delivery).
-export const PO_DELIVERY_STATUSES = [
-  { value: "pending", label: "Pending" },
-  { value: "scheduled", label: "Scheduled" },
-  { value: "delivered_partial", label: "Delivered - Partial" },
-  { value: "delivered_full", label: "Delivered - Full" },
-] as const;
-
 export const ORDER_STATUSES = [
   { value: "new", label: "New" },
   { value: "awaiting_payment", label: "Awaiting Payment" },
@@ -178,12 +169,6 @@ export const TASK_PRIORITY_COLORS: Record<string, string> = {
   critical: "badge-red",
 };
 
-export const PO_DELIVERY_STATUS_COLORS: Record<string, string> = {
-  pending: "badge-gray",
-  scheduled: "badge-blue",
-  delivered_partial: "badge-orange",
-  delivered_full: "badge-green",
-};
 
 // ---------------------------------------------------------------------------
 // Sales -> Orders -> Delivery -> Service vocabularies (Sep 3 2026 build plan).

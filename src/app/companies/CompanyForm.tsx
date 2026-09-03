@@ -68,6 +68,11 @@ export function CompanyForm({
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : error === "not_allowed" ? (
+        <FormAlert>
+          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
+          admin.
+        </FormAlert>
       ) : null}
       {company?.id ? <input type="hidden" name="id" value={company.id} /> : null}
 

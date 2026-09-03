@@ -1,13 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
+import { PendingButton, ActionButton, BadgeSelect, Spinner } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { parseMoney, fmtUSD } from "@/lib/money";
+import { fmtDateUTC } from "@/lib/dates";
 import { Avatar } from "@/lib/Avatar";
 import { UserSelect } from "@/lib/UserSelect";
-import { markLineItemRemoved, setLineItemAssignee, setLineItemRfqStatus, updateLineItemPricing } from "./actions";
+import {
+  markLineItemRemoved,
+  setLineItemAssignee,
+  setLineItemLeadTime,
+  setLineItemRfqStatus,
+  updateLineItemPricing,
+} from "./actions";
+
+/** "N d lead · est. <date>" from an item's lead time, measured from today. */
+function leadTimeLabel(days: number): string {
+  const est = new Date(Date.now() + days * 86_400_000);
+  return `${days} d lead · est. ${fmtDateUTC(est)}`;
+}
 
 /** Amber past this many days sitting in the RFQ queue without a status change. */
 const RFQ_WAITING_THRESHOLD_DAYS = 7;
@@ -114,6 +127,79 @@ function PriceCell({ item }: { item: RfqItem }) {
   );
 }
 
+/**
+ * Lead time in days, saved on blur/Enter (no separate button - matches the
+ * inline-number pattern on the deal page). 0-365, empty clears.
+ */
+function LeadTimeCell({ item }: { item: RfqItem }) {
+  const { toast } = useToast();
+  const initial = item.leadTimeDays != null ? String(item.leadTimeDays) : "";
+  const [value, setValue] = useState(initial);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function commit() {
+    const trimmed = value.trim();
+    if (trimmed === initial) return;
+    if (trimmed !== "" && !/^\d+$/.test(trimmed)) {
+      setError("Enter a whole number of days.");
+      setValue(initial);
+      return;
+    }
+    const days = trimmed === "" ? null : Number(trimmed);
+    if (days != null && (days < 0 || days > 365)) {
+      setError("Enter 0-365 days.");
+      setValue(initial);
+      return;
+    }
+    startTransition(async () => {
+      setError(null);
+      const result = await setLineItemLeadTime(item.id, days);
+      if (!result.ok) {
+        setError(result.message);
+        setValue(initial);
+        return;
+      }
+      toast({
+        kind: days != null ? "success" : "info",
+        message:
+          days != null
+            ? `Lead time set to ${days}d on "${item.name}"`
+            : `Lead time cleared on "${item.name}"`,
+      });
+    });
+  }
+
+  return (
+    <span className="relative inline-flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={365}
+        step={1}
+        value={value}
+        disabled={pending}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+        className="input-klyne w-16 px-1.5 py-1 text-xs disabled:opacity-60"
+        aria-label={`Lead time in days for ${item.name}`}
+      />
+      {pending ? <Spinner className="text-gray" /> : null}
+      {error ? (
+        <span role="alert" className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
+          {error}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 export default function RfqRow({
   item,
   users,
@@ -153,7 +239,7 @@ export default function RfqRow({
           <div className="text-xs text-gray">
             {item.brand}
             {item.brand && item.leadTimeDays != null ? " · " : ""}
-            {item.leadTimeDays != null ? `${item.leadTimeDays}d lead` : ""}
+            {item.leadTimeDays != null ? leadTimeLabel(item.leadTimeDays) : ""}
           </div>
         )}
       </td>
@@ -173,6 +259,9 @@ export default function RfqRow({
       </td>
       <td className="!py-1.5">
         <PriceCell item={item} />
+      </td>
+      <td className="!py-1.5">
+        <LeadTimeCell item={item} />
       </td>
       <td className="!py-1.5">
         <UserSelect

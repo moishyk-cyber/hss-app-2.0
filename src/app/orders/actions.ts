@@ -19,9 +19,12 @@ import {
   DELIVERY_STATUSES,
   DELIVERY_MODES,
   DELIVERY_LEG_STATUSES,
+  PAYMENT_TERMS,
+  QUOTE_STATUSES,
 } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
+import { applyTermsToOrder } from "@/lib/terms";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import {
@@ -380,12 +383,17 @@ export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
   lineItemIds: string[],
-  newVendorName: string = ""
+  newVendorName: string = "",
+  autoQuotesPoNumber: string = ""
 ): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
   if ((!supplierId && !newVendorName.trim()) || lineItemIds.length === 0) {
     return { ok: false, message: "Pick or create a vendor, and at least one item." };
+  }
+  const aqNumber = autoQuotesPoNumber.trim();
+  if (aqNumber.length > 40) {
+    return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
   }
   return safeAction(async () => {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -406,7 +414,7 @@ export async function createPurchaseOrder(
       const poNumber = `PO-${base}-${existing + 1}`;
       try {
         po = await prisma.purchaseOrder.create({
-          data: { orderId, supplierId: vendor.id, poNumber, status: "draft" },
+          data: { orderId, supplierId: vendor.id, poNumber, status: "draft", autoQuotesPoNumber: aqNumber || null },
         });
         break;
       } catch (err) {
@@ -938,4 +946,148 @@ export async function setOrderLocation(orderId: string, locationId: string): Pro
     );
     revalidateOrder(orderId);
   }, "Could not set the location. Please try again.");
+}
+
+// ---------------------------------------------------------------------------
+// Purchase orders: AutoQuotes #, quote + terms on the order (plan §3C).
+// ---------------------------------------------------------------------------
+
+/** Inline edit for the AutoQuotes PO # from the PO row/modal - same validation as create. */
+export async function setPoAutoQuotesNumber(poId: string, value: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
+  const trimmed = value.trim();
+  if (trimmed.length > 40) {
+    return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
+  }
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: { autoQuotesPoNumber: trimmed || null },
+    });
+    await log(
+      po.orderId,
+      "po_autoquotes_number_set",
+      `PO ${po.poNumber ?? po.id} AutoQuotes PO # set to ${trimmed || "none"}`
+    );
+    revalidateOrder(po.orderId);
+  }, "Could not save the AutoQuotes PO #. Please try again.");
+}
+
+/**
+ * The Invoice tab's quote row: quoteStatus + the link to the customer-facing
+ * quote. Setting status to "sent" stamps quoteSentAt the first time only -
+ * re-sending doesn't reset the clock.
+ */
+export async function setOrderQuote(
+  orderId: string,
+  input: { quoteStatus: string; quoteUrl: string }
+): Promise<ActionResult> {
+  const denied = await requirePermission("quotes.edit");
+  if (denied) return denied;
+  if (!isValidValue(QUOTE_STATUSES, input.quoteStatus)) {
+    return { ok: false, message: "Pick a valid quote status." };
+  }
+  const url = input.quoteUrl.trim();
+  if (url && !/^https?:\/\//i.test(url)) {
+    return { ok: false, message: "The quote link should start with http:// or https://." };
+  }
+  return safeAction(async () => {
+    const existing = await prisma.order.findUnique({ where: { id: orderId }, select: { quoteSentAt: true } });
+    if (!existing) throw new Error("Order not found");
+    const stampSent = input.quoteStatus === "sent" && !existing.quoteSentAt;
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        quoteStatus: input.quoteStatus,
+        quoteUrl: url || null,
+        ...(stampSent ? { quoteSentAt: new Date() } : {}),
+      },
+    });
+    await log(
+      orderId,
+      "quote_updated",
+      `Quote set to ${labelFor(QUOTE_STATUSES, input.quoteStatus)}${url ? " (link attached)" : ""}`
+    );
+    revalidateOrder(orderId);
+  }, "Could not update the quote. Please try again.");
+}
+
+/**
+ * The Invoice tab's TermsCard "Edit terms" save: re-runs applyTermsToOrder
+ * (writes paymentTerms/termsNotes/depositRequired and rebuilds the
+ * source="terms" invoices) in a transaction. Once a payment on the order has
+ * been marked paid, terms are locked - only the notes can still change, so
+ * the terms/deposit inputs are silently ignored rather than erroring (the UI
+ * hides them once a payment is paid, this is the server-side backstop).
+ */
+export async function updateOrderTerms(
+  orderId: string,
+  input: { terms: string; depositAmount?: number | null; notes: string }
+): Promise<ActionResult> {
+  const denied = await requirePermission("terms.edit");
+  if (denied) return denied;
+  if (!isValidValue(PAYMENT_TERMS, input.terms)) {
+    return { ok: false, message: "Pick a valid payment terms option." };
+  }
+  if (input.depositAmount != null && (!Number.isFinite(input.depositAmount) || input.depositAmount < 0)) {
+    return { ok: false, message: "Enter a valid deposit amount." };
+  }
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderValue: true,
+        payments: { select: { status: true } },
+      },
+    });
+    if (!order) throw new Error("Order not found");
+    const anyPaid = order.payments.some((p) => p.status === "paid");
+    const notes = input.notes.trim() || null;
+
+    if (anyPaid) {
+      await prisma.order.update({ where: { id: orderId }, data: { termsNotes: notes } });
+      await log(
+        orderId,
+        "terms_notes_updated",
+        "Terms notes updated - terms and deposit are locked because a payment on this order is already paid"
+      );
+      revalidateOrder(orderId);
+      return;
+    }
+
+    await prisma.$transaction((tx) =>
+      applyTermsToOrder(tx, orderId, {
+        terms: input.terms,
+        value: order.orderValue ?? 0,
+        depositAmount: input.depositAmount,
+        notes,
+      })
+    );
+    await recomputeOrderStatus(orderId);
+    revalidateOrder(orderId);
+  }, "Could not update the terms. Please try again.");
+}
+
+/** Payment row inline edit: attach/replace/clear the QuickBooks link. */
+export async function setPaymentQuickbooksRef(paymentId: string, link: string): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
+  const trimmed = link.trim();
+  if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+    return { ok: false, message: "The QuickBooks link should start with http:// or https://." };
+  }
+  return safeAction(async () => {
+    const payment = await prisma.payment.update({
+      where: { id: paymentId },
+      data: { quickbooksRef: trimmed || null },
+    });
+    await log(
+      payment.orderId,
+      "payment_quickbooks_ref_set",
+      `Payment (${payment.type}) QuickBooks link ${trimmed ? "set" : "cleared"}`
+    );
+    revalidateOrder(payment.orderId);
+  }, "Could not save the QuickBooks link. Please try again.");
 }

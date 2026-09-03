@@ -54,6 +54,11 @@ export function ContactForm({
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
+      ) : error === "not_allowed" ? (
+        <FormAlert>
+          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
+          admin.
+        </FormAlert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
