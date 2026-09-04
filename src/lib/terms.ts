@@ -11,8 +11,6 @@ import { logActivity } from "@/lib/log";
 /** A transaction client or the global prisma client. */
 export type TermsDb = Prisma.TransactionClient | PrismaClient;
 
-export type PaymentTerm = (typeof PAYMENT_TERMS)[number]["value"];
-
 export type DepositForTermsInput = {
   terms: string;
   /** Order value (dollars). */
@@ -51,7 +49,7 @@ export type ApplyTermsInput = {
   notes?: string | null;
 };
 
-export type TermsInvoice = {
+type TermsInvoice = {
   type: string;
   amount: number;
   status: string;

@@ -17,27 +17,13 @@ const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-const DATE_TIME_FMT = new Intl.DateTimeFormat("en-US", {
-  timeZone: "UTC",
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 /** "Sep 2, 2026" - deterministic across server and client. */
 export function fmtDateUTC(d: Date | string | number): string {
   return DATE_FMT.format(new Date(d));
 }
 
-/** "Sep 2, 2026, 4:15 PM" (UTC) - deterministic across server and client. */
-export function fmtDateTimeUTC(d: Date | string | number): string {
-  return DATE_TIME_FMT.format(new Date(d));
-}
-
 /** The stored day as "YYYY-MM-DD" (UTC calendar day - how date fields are stored). */
-export function ymdUTC(d: Date | string | number): string {
+function ymdUTC(d: Date | string | number): string {
   return new Date(d).toISOString().slice(0, 10);
 }
 

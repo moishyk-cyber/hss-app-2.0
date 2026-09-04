@@ -18,18 +18,9 @@ export {
   evaluatePaymentGate,
   deriveOrderStatus,
   canCompleteOrder,
-  liveLineItems,
   FLOW_ORDER_INCLUDE,
-  MANUAL_STATUSES,
 } from "@/lib/flowRules";
-export type {
-  GateOrder,
-  PaymentGate,
-  FlowOrder,
-  FlowLineItem,
-  FlowPo,
-  FlowDelivery,
-} from "@/lib/flowRules";
+export type { PaymentGate } from "@/lib/flowRules";
 
 /**
  * Re-derive and persist Order.status from payments/POs/deliveries/items. Call
@@ -122,9 +113,4 @@ export type OrderWithBallInclude = Prisma.OrderGetPayload<{ include: typeof ORDE
 /** Shape an ORDER_BALL_INCLUDE row for orderBall() / opportunityBall(). */
 export function orderBallInput(order: OrderWithBallInclude): OrderBallInput {
   return { ...order, openIssueCount: order._count.serviceIssues };
-}
-
-/** Open issues as the service step sees them (open or being worked). */
-export function isOpenIssueStatus(status: string): boolean {
-  return (OPEN_SERVICE_ISSUE_STATUSES as readonly string[]).includes(status);
 }

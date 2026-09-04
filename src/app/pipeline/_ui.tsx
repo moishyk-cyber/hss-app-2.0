@@ -1,13 +1,6 @@
 // Local presentational helpers for the /pipeline module.
 import { BackLink } from "@/lib/BackLink";
-import {
-  DELIVERY_STATUSES,
-  OPPORTUNITY_STAGES,
-  RFQ_STATUSES,
-  RFQ_STATUS_COLORS,
-  STAGE_COLORS,
-  labelFor,
-} from "@/lib/constants";
+import { OPPORTUNITY_STAGES, STAGE_COLORS, labelFor } from "@/lib/constants";
 
 export const ORDER_TYPES = [
   { value: "project", label: "Project" },
@@ -51,18 +44,6 @@ export function StageBadge({ stage }: { stage: string }) {
       {labelFor(OPPORTUNITY_STAGES, stage)}
     </span>
   );
-}
-
-export function RfqBadge({ status }: { status: string }) {
-  return (
-    <span className={`badge ${RFQ_STATUS_COLORS[status] ?? "badge-gray"}`}>
-      {labelFor(RFQ_STATUSES, status)}
-    </span>
-  );
-}
-
-export function DeliveryLabel({ status }: { status: string }) {
-  return <>{labelFor(DELIVERY_STATUSES, status)}</>;
 }
 
 export function PageHeader({
@@ -148,7 +129,7 @@ export function Card({
 }
 
 /** Muted italic stand-in - never a bare dash. See DESIGN_V2.md §2. */
-export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
+function Empty({ children = "not set" }: { children?: React.ReactNode }) {
   return <span className="empty-value">{children}</span>;
 }
 

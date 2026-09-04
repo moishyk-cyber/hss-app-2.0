@@ -3,8 +3,8 @@
 // mirrored into a cookie so Server Actions can attribute activity-log entries.
 // Replace with a real session when auth lands.
 
-export const IDENTITY_KEY = "hss.salespersonId";
-export const IDENTITY_COOKIE = "hss_user_id";
+const IDENTITY_KEY = "hss.salespersonId";
+const IDENTITY_COOKIE = "hss_user_id";
 
 export function readStoredUserId(): string | null {
   try {

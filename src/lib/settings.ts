@@ -4,29 +4,13 @@
 
 import { prisma } from "@/lib/prisma";
 
-export const SETTING_KEYS = [
-  "company.name",
-  "company.address",
-  "company.phone",
-  "company.email",
-  "service.defaultAssigneeId",
-  "po.pdfFooter",
-] as const;
-
-export type SettingKey = (typeof SETTING_KEYS)[number];
-
-export const SETTING_LABELS: Record<SettingKey, string> = {
-  "company.name": "Company name",
-  "company.address": "Company address",
-  "company.phone": "Company phone",
-  "company.email": "Company email",
-  "service.defaultAssigneeId": "Default customer-service assignee",
-  "po.pdfFooter": "PO PDF footer",
-};
-
-export function isSettingKey(value: string | null | undefined): value is SettingKey {
-  return !!value && (SETTING_KEYS as readonly string[]).includes(value);
-}
+export type SettingKey =
+  | "company.name"
+  | "company.address"
+  | "company.phone"
+  | "company.email"
+  | "service.defaultAssigneeId"
+  | "po.pdfFooter";
 
 /** One setting, or null when unset. Never throws (a missing table reads as unset). */
 export async function getSetting(key: SettingKey): Promise<string | null> {

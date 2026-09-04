@@ -1,9 +1,7 @@
 // Module-local delivery helpers shared by the Deliveries list, the order's
 // Delivery tab and the PO "Advance to Shipped" dialog. Pure and client-safe
 // (no prisma, no "use client"), so the server actions in orders/actions.ts
-// import it too. The mode vocabulary itself lives in @/lib/constants.
-
-import { DELIVERY_MODES, labelFor } from "@/lib/constants";
+// import it too.
 
 /**
  * Leg 1 - the manufacturer's shipment (carrier, tracking link, ETA). Applies
@@ -32,8 +30,4 @@ export function modeForShipTo(shipTo: string): string {
  */
 export function inTransitItemStatus(mode: string): string {
   return mode === "manufacturer_to_hss_to_customer" ? "in_transit_to_hss" : "in_transit_to_client";
-}
-
-export function modeLabel(mode: string): string {
-  return labelFor(DELIVERY_MODES, mode);
 }

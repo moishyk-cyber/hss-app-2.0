@@ -11,13 +11,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Private bucket holding every order/deal document upload. */
-export const UPLOAD_BUCKET = "order-files";
+const UPLOAD_BUCKET = "order-files";
 
 /** Hard cap on a single upload (matches the file input's client-side check). */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /** How long a download link stays valid (seconds). */
-export const DOWNLOAD_URL_TTL = 3600;
+const DOWNLOAD_URL_TTL = 3600;
 
 export function uploadsConfigured(): boolean {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -42,7 +42,7 @@ function serviceClient(): SupabaseClient {
 }
 
 /** Filesystem-safe object name: keeps the extension, drops everything exotic. */
-export function safeStorageName(fileName: string): string {
+function safeStorageName(fileName: string): string {
   const cleaned = fileName
     .trim()
     .replace(/[^a-zA-Z0-9._-]+/g, "-")

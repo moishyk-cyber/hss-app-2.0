@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { fmtDateUTC, fmtDateTimeUTC } from "@/lib/dates";
+import { fmtDateUTC } from "@/lib/dates";
 
 // Table-cell date/money formatters. Per DESIGN_V2.md §2, a bare "-" is only
 // allowed inside table bodies for numeric/currency-like cells where column
@@ -19,30 +19,9 @@ export function fmtDate(d: Date | string | null | undefined): ReactNode {
   return fmtDateUTC(d);
 }
 
-export function fmtDateTime(d: Date | string | null | undefined): ReactNode {
-  if (!d) return mutedDash();
-  return fmtDateTimeUTC(d);
-}
-
 export function fmtMoney(v: number | null | undefined): ReactNode {
   if (v == null) return mutedDash();
   return `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
-/**
- * True only for an absolute http(s) URL. Guards tracking-link rendering: a
- * carrier's tracking field is free text entered by a person, and production
- * has seen non-URLs ("gewryher") and internal links (chat.google.com) land
- * there - neither should render as a clickable "Track" link.
- */
-export function isValidTrackingUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 // Hostnames that are carriers/aggregators even when "track" isn't in the URL.
@@ -50,10 +29,12 @@ const TRACKING_HOST_PATTERN =
   /(^|\.)(ups|fedex|usps|dhl|ontrac|lasership|rlcarriers|rrts|abfs|arcb|xpo|tforcefreight|saia|sefl|estes-express|oldominion|odfl|pilotdelivers|averittexpress|daytonfreight|aftership|17track|parcelsapp|shipstation|shippo|narvar)\.(com|net|us|org)$/i;
 
 /**
- * Stricter than isValidTrackingUrl (Sep 2 QA P1: "Track" on PO-E9V05J-2 opened
- * chat.google.com). A link renders as tracking only when it's http(s) AND
- * either points at a known carrier/aggregator or mentions tracking in its
- * host/path/query. Anything else on file is treated as missing in the UI.
+ * A carrier's tracking field is free text, and production has seen non-URLs
+ * ("gewryher") and internal links land there - a chat.google.com link once
+ * rendered as a live "Track" button on PO-E9V05J-2. A link renders as tracking
+ * only when it's http(s) AND either points at a known carrier/aggregator or
+ * mentions tracking in its host/path/query. Anything else on file is treated
+ * as missing in the UI.
  */
 export function isLikelyTrackingUrl(url: string | null | undefined): boolean {
   if (!url) return false;

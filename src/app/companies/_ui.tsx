@@ -30,7 +30,7 @@ export function TypeBadge({ type }: { type: string }) {
 export { Avatar } from "@/lib/Avatar";
 
 // Contact-detail links live in one shared file now (phonebook treatment app-wide).
-export { PhoneLink, EmailLink, AddressLine } from "@/lib/ContactLinks";
+export { PhoneLink, EmailLink } from "@/lib/ContactLinks";
 
 /** labelFor() falls back to a bare dash - never let that reach the page (§2). */
 export function VerticalLabel({ vertical }: { vertical: string | null }) {
@@ -105,7 +105,7 @@ export function DetailHeader({
 }
 
 /** Visible required marker. The input's own `required` is what AT announces. */
-export function RequiredMark() {
+function RequiredMark() {
   return (
     <span aria-hidden="true" className="text-gray-dark">
       {" *"}

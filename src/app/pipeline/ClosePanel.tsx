@@ -1,18 +1,17 @@
 "use client";
 
-// Close panel (extracted client-side, Sep 2 QA round): "Mark won - create the
-// order" used to be an instant write that spawned a real order with no
-// confirmation and with Job/Needed-By/Delivery all "not set". Now:
-// - the won form requires a delivery destination and a needed-by date, so the
-//   order lands in fulfillment ready to work;
-// - both closes show a review dialog first - one stray click can no longer
-//   create (or kill) a deal.
+// Close panel: the client half of marking a deal won or lost. Three rules hold
+// it together.
+// - Nothing is ever re-asked. Price, location + address and needed-by arrive
+//   prefilled from the deal as a read-only summary with a "change" link each;
+//   only a MISSING answer opens as an input.
+// - The won form requires a delivery destination and a needed-by date, so the
+//   order lands in fulfillment ready to work rather than "not set" everywhere.
+// - Both closes show a review dialog first, so one stray click can't create
+//   (or kill) a deal.
 //
-// Sep 3 (plan A1.4): nothing is ever re-asked. Price, location + address and
-// needed-by arrive prefilled from the deal as a read-only summary with a
-// "change" link each; only a MISSING answer opens as an input. The terms agreed
-// on the call are picked here too, and applyTermsToOrder turns them into the
-// order's deposit gate and its invoices.
+// The terms agreed on the call are picked here too, and applyTermsToOrder turns
+// them into the order's deposit gate and its invoices.
 
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
@@ -222,7 +221,7 @@ export function ClosePanel({
         )}
 
         {/* The order this creates goes straight to fulfillment - it needs a
-            destination and a date, not "not set" everywhere (Sep 2 QA). */}
+            destination and a date, not "not set" everywhere. */}
         {editLocation ? (
           <div className="space-y-2 rounded-[10px] border border-border bg-panel p-3">
             <span className="section-label !mb-0">Location</span>

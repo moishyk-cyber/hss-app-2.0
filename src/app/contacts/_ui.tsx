@@ -54,7 +54,7 @@ export function DetailHeader({
 }
 
 /** Muted italic stand-in - never a bare dash. */
-export function Empty({ children = "not set" }: { children?: React.ReactNode }) {
+function Empty({ children = "not set" }: { children?: React.ReactNode }) {
   return <span className="empty-value">{children}</span>;
 }
 
@@ -238,7 +238,7 @@ export function TextArea({
   );
 }
 
-export const CONTACT_TITLES = [
+const CONTACT_TITLES = [
   { value: "manager", label: "Manager" },
   { value: "purchasing", label: "Purchasing" },
   { value: "billing", label: "Billing" },

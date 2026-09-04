@@ -506,15 +506,12 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
 // ---------------------------------------------------------------------------
 // Deliveries (plan §3B). A Delivery is one delivery leg: one PO -> one Delivery
 // by default (created with the PO below), splittable, and HSS-stock legs carry
-// no PO at all. Every logistics field the PurchaseOrder used to hold now lives
-// on Delivery, so these actions replaced updatePoTracking / setPoTrucker /
-// setPoDeliveryStatus / updatePoShipmentDetails.
+// no PO at all. Every logistics field lives on Delivery, never on PurchaseOrder.
 // ---------------------------------------------------------------------------
 
 /**
- * Free-text tracking link guard, carried over from the old updatePoTracking:
- * this field has a history of junk ("gewryher", a chat link saved as tracking),
- * so only a real absolute link is ever stored.
+ * Free-text tracking link guard: this field has a history of junk ("gewryher",
+ * a chat link saved as tracking), so only a real absolute link is ever stored.
  */
 function trackingUrlError(url: string): string | null {
   if (!url) return null;

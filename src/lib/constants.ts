@@ -91,12 +91,6 @@ export const ORDER_URGENCIES = [
   { value: "emergency", label: "Emergency" },
 ] as const;
 
-export const ITEM_KINDS = [
-  { value: "sourced", label: "Sourced" },
-  { value: "custom_fabrication", label: "Custom Fabrication" },
-  { value: "service", label: "Service" },
-] as const;
-
 export const USER_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "sales", label: "Sales" },
@@ -221,12 +215,6 @@ export const DOCUMENT_KINDS = [
   { value: "po", label: "Purchase Order" },
   { value: "tracking", label: "Tracking" },
   { value: "other", label: "Other" },
-] as const;
-
-export const DOCUMENT_SOURCES = [
-  { value: "link", label: "Link" },
-  { value: "upload", label: "Upload" },
-  { value: "google_drive", label: "Google Drive" },
 ] as const;
 
 export const PAYMENT_TERM_COLORS: Record<string, string> = {
