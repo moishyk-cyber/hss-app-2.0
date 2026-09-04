@@ -425,7 +425,6 @@ async function main() {
     companyId: string;
     title: string;
     contactId: string | null;
-    urgency: string;
   };
   const orderPlans: OrderPlan[] = Array.from({ length: 10 }, (_, i) => {
     const opp = i < wonOpps.length ? wonOpps[i] : null;
@@ -443,8 +442,6 @@ async function main() {
         ? opp.title
         : `${company.name} — ${pick(["walk-in repair parts", "reorder", "hot line replacement", "smallwares restock"])}`,
       contactId: companyContacts.length ? companyContacts[i % companyContacts.length] : null,
-      // Exactly one emergency and one same-day, both still in flight.
-      urgency: i === 2 ? "emergency" : i === 4 ? "same_day" : "standard",
     };
   });
 
@@ -460,13 +457,15 @@ async function main() {
         ownerId: salesPool[i % salesPool.length] ?? null,
         orderType: o.orderType,
         status: o.status,
-        urgency: o.urgency,
         clientPoNumber: chance(0.5) ? `PO-${int(1000, 9999)}` : null,
         jobId: `HSS-2026-${String(41 + i).padStart(3, "0")}`,
         quickbooksInvoiceNo: chance(0.4) ? `QB-${int(2000, 2999)}` : null,
         orderValue: o.value,
         deliveryAddress: company.city,
-        neededByDate: o.urgency === "standard" ? daysAhead(int(-5, 28)) : daysAhead(int(0, 3)),
+        // Spread a few needed-by dates into the past and the next few days so
+        // the Orders/Deliveries/Dashboard "overdue" and "due soon" states both
+        // have demo rows to show (i === 2 overdue, i === 4 due this week).
+        neededByDate: i === 2 ? daysAhead(int(-4, -1)) : i === 4 ? daysAhead(int(0, 3)) : daysAhead(int(-5, 28)),
         nextFollowUp: chance(0.6) ? daysAhead(int(-6, 12)) : null,
         notes: tag("order", i),
         createdAt: daysAgo(60 - i * 4),

@@ -1,19 +1,17 @@
 "use client";
 
-import { ORDER_STATUSES, ORDER_URGENCIES, ORDER_STATUS_COLORS, URGENCY_COLORS, labelFor } from "@/lib/constants";
-import { BadgeSelect, ActionButton } from "@/lib/ui";
+import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { ActionButton } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
-import { reopenOrder, setOrderOwner, setOrderUrgency, unstickOrder } from "../actions";
+import { reopenOrder, setOrderOwner, unstickOrder } from "../actions";
 
-export function UrgencyStatusControls({
+export function StatusOwnerControls({
   orderId,
-  urgency,
   status,
   ownerId,
   users,
 }: {
   orderId: string;
-  urgency: string;
   status: string;
   ownerId: string | null;
   users: { id: string; name: string }[];
@@ -22,17 +20,6 @@ export function UrgencyStatusControls({
   const isComplete = status === "complete";
   return (
     <div className="flex flex-wrap items-center gap-4">
-      <label className="flex items-center gap-2">
-        <span className="field-label" style={{ marginBottom: 0 }}>
-          Urgency
-        </span>
-        <BadgeSelect
-          value={urgency}
-          options={ORDER_URGENCIES}
-          action={(next) => setOrderUrgency(orderId, next)}
-          colorMap={URGENCY_COLORS}
-        />
-      </label>
       <label className="flex items-center gap-2">
         <span className="field-label" style={{ marginBottom: 0 }}>
           Status

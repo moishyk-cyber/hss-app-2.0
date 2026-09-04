@@ -10,7 +10,10 @@ export type SettingKey =
   | "company.phone"
   | "company.email"
   | "service.defaultAssigneeId"
-  | "po.pdfFooter";
+  | "po.pdfFooter"
+  // "off" enforces the role matrix; anything else (unset included) means open
+  // mode: every role can do everything. Open by default.
+  | "permissions.openMode";
 
 /** One setting, or null when unset. Never throws (a missing table reads as unset). */
 export async function getSetting(key: SettingKey): Promise<string | null> {

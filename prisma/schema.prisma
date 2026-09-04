@@ -218,7 +218,6 @@ model Order {
   ownerId        String?
   orderType      String       @default("order") // project | order
   status         String       @default("new") // new | awaiting_payment | payment_received | pos_in_progress | in_transit | delivery_scheduled | delivered | complete | stuck
-  urgency        String       @default("standard") // standard | same_day | emergency
   clientPoNumber String?
   jobId          String?
   quickbooksInvoiceNo String?
@@ -247,7 +246,6 @@ model Order {
   createdAt      DateTime     @default(now())
 
   @@index([status])
-  @@index([urgency])
   @@index([companyId])
   @@index([opportunityId])
   @@index([locationId])

@@ -15,7 +15,6 @@ import {
 import {
   isValidValue,
   labelFor,
-  ORDER_URGENCIES,
   DELIVERY_STATUSES,
   DELIVERY_MODES,
   DELIVERY_LEG_STATUSES,
@@ -93,17 +92,6 @@ export async function setLineItemAssignee(lineItemId: string, assigneeId: string
       revalidateOrder(item.orderId);
     }
   }, "Could not update the assignee. Please try again.");
-}
-
-export async function setOrderUrgency(orderId: string, urgency: string): Promise<ActionResult> {
-  if (!isValidValue(ORDER_URGENCIES, urgency)) {
-    return { ok: false, message: "Not a valid urgency." };
-  }
-  return safeAction(async () => {
-    await prisma.order.update({ where: { id: orderId }, data: { urgency } });
-    await log(orderId, "order_urgency_set", `Urgency set to ${urgency}`);
-    revalidateOrder(orderId);
-  }, "Could not update urgency. Please try again.");
 }
 
 /**

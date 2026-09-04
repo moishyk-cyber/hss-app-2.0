@@ -3,13 +3,12 @@ import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
-  URGENCY_COLORS,
-  ORDER_URGENCIES,
   DELIVERY_MODES,
   DELIVERY_MODE_COLORS,
   DELIVERY_LEG_STATUSES,
   labelFor,
 } from "@/lib/constants";
+import { isPastDay } from "@/lib/dates";
 import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
@@ -28,7 +27,6 @@ const FIELDS: ListField[] = [
   { key: "scheduledDate", label: "Scheduled Date", type: "date" },
   { key: "expectedDate", label: "Expected Date", type: "date" },
   { key: "status", label: "Delivery Status", type: "enum", options: DELIVERY_LEG_STATUSES },
-  { key: "urgency", label: "Urgency", type: "enum", options: ORDER_URGENCIES },
 ];
 
 type DeliveriesSearchParams = Record<string, string | string[] | undefined>;
@@ -39,7 +37,6 @@ type DeliveriesSearchParams = Record<string, string | string[] | undefined>;
 // still come from one PO, but a split PO has two of them and an HSS-stock run
 // has none at all - all three show up here.
 
-const URGENCY_RANK: Record<string, number> = { emergency: 0, same_day: 1, standard: 2 };
 const OPEN_STATUSES = ["pending", "scheduled", "in_transit"];
 const DELIVERED = ["delivered_partial", "delivered_full"];
 const FAR_FUTURE = 8.64e15;
@@ -56,7 +53,7 @@ const LEG_SELECT = {
   trackingCarrier: true,
   createdAt: true,
   orderId: true,
-  order: { select: { id: true, title: true, urgency: true, neededByDate: true } },
+  order: { select: { id: true, title: true, neededByDate: true } },
   purchaseOrder: { select: { poNumber: true, supplier: { select: { name: true } } } },
   _count: { select: { lineItems: true } },
 } satisfies Prisma.DeliverySelect;
@@ -72,11 +69,11 @@ function targetDate(leg: DeliveryLeg): Date | null {
   return leg.scheduledDeliveryDate ?? leg.expectedDelivery;
 }
 
-/** Urgent first, then by the group's own date, then oldest leg first. */
+/** Soonest order due date first, then by the group's own date, then oldest leg first. */
 function sortLegs(legs: DeliveryLeg[], dateOf: (l: DeliveryLeg) => Date | null): DeliveryLeg[] {
   return [...legs].sort((a, b) => {
-    const ur = (URGENCY_RANK[a.order.urgency] ?? 9) - (URGENCY_RANK[b.order.urgency] ?? 9);
-    if (ur !== 0) return ur;
+    const nd = (a.order.neededByDate?.getTime() ?? FAR_FUTURE) - (b.order.neededByDate?.getTime() ?? FAR_FUTURE);
+    if (nd !== 0) return nd;
     const ad = dateOf(a)?.getTime() ?? FAR_FUTURE;
     const bd = dateOf(b)?.getTime() ?? FAR_FUTURE;
     if (ad !== bd) return ad - bd;
@@ -84,7 +81,7 @@ function sortLegs(legs: DeliveryLeg[], dateOf: (l: DeliveryLeg) => Date | null):
   });
 }
 
-/** Explicit Sort by choice from ListControls - overrides the urgency/date default within each group. */
+/** Explicit Sort by choice from ListControls - overrides the due-date default within each group. */
 function sortLegsBy(legs: DeliveryLeg[], key: string, dir: "asc" | "desc"): DeliveryLeg[] {
   const factor = dir === "desc" ? -1 : 1;
   return [...legs].sort((a, b) => {
@@ -104,16 +101,15 @@ function sortLegsBy(legs: DeliveryLeg[], key: string, dir: "asc" | "desc"): Deli
         return factor * ((a.expectedDelivery?.getTime() ?? FAR_FUTURE) - (b.expectedDelivery?.getTime() ?? FAR_FUTURE));
       case "status":
         return factor * a.status.localeCompare(b.status);
-      case "urgency":
-        return factor * ((URGENCY_RANK[a.order.urgency] ?? 9) - (URGENCY_RANK[b.order.urgency] ?? 9));
       default:
         return 0;
     }
   });
 }
 
-function isUrgent(leg: DeliveryLeg): boolean {
-  return leg.order.urgency === "same_day" || leg.order.urgency === "emergency";
+/** Overdue: the order's neededByDate has passed and this leg hasn't delivered. */
+function isOverdueLeg(leg: DeliveryLeg): boolean {
+  return isPastDay(leg.order.neededByDate) && !DELIVERED.includes(leg.status);
 }
 
 function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] }) {
@@ -127,7 +123,7 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
             <li
               key={leg.id}
               className={`relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-hover ${
-                isUrgent(leg) ? "border-l-4 border-red" : ""
+                isOverdueLeg(leg) ? "border-l-4 border-red" : ""
               }`}
             >
               <span className="flex w-40 shrink-0 items-center gap-2 xl:w-56">
@@ -148,15 +144,14 @@ function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] 
                   {leg.purchaseOrder?.poNumber ?? "HSS stock"} - {leg.order.title}
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
-                  {isUrgent(leg) && (
-                    <span className={`badge ${URGENCY_COLORS[leg.order.urgency] ?? "badge-red"}`}>
-                      {leg.order.urgency.replace("_", " ")}
-                    </span>
-                  )}
+                  {isOverdueLeg(leg) ? (
+                    <span className="badge badge-red">overdue</span>
+                  ) : leg.order.neededByDate ? (
+                    <span>due {fmtDate(leg.order.neededByDate)}</span>
+                  ) : null}
                   <span>
                     {itemCount} item{itemCount === 1 ? "" : "s"}
                   </span>
-                  {leg.order.neededByDate && <span>needed by {fmtDate(leg.order.neededByDate)}</span>}
                 </div>
               </Link>
 
@@ -260,7 +255,6 @@ export default async function DeliveriesPage({
   if (filters.trucker) filterAnd.push({ trucker: { contains: filters.trucker, mode: "insensitive" } });
   if (filters.mode) filterAnd.push({ mode: filters.mode });
   if (filters.status) filterAnd.push({ status: filters.status });
-  if (filters.urgency) filterAnd.push({ order: { urgency: filters.urgency } });
   if (filters.scheduledDate) {
     const day = new Date(filters.scheduledDate);
     const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);

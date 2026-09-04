@@ -45,3 +45,18 @@ export function isPastDay(d: Date | string | null | undefined): boolean {
   if (!d) return false;
   return ymdUTC(d) < ymdToday();
 }
+
+/**
+ * True when the stored (UTC-midnight) day is today or within the next `days`
+ * calendar days - never true for a day already in the past (that's
+ * isPastDay's job, not "soon"). Day-string comparison, same deterministic
+ * approach as isPastDay, so it renders identically on server and client.
+ */
+export function isDueWithinDays(d: Date | string | null | undefined, days: number): boolean {
+  if (!d) return false;
+  const day = ymdUTC(d);
+  if (day < ymdToday()) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + days);
+  return day <= ymdUTC(cutoff);
+}

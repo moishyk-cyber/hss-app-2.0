@@ -89,7 +89,6 @@ type IntakeDraft = {
     installationNeeded: string;
     needsPricing: string;
     paymentTerms: string;
-    totalPrice: string;
     items: ItemRow[];
     fieldValues: Record<string, string>;
   };
@@ -111,7 +110,6 @@ const CONTROLLED_FIELDS = new Set([
   "itemDetails",
   "itemQty",
   "itemUnitPrice",
-  "totalPrice",
   "paymentTerms",
   "locationId",
   "saveLocation",
@@ -400,9 +398,8 @@ export function IntakeForm({
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
   const [needsPricing, setNeedsPricing] = useState("yes");
-  // Price it once, here: per-item prices and the total agreed, plus the payment
-  // terms when this becomes an order straight away.
-  const [totalPrice, setTotalPrice] = useState("");
+  // Per-item prices are taken here; the payment terms too, when this becomes an
+  // order straight away. The total itself is agreed at close, not on the call.
   const [paymentTerms, setPaymentTerms] = useState("full_upfront");
   const [items, setItems] = useState<ItemRow[]>([
     { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
@@ -473,7 +470,6 @@ export function IntakeForm({
         installationNeeded,
         needsPricing,
         paymentTerms,
-        totalPrice,
         items,
         fieldValues,
       },
@@ -523,7 +519,6 @@ export function IntakeForm({
     installationNeeded,
     needsPricing,
     paymentTerms,
-    totalPrice,
     items,
     fieldValues,
   ]);
@@ -550,7 +545,6 @@ export function IntakeForm({
     setInstallationNeeded(ui.installationNeeded);
     setNeedsPricing(ui.needsPricing);
     setPaymentTerms(ui.paymentTerms ?? "full_upfront");
-    setTotalPrice(ui.totalPrice ?? "");
     if (ui.items.length > 0) {
       // Older drafts have no per-item price field.
       setItems(ui.items.map((r) => ({ ...r, unitPrice: r.unitPrice ?? "" })));
@@ -652,15 +646,14 @@ export function IntakeForm({
   const validItems = items.filter((r) => r.name.trim() !== "" && rowQtyValid(r));
   const badQtyRows = items.filter((r) => r.name.trim() !== "" && !rowQtyValid(r));
   const badPriceRows = items.filter((r) => priceProblem(r.unitPrice));
-  const totalPriceBad = priceProblem(totalPrice);
-  const pricesReady = badPriceRows.length === 0 && !totalPriceBad;
+  const pricesReady = badPriceRows.length === 0;
   const itemsReady = validItems.length > 0 && badQtyRows.length === 0 && pricesReady;
   /** What the typed item prices add up to - the fallback order value. */
   const itemsTotal = validItems.reduce(
     (sum, r) => sum + priceValue(r.unitPrice) * Number.parseInt(r.qty.trim(), 10),
     0
   );
-  const agreedTotal = priceValue(totalPrice) || itemsTotal;
+  const agreedTotal = itemsTotal;
 
   /** Which validated fields are actually on screen right now? */
   const activeValidatedFields = [
@@ -1278,27 +1271,14 @@ export function IntakeForm({
             </button>
 
             {/*
-              Price once. A total typed here IS the number:
-              it becomes the deal value for anything going to the pipeline, and
-              the order value - with its invoice - for anything that doesn't.
+              The total price is NOT asked here - it is agreed when the deal is
+              closed (the Close panel on the deal). An order that is already
+              priced only needs its terms, so its invoice can be created the
+              moment the order is; its value is what the item prices add up to.
             */}
-            <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
-              <div className="flex flex-wrap items-end gap-3">
-                <label className="block w-44">
-                  <span className={labelClass}>Total price agreed</span>
-                  <input
-                    name="totalPrice"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={totalPrice}
-                    onChange={(e) => setTotalPrice(e.target.value)}
-                    aria-invalid={totalPriceBad}
-                    placeholder={itemsTotal > 0 ? itemsTotal.toFixed(2) : "0.00"}
-                    className={`${inputClass} ${totalPriceBad ? "!border-red" : ""}`}
-                  />
-                </label>
-                {goesToPipeline ? null : (
+            {goesToPipeline ? null : (
+              <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
+                <div className="flex flex-wrap items-end gap-3">
                   <label className="block min-w-56 flex-1">
                     <span className={labelClass}>Payment terms</span>
                     <select
@@ -1314,16 +1294,23 @@ export function IntakeForm({
                       ))}
                     </select>
                   </label>
-                )}
+                  <div className="block w-44">
+                    <span className={labelClass}>Order total</span>
+                    <div className="text-[15px] font-semibold tabular-nums text-ink">
+                      {itemsTotal > 0 ? (
+                        `$${itemsTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ) : (
+                        <span className="empty-value">add item prices above</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-gray">
+                  The total is what the item prices add up to. The invoice is created from the terms the
+                  moment the order is.
+                </p>
               </div>
-              <p className="mt-2 text-xs text-gray">
-                {goesToPipeline
-                  ? "Optional. Any prices you already have are saved on the items, and the total becomes the deal value."
-                  : itemsTotal > 0
-                    ? `Optional - leave it blank to use the item prices ($${itemsTotal.toFixed(2)}). The invoice is created from the terms the moment the order is.`
-                    : "Optional. The invoice is created from the terms the moment the order is."}
-              </p>
-            </div>
+            )}
 
             <label className="mt-4 block">
               <span className={labelClass}>Notes for the team</span>

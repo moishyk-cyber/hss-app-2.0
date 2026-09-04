@@ -1,5 +1,5 @@
 // Validated chart palette - use EXACTLY these. Never red/green as series colors
-// (those are reserved for status/urgency elsewhere in the app).
+// (those are reserved for status/overdue elsewhere in the app).
 export const SERIES_1 = "#1C1C1E"; // primary series - Charcoal
 export const SERIES_2 = "#5B6B7A"; // second categorical hue - Slate, only for the one 2-series chart
 

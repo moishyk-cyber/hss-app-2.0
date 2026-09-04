@@ -85,12 +85,6 @@ export const COMPANY_VERTICALS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export const ORDER_URGENCIES = [
-  { value: "standard", label: "Standard" },
-  { value: "same_day", label: "Same Day" },
-  { value: "emergency", label: "Emergency" },
-] as const;
-
 export const USER_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "sales", label: "Sales" },
@@ -127,12 +121,6 @@ export const STAGE_COLORS: Record<string, string> = {
   negotiation: "badge-yellow",
   won: "badge-green",
   lost: "badge-gray",
-};
-
-export const URGENCY_COLORS: Record<string, string> = {
-  standard: "badge-gray",
-  same_day: "badge-orange",
-  emergency: "badge-red",
 };
 
 export const ORDER_STATUS_COLORS: Record<string, string> = {

@@ -7,6 +7,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { currentUserId } from "@/lib/identityServer";
+import { getSetting } from "@/lib/settings";
 import type { ActionResult } from "@/lib/actionResult";
 import { USER_ROLES, labelFor } from "@/lib/constants";
 import {
@@ -51,11 +52,21 @@ export async function currentUser(): Promise<CurrentUser | null> {
 }
 
 /**
+ * Open mode: every role can do everything. This is the shipped default (the
+ * team asked for everything open while the app beds in); an admin flips it
+ * to "off" on Admin > Permissions to start enforcing the matrix.
+ */
+export async function permissionsOpenMode(): Promise<boolean> {
+  return (await getSetting("permissions.openMode")) !== "off";
+}
+
+/**
  * Can the current identity do this? No identity = viewer, EXCEPT that with
  * zero users the app is unusable (nobody can be picked to create the first
  * user), so an empty identity still passes admin.manage as a bootstrap.
  */
 export async function can(permission: Permission): Promise<boolean> {
+  if (await permissionsOpenMode()) return true;
   const user = await currentUser();
   if (!user) {
     if (permission === "admin.manage") {
