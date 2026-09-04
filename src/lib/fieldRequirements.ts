@@ -33,12 +33,3 @@ export async function getFieldRequirements(): Promise<Record<string, boolean>> {
     REQUIRABLE_FIELDS.map((f) => [key(f.entity, f.field), overrides.get(key(f.entity, f.field)) ?? f.defaultRequired])
   );
 }
-
-/** Single-field convenience for server actions that only need one answer. */
-export async function isFieldRequired(entity: RequirableEntity, field: RequirableField): Promise<boolean> {
-  const row = await prisma.fieldRequirement.findUnique({
-    where: { entity_field: { entity, field } },
-  });
-  if (row) return row.required;
-  return REQUIRABLE_FIELDS.find((f) => f.entity === entity && f.field === field)?.defaultRequired ?? false;
-}

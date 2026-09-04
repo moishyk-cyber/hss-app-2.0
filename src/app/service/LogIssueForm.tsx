@@ -18,14 +18,14 @@ import { ymdToday } from "@/lib/dates";
 import { useToast } from "@/lib/toast";
 import { createServiceIssue } from "./actions";
 
-export type ServiceOrderOption = {
+type ServiceOrderOption = {
   id: string;
   title: string;
   locationId: string | null;
   lineItems: { id: string; name: string }[];
 };
 
-export type ServiceLocationOption = { id: string; name: string; isDefault: boolean };
+type ServiceLocationOption = { id: string; name: string; isDefault: boolean };
 
 export type ServiceCompanyOption = {
   id: string;

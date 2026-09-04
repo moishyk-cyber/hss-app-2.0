@@ -48,4 +48,4 @@ export function PageHeader({
 }
 
 // Contact-detail links live in one shared file now (phonebook treatment app-wide).
-export { PhoneLink, EmailLink, AddressLine } from "@/lib/ContactLinks";
+export { PhoneLink, EmailLink } from "@/lib/ContactLinks";

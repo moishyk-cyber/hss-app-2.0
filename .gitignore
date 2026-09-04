@@ -43,8 +43,5 @@ next-env.d.ts
 /src/generated/prisma
 prisma/dev.db
 
-.vercel
-.env*
-
 # Claude Code agent worktrees (local scratch space, not project content)
 /.claude/worktrees/

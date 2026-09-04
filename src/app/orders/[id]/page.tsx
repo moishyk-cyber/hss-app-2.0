@@ -377,9 +377,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <div className="field-label">Needed By</div>
             <div className="text-ink">
               {order.neededByDate ? (
-                // Deterministic UTC formatting (see @/lib/dates): this was the
-                // last locale/timezone-dependent date on the page, so it could
-                // read a day earlier than the orders list for the same record.
+                // Deterministic UTC formatting (see @/lib/dates), so this
+                // never reads a day earlier than the orders list for the
+                // same record.
                 fmtDate(order.neededByDate)
               ) : (
                 <span className="empty-value">not set</span>

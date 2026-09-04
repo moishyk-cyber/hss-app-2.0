@@ -95,12 +95,6 @@ export function LineItemRow({
   item: EditableLineItem;
   users: { id: string; name: string }[];
 }) {
-  // Assignee is optional everywhere - the blank option clears it.
-  const assigneeOptions = [
-    { value: "", label: "Unassigned" },
-    ...users.map((u) => ({ value: u.id, label: u.name })),
-  ];
-
   return (
     <tr>
       <td>

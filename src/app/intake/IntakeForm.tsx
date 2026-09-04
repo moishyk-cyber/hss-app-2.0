@@ -1,15 +1,14 @@
 "use client";
 
-// Intake, rebuilt for the Aug 31 feedback round: ONE top-to-bottom column of
-// numbered sections that unlock as they're answered, instead of a two-column
-// wall of panels. Still a single <form> - progressive disclosure only hides
-// what hasn't been reached yet, so nothing is a separate route or a lost draft.
+// Intake: ONE top-to-bottom column of numbered sections that unlock as they're
+// answered. It is a single <form> - progressive disclosure only hides what
+// hasn't been reached yet, so nothing is a separate route or a lost draft.
 //
-// Sep 2 QA round added two more jobs:
-// - REAL validation, inline and early: submit stays disabled until there's a
+// Two rules the layout depends on:
+// - Validation is inline and early. Submit stays disabled until there's a
 //   business AND at least one item with a name and a quantity of 1+; phone and
 //   email formats complain on the field itself, not three steps later.
-// - Drafts survive: everything typed autosaves to this browser, a refresh
+// - Drafts survive. Everything typed autosaves to this browser, a refresh
 //   offers to restore it, and a successful submit clears it silently.
 
 import Link from "next/link";
@@ -399,8 +398,8 @@ export function IntakeForm({
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
   const [needsPricing, setNeedsPricing] = useState("yes");
-  // Price it once, here (Sep 3 plan A1.3): per-item prices and the total agreed,
-  // plus the payment terms when this becomes an order straight away.
+  // Per-item prices are taken here; the payment terms too, when this becomes an
+  // order straight away. The total itself is agreed at close, not on the call.
   const [paymentTerms, setPaymentTerms] = useState("full_upfront");
   const [items, setItems] = useState<ItemRow[]>([
     { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
@@ -409,7 +408,7 @@ export function IntakeForm({
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
   const [autoFocusKey, setAutoFocusKey] = useState(0);
 
-  // Phone/email fields validated inline (Sep 2 QA: errors surfaced 3 steps late).
+  // Phone/email fields are validated inline, on the field itself.
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
@@ -643,7 +642,7 @@ export function IntakeForm({
   const clientReady =
     clientMode === "new" ? newCompanyName.trim() !== "" : companyId !== "";
 
-  // ---------------- validation (Sep 2 QA) ----------------
+  // ---------------- validation ----------------
   const validItems = items.filter((r) => r.name.trim() !== "" && rowQtyValid(r));
   const badQtyRows = items.filter((r) => r.name.trim() !== "" && !rowQtyValid(r));
   const badPriceRows = items.filter((r) => priceProblem(r.unitPrice));
@@ -838,7 +837,7 @@ export function IntakeForm({
                     --- where is it going? ---
                     The business's saved locations as chips, so the address is
                     picked, not retyped. A location typed here is saved back onto
-                    the business (Sep 3 plan A1.2) unless the caller unticks it.
+                    the business unless the caller unticks it.
                   */}
                   <div className="rounded-[10px] border border-border bg-panel p-3">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

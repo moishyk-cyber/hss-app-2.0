@@ -1,6 +1,6 @@
-// Shared contact-detail treatment (phonebook style, app-wide): dialable phone,
-// mailto email, and address line with the small stroke icons. One copy for
-// phonebook, companies, contacts, and anything else that lists people.
+// Shared contact-detail treatment (phonebook style, app-wide): dialable phone
+// and mailto email with the small stroke icons. One copy for phonebook,
+// companies, contacts, and anything else that lists people.
 
 function PhoneIcon() {
   return (
@@ -18,17 +18,6 @@ function MailIcon() {
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="4" width="20" height="16" rx="2" />
         <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-      </svg>
-    </span>
-  );
-}
-
-function PinIcon() {
-  return (
-    <span className="field-icon" aria-hidden>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-        <circle cx="12" cy="10" r="3" />
       </svg>
     </span>
   );
@@ -87,15 +76,5 @@ export function EmailLink({ email }: { email: string | null }) {
       <MailIcon />
       <span className="truncate">{email}</span>
     </a>
-  );
-}
-
-export function AddressLine({ address }: { address: string | null }) {
-  if (!address) return null;
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2 text-[13px] text-gray">
-      <PinIcon />
-      <span className="truncate">{address}</span>
-    </span>
   );
 }

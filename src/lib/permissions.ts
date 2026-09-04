@@ -37,10 +37,10 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = PERMISSIONS.reduce<
   []
 );
 
-export const ALL_PERMISSIONS: readonly Permission[] = PERMISSIONS.map((p) => p.key);
+const ALL_PERMISSIONS: readonly Permission[] = PERMISSIONS.map((p) => p.key);
 
 /** Shipped defaults. A RolePermission row overrides one cell; a missing row means this. */
-export const DEFAULT_ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
+const DEFAULT_ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   admin: ALL_PERMISSIONS,
   sales: [
     "intake.create",

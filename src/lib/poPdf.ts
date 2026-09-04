@@ -7,14 +7,14 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-export type PoPdfCompany = {
+type PoPdfCompany = {
   name: string;
   address: string;
   phone: string | null;
   email: string | null;
 };
 
-export type PoPdfParty = {
+type PoPdfParty = {
   name: string;
   address: string | null;
 };

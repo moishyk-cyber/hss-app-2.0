@@ -29,7 +29,7 @@ export type ResolvedRange = {
 const DAY = 24 * 60 * 60 * 1000;
 
 /** "YYYY-MM-DD" (an <input type="date"> value) to local midnight, or null. */
-export function parseDateParam(value: string | undefined): Date | null {
+function parseDateParam(value: string | undefined): Date | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [y, m, d] = value.split("-").map(Number);
   const date = new Date(y, m - 1, d);
