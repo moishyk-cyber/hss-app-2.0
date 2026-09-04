@@ -85,12 +85,6 @@ export const COMPANY_VERTICALS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export const ITEM_KINDS = [
-  { value: "sourced", label: "Sourced" },
-  { value: "custom_fabrication", label: "Custom Fabrication" },
-  { value: "service", label: "Service" },
-] as const;
-
 export const USER_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "sales", label: "Sales" },
@@ -215,11 +209,6 @@ export const DOCUMENT_KINDS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export const DOCUMENT_SOURCES = [
-  { value: "link", label: "Link" },
-  { value: "upload", label: "Upload" },
-  { value: "google_drive", label: "Google Drive" },
-] as const;
 
 export const DELIVERY_MODE_COLORS: Record<string, string> = {
   manufacturer_to_customer: "badge-blue",

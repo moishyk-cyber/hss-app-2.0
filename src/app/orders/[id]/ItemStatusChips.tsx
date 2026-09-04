@@ -30,7 +30,7 @@ type Group = { key: string; label: string; color: string; items: ChipItem[] };
 /** RFQ statuses that mean "the office is still putting a price on it". */
 const BEING_PRICED = new Set(["needs_pricing", "rfq_sent", "quote_received"]);
 
-export function groupItems(items: ChipItem[]): Group[] {
+function groupItems(items: ChipItem[]): Group[] {
   const live = items.filter((i) => i.rfqStatus !== "removed");
   const pricing = live.filter((i) => BEING_PRICED.has(i.rfqStatus));
   const rest = live.filter((i) => !BEING_PRICED.has(i.rfqStatus));

@@ -27,24 +27,7 @@ export const SETTING_KEYS = [
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
-export const SETTING_LABELS: Record<SettingKey, string> = {
-  "service.defaultAssigneeId": "Default customer-service assignee",
-  "permissions.openMode": "Permissions open mode",
-  "court.sales.role": "Sales court role",
-  "court.sales.userId": "Sales court person",
-  "court.office.role": "Office court role",
-  "court.office.userId": "Office court person",
-  "court.billing.role": "Billing court role",
-  "court.billing.userId": "Billing court person",
-  "court.purchasing.role": "Purchasing court role",
-  "court.purchasing.userId": "Purchasing court person",
-  "court.service.role": "Customer Service court role",
-  "court.service.userId": "Customer Service court person",
-};
 
-export function isSettingKey(value: string | null | undefined): value is SettingKey {
-  return !!value && (SETTING_KEYS as readonly string[]).includes(value);
-}
 
 /** One setting, or null when unset. Never throws (a missing table reads as unset). */
 export async function getSetting(key: SettingKey): Promise<string | null> {

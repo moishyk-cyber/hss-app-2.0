@@ -124,9 +124,9 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
 // ---------------------------------------------------------------------------
 
 export type FlowLineItem = { rfqStatus: string; deliveryStatus: string };
-export type FlowPo = { status: string };
+type FlowPo = { status: string };
 /** One delivery leg (see the Delivery model). status = DELIVERY_LEG_STATUSES. */
-export type FlowDelivery = { status: string };
+type FlowDelivery = { status: string };
 
 export type FlowOrder = GateOrder & {
   status: string;

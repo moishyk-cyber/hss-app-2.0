@@ -1,38 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HSS App
 
-## Getting Started
+The internal sales-to-service system for HSS: intake, pipeline, RFQ pricing,
+orders, purchase orders, deliveries, customer service, and tasks.
 
-First, run the development server:
+Next.js 16 (App Router) · React 19 · Prisma 6 · PostgreSQL (Supabase) · Tailwind 4.
+
+## Getting started
 
 ```bash
+npm install
+npx prisma generate
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at http://localhost:3000 and redirects to the dashboard.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npx prisma generate` is required before the first `dev` or `tsc` run, and again
+after any change to `prisma/schema.prisma`. It is already part of `npm run build`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+Create `.env` with:
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection (pooled) used by the app |
+| `DIRECT_URL` | Direct Postgres connection used by Prisma for schema work |
+| `SUPABASE_URL` | Supabase project URL, for file uploads |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service key, for file uploads |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The Supabase pair is optional. Without it the app runs normally and the file
+upload panels report that uploads are not configured; link-only documents still
+work.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Commands
 
-## Deploy on Vercel
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` | `prisma generate` then a production build |
+| `npm start` | Serve a production build |
+| `npm run lint` | ESLint |
+| `npm run seed:demo` | Add a demo dataset. Every row is tagged `[demo]` |
+| `npm run seed:demo:remove` | Remove exactly those `[demo]` rows |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The demo seed is additive and reversible: it never touches real records, and the
+remover refuses to delete a demo parent that has since gained real children.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Checks before pushing
 
-<!-- Test change: verifying CodeRabbit PR review integration. -->
+```bash
+npx prisma generate && npx tsc --noEmit && npx eslint src prisma scripts
+```
+
+`npx tsc --noEmit` needs `.next/types` to exist, because the root layout uses
+Next 16's generated `LayoutProps` type. On a fresh clone, run `npm run build` (or
+start `npm run dev` once) before the first type-check.
+
+`npx tsx scripts/verify-flow.ts` exercises the payment-gate and order-status
+rules end to end. It writes `ZZ-KLYNE-FLOW-TEST` records to whichever database
+`DATABASE_URL` points at and deletes them afterwards, so point it at a
+development database, not production.
+
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `src/app/` | Routes, page components, and their server actions |
+| `src/lib/` | Shared rules, formatters, and UI primitives |
+| `prisma/schema.prisma` | The data model. See `docs/DATA_MODEL.md` |
+| `prisma/sql/` | SQL applied by hand to production, kept as migration history |
+| `scripts/` | Maintenance and verification scripts |
+| `docs/` | Data model, UX flow, design and build notes |

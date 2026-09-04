@@ -50,7 +50,7 @@ async function main() {
   check("derive: awaiting_payment", deriveOrderStatus(o), "awaiting_payment");
 
   // 2. Token payment ($0.01 paid) must NOT open the gate (the old bypass)
-  const penny = await prisma.payment.create({
+  await prisma.payment.create({
     data: { orderId: order.id, type: "deposit", amount: 0.01, status: "paid" },
   });
   o = await load();

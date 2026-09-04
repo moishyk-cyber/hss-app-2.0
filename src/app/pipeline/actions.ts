@@ -115,40 +115,6 @@ export async function updateLineItemAssignee(
   }, "Could not update the assignee. Please try again.");
 }
 
-export async function updateLineItemPricing(
-  lineItemId: string,
-  unitCost: number | null,
-  unitPrice: number | null
-): Promise<ActionResult> {
-  const denied = await requirePermission("deals.edit");
-  if (denied) return denied;
-  if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
-    return { ok: false, message: "Enter a price greater than $0." };
-  }
-  if (unitCost != null && !Number.isFinite(unitCost)) {
-    return { ok: false, message: "Enter a valid cost." };
-  }
-  return safeAction(async () => {
-    const item = await prisma.lineItem.update({
-      where: { id: lineItemId },
-      data: {
-        unitCost: unitCost == null ? null : roundCents(unitCost),
-        unitPrice: unitPrice == null ? null : roundCents(unitPrice),
-      },
-    });
-    await logActivity(
-      "line_item",
-      lineItemId,
-      "pricing_changed",
-      `"${item.name}" cost ${unitCost ?? "cleared"} / price ${unitPrice ?? "cleared"}`
-    );
-    // Same order-total drift the RFQ queue's pricing save fixes (Sep 3 QA #4) -
-    // this is the other place an already-won deal's item price can change.
-    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
-    revalidateLineItem(item);
-  }, "Could not update pricing. Please try again.");
-}
-
 export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: string): Promise<ActionResult> {
   const denied = await requirePermission("deals.edit");
   if (denied) return denied;

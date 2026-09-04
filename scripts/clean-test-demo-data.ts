@@ -70,7 +70,6 @@ const DEMO_KITCHEN_CO_TASK_ID = "cmt066rqa004kv4wgoabvk5ti";
 const HSS_KITCHENS_FAKE_USER_ID = "cmt066lv00026v4wgt6c99foe";
 
 // Duplicate real companies: keep the survivor, drop the rest (+ their duplicate opp/line item).
-const YH_MANAGEMENT_SURVIVOR_ID = "cmt066hyp0013v4wguhtnuehu";
 const YH_MANAGEMENT_DUP_COMPANY_IDS = ["cmt066i3f0014v4wg286hhd9g", "cmt066i850015v4wgyah8ue5h"];
 const YH_MANAGEMENT_DUP_OPPORTUNITY_IDS = ["cmt066l5q001xv4wgbpffiy4z", "cmt066laq001zv4wgexafuetz"];
 const YH_MANAGEMENT_DUP_LINE_ITEM_IDS = ["cmt066nko002uv4wgd9vp5kzm", "cmt066npa002wv4wgolen0r12"];
