@@ -18,12 +18,10 @@ import {
   DELIVERY_STATUSES,
   DELIVERY_MODES,
   DELIVERY_LEG_STATUSES,
-  PAYMENT_TERMS,
   QUOTE_STATUSES,
 } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
-import { applyTermsToOrder } from "@/lib/terms";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import {
@@ -1002,60 +1000,25 @@ export async function setOrderQuote(
 }
 
 /**
- * The Invoice tab's TermsCard "Edit terms" save: re-runs applyTermsToOrder
- * (writes paymentTerms/termsNotes/depositRequired and rebuilds the
- * source="terms" invoices) in a transaction. Once a payment on the order has
- * been marked paid, terms are locked - only the notes can still change, so
- * the terms/deposit inputs are silently ignored rather than erroring (the UI
- * hides them once a payment is paid, this is the server-side backstop).
+ * The Invoice tab's Terms card save. Sep 4 (client): terms are one free-text
+ * box that someone writes after reading the quote - nothing is derived from it
+ * and no invoice is created (those are added by hand on the same tab).
  */
-export async function updateOrderTerms(
-  orderId: string,
-  input: { terms: string; depositAmount?: number | null; notes: string }
-): Promise<ActionResult> {
+export async function updateOrderTermsText(orderId: string, text: string): Promise<ActionResult> {
   const denied = await requirePermission("terms.edit");
   if (denied) return denied;
-  if (!isValidValue(PAYMENT_TERMS, input.terms)) {
-    return { ok: false, message: "Pick a valid payment terms option." };
-  }
-  if (input.depositAmount != null && (!Number.isFinite(input.depositAmount) || input.depositAmount < 0)) {
-    return { ok: false, message: "Enter a valid deposit amount." };
+  const trimmed = text.trim();
+  if (trimmed.length > 4000) {
+    return { ok: false, message: "Those terms are too long - keep them under 4000 characters." };
   }
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({
+    await prisma.order.update({
       where: { id: orderId },
-      select: {
-        id: true,
-        orderValue: true,
-        payments: { select: { status: true } },
-      },
+      data: { termsNotes: trimmed || null },
     });
-    if (!order) throw new Error("Order not found");
-    const anyPaid = order.payments.some((p) => p.status === "paid");
-    const notes = input.notes.trim() || null;
-
-    if (anyPaid) {
-      await prisma.order.update({ where: { id: orderId }, data: { termsNotes: notes } });
-      await log(
-        orderId,
-        "terms_notes_updated",
-        "Terms notes updated - terms and deposit are locked because a payment on this order is already paid"
-      );
-      revalidateOrder(orderId);
-      return;
-    }
-
-    await prisma.$transaction((tx) =>
-      applyTermsToOrder(tx, orderId, {
-        terms: input.terms,
-        value: order.orderValue ?? 0,
-        depositAmount: input.depositAmount,
-        notes,
-      })
-    );
-    await recomputeOrderStatus(orderId);
+    await log(orderId, "terms_updated", trimmed ? `Terms updated: ${trimmed}` : "Terms cleared");
     revalidateOrder(orderId);
-  }, "Could not update the terms. Please try again.");
+  }, "Could not save the terms. Please try again.");
 }
 
 /** Payment row inline edit: attach/replace/clear the QuickBooks link. */

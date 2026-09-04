@@ -51,6 +51,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
   company: { select: { requiresDeposit: true, depositPercent: true } },

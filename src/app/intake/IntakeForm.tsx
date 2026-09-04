@@ -15,7 +15,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FormAlert, PendingButton } from "@/lib/ui";
-import { PAYMENT_TERMS } from "@/lib/constants";
 import { readStoredUserId, storeUserId } from "@/lib/identityClient";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
 import { submitIntake } from "./actions";
@@ -89,7 +88,6 @@ type IntakeDraft = {
     deliveryType: "curbside" | "inside";
     installationNeeded: string;
     needsPricing: string;
-    paymentTerms: string;
     items: ItemRow[];
     fieldValues: Record<string, string>;
   };
@@ -111,7 +109,6 @@ const CONTROLLED_FIELDS = new Set([
   "itemDetails",
   "itemQty",
   "itemUnitPrice",
-  "paymentTerms",
   "locationId",
   "saveLocation",
   "newCompanyName",
@@ -399,9 +396,6 @@ export function IntakeForm({
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
   const [needsPricing, setNeedsPricing] = useState("yes");
-  // Price it once, here (Sep 3 plan A1.3): per-item prices and the total agreed,
-  // plus the payment terms when this becomes an order straight away.
-  const [paymentTerms, setPaymentTerms] = useState("full_upfront");
   const [items, setItems] = useState<ItemRow[]>([
     { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
   ]);
@@ -470,7 +464,6 @@ export function IntakeForm({
         deliveryType,
         installationNeeded,
         needsPricing,
-        paymentTerms,
         items,
         fieldValues,
       },
@@ -519,7 +512,6 @@ export function IntakeForm({
     deliveryType,
     installationNeeded,
     needsPricing,
-    paymentTerms,
     items,
     fieldValues,
   ]);
@@ -545,7 +537,6 @@ export function IntakeForm({
     setDeliveryType(ui.deliveryType);
     setInstallationNeeded(ui.installationNeeded);
     setNeedsPricing(ui.needsPricing);
-    setPaymentTerms(ui.paymentTerms ?? "full_upfront");
     if (ui.items.length > 0) {
       // Older drafts have no per-item price field.
       setItems(ui.items.map((r) => ({ ...r, unitPrice: r.unitPrice ?? "" })));
@@ -1274,26 +1265,20 @@ export function IntakeForm({
             {/*
               The total price is NOT asked here - it is agreed when the deal is
               closed (the Close panel on the deal). An order that is already
-              priced only needs its terms, so its invoice can be created the
-              moment the order is; its value is what the item prices add up to.
+              priced only needs its terms written down; its value is what the
+              item prices add up to.
             */}
             {goesToPipeline ? null : (
               <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
-                <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-wrap items-start gap-3">
                   <label className="block min-w-56 flex-1">
-                    <span className={labelClass}>Payment terms</span>
-                    <select
-                      name="paymentTerms"
-                      value={paymentTerms}
-                      onChange={(e) => setPaymentTerms(e.target.value)}
+                    <span className={labelClass}>Terms</span>
+                    <textarea
+                      name="termsNotes"
+                      rows={3}
+                      placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
                       className={inputClass}
-                    >
-                      {PAYMENT_TERMS.map((t) => (
-                        <option key={t.value} value={t.value}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   <div className="block w-44">
                     <span className={labelClass}>Order total</span>
@@ -1307,8 +1292,8 @@ export function IntakeForm({
                   </div>
                 </div>
                 <p className="mt-2 text-xs text-gray">
-                  The total is what the item prices add up to. The invoice is created from the terms the
-                  moment the order is.
+                  The total is what the item prices add up to. Invoices are added by hand on the
+                  order&rsquo;s Invoice tab.
                 </p>
               </div>
             )}
@@ -1482,12 +1467,6 @@ export function IntakeForm({
               <span className="mx-1.5 text-gray">·</span>
               {goesToPipeline ? "goes to the pipeline" : "becomes an order straight away"}
             </p>
-            {goesToPipeline ? null : (
-              <p className="mt-1">
-                Terms:{" "}
-                {PAYMENT_TERMS.find((t) => t.value === paymentTerms)?.label ?? paymentTerms}
-              </p>
-            )}
           </div>
         </Section>
       </div>

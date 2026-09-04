@@ -162,7 +162,11 @@ export const TASK_PRIORITY_COLORS: Record<string, string> = {
 // Sales -> Orders -> Delivery -> Service vocabularies (Sep 3 2026 build plan).
 // ---------------------------------------------------------------------------
 
-/** Payment terms agreed at close - drive Order.depositRequired and the auto-created invoices. */
+/**
+ * Legacy payment terms. Terms are free text on the order since Sep 4 (client
+ * decision); these labels only prefill the Invoice tab's Terms box for orders
+ * closed before that, so nothing old reads blank.
+ */
 export const PAYMENT_TERMS = [
   { value: "deposit_balance", label: "Deposit now, balance before delivery" },
   { value: "full_upfront", label: "Full payment before ordering" },
@@ -216,14 +220,6 @@ export const DOCUMENT_SOURCES = [
   { value: "upload", label: "Upload" },
   { value: "google_drive", label: "Google Drive" },
 ] as const;
-
-export const PAYMENT_TERM_COLORS: Record<string, string> = {
-  deposit_balance: "badge-blue",
-  full_upfront: "badge-green",
-  on_delivery: "badge-yellow",
-  net_30: "badge-yellow",
-  custom: "badge-gray",
-};
 
 export const DELIVERY_MODE_COLORS: Record<string, string> = {
   manufacturer_to_customer: "badge-blue",
