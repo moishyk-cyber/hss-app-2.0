@@ -8,6 +8,7 @@ import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
 import { fmtDateUTC } from "@/lib/dates";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
@@ -129,11 +130,15 @@ export default async function OpportunityDetailPage({
 
   // Ball-in-court: the single next thing that has to happen, and who has to do
   // it. A won deal delegates straight to its order (orderBall).
-  const ball = opportunityBall({
-    stage: opportunity.stage,
-    lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
-    order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
-  });
+  const holders = await getCourtHolders();
+  const ball = withHolder(
+    opportunityBall({
+      stage: opportunity.stage,
+      lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
+      order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
+    }),
+    holders
+  );
 
   // The 9-step full flow (sales through customer service), post-processed so
   // the sales-side steps stay clickable exactly like the old 5-step stepper:

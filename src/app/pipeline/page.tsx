@@ -6,6 +6,7 @@ import { OPPORTUNITY_STAGES, OPEN_SERVICE_ISSUE_STATUSES } from "@/lib/constants
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { opportunityBall, type OrderBallInput } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { KanbanBoard, type KanbanCard } from "./KanbanBoard";
 import { PipelineList } from "./PipelineList";
 import {
@@ -86,6 +87,7 @@ export default async function PipelinePage({
 }) {
   const params = await searchParams;
   const isList = params.view === "list";
+  const holders = await getCourtHolders();
 
   // Salesperson options come from the real user list, so only the list view pays for it.
   const users = isList
@@ -180,11 +182,14 @@ export default async function PipelinePage({
     daysInStage: daysSince(lastStageChange.get(o.id) ?? o.createdAt),
     followUpLabel: o.nextFollowUp ? fmtDate(o.nextFollowUp) : null,
     followUpOverdue: isOverdue(o.nextFollowUp),
-    ball: opportunityBall({
-      stage: o.stage,
-      lineItems: o.lineItems,
-      order: o.orders[0] ? toOrderBallInput(o.orders[0]) : null,
-    }),
+    ball: withHolder(
+      opportunityBall({
+        stage: o.stage,
+        lineItems: o.lineItems,
+        order: o.orders[0] ? toOrderBallInput(o.orders[0]) : null,
+      }),
+      holders
+    ),
   }));
 
   const openCards = cards.filter((c) => !CLOSED_STAGES.includes(c.stage));

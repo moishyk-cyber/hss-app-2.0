@@ -9,9 +9,10 @@ export function BallInCourtBadge({ ball, className = "" }: { ball: Ball; classNa
     return <span className={`badge badge-gray ${className}`.trim()}>{ball.hint}</span>;
   }
   const label = FLOW_STEPS.find((s) => s.key === ball.step)?.label ?? ball.step;
+  const holder = ball.holder ?? COURTS[ball.court];
   return (
     <span className={`badge ${COURT_COLORS[ball.court]} ${className}`.trim()} title={ball.hint}>
-      Ball: {COURTS[ball.court]} · {label}
+      Ball: {holder} · {label}
     </span>
   );
 }

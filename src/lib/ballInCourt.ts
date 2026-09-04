@@ -47,6 +47,10 @@ export type Ball = {
   court: Court | null;
   /** Short next-action text, e.g. "Price 3 items" or the payment gate reason. */
   hint: string;
+  /** Who actually holds the ball right now - a person's name, a role label, or
+   *  the court name. Filled in server-side by @/lib/courtHolders (withHolder);
+   *  left unset here since this module is pure and doesn't touch the DB. */
+  holder?: string;
 };
 
 /** What orderBall() needs: the flow-engine order plus quote/terms/PO-link/issue facts. */
