@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { currentUser, getRolePermissions, permissionsOpenMode } from "@/lib/permissionsServer";
 import { USER_ROLES, labelFor } from "@/lib/constants";
 import { BadgeSelect } from "@/lib/ui";
@@ -29,6 +30,13 @@ export default async function AdminPermissionsPage() {
             : "Nobody is picked in \"Working as\" - that identity is the sidebar picker, not a login."}{" "}
           A checked box means that role can do that action. Admin always has everything.
           These checks keep people on their own lane; they are not hard security.
+        </p>
+        <p className="page-sub">
+          Ball in court says whose turn it is; permissions say who is allowed. Set the courts under{" "}
+          <Link href="/admin/settings" className="text-blue transition-colors hover:underline">
+            Settings
+          </Link>
+          .
         </p>
       </div>
 

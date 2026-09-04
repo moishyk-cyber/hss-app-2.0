@@ -10,13 +10,17 @@
 // - Both closes show a review dialog first, so one stray click can't create
 //   (or kill) a deal.
 //
-// The terms agreed on the call are picked here too, and applyTermsToOrder turns
-// them into the order's deposit gate and its invoices.
+// Sep 3 (plan A1.4): nothing is ever re-asked. Price, location + address and
+// needed-by arrive prefilled from the deal as a read-only summary with a
+// "change" link each; only a MISSING answer opens as an input.
+//
+// Sep 4 (client): terms are one free-text box. The salesperson reads the quote
+// and writes what was agreed; nothing is invoiced automatically. The invoices
+// are added by hand on the order's Invoice tab.
 
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
-import { PAYMENT_TERMS, labelFor } from "@/lib/constants";
-import { fmtUSD } from "@/lib/money";
+import { fmtUSD, roundCents } from "@/lib/money";
 import { markOpportunityLost, markOpportunityWon } from "./actions";
 
 export type CloseLocation = { id: string; name: string; address: string };
@@ -24,7 +28,6 @@ export type CloseLocation = { id: string; name: string; address: string };
 type WonSummary = {
   value: number;
   terms: string;
-  deposit: number;
   locationName: string;
   address: string;
   neededBy: string;
@@ -57,19 +60,13 @@ function SummaryRow({
   );
 }
 
-/** Terms that need an agreed dollar amount before they mean anything. */
-function termsNeedDeposit(terms: string): boolean {
-  return terms === "deposit_balance" || terms === "custom";
-}
-
 export function ClosePanel({
   opportunityId,
   isProject,
+  requiresDeposit,
   depositPercent,
-  suggestedDeposit,
   needsOrderRecovery,
   defaultValue,
-  defaultTerms,
   defaultLocationId,
   defaultLocationName,
   defaultDeliveryAddress,
@@ -79,12 +76,11 @@ export function ClosePanel({
 }: {
   opportunityId: string;
   isProject: boolean;
+  /** Company.requiresDeposit - the account's own deposit rule, which still gates the POs. */
+  requiresDeposit: boolean;
   depositPercent: number;
-  suggestedDeposit: number;
   needsOrderRecovery: boolean;
   defaultValue: number | null;
-  /** From the account's terms: requiresDeposit ? deposit_balance : on_delivery. */
-  defaultTerms: string;
   defaultLocationId: string | null;
   defaultLocationName: string | null;
   defaultDeliveryAddress: string | null;
@@ -107,8 +103,7 @@ export function ClosePanel({
   const [locationName, setLocationName] = useState(defaultLocationName ?? "");
   const [address, setAddress] = useState(defaultDeliveryAddress ?? "");
   const [neededBy, setNeededBy] = useState(defaultNeededBy);
-  const [terms, setTerms] = useState(defaultTerms);
-  const [deposit, setDeposit] = useState(suggestedDeposit > 0 ? String(suggestedDeposit) : "");
+  const [terms, setTerms] = useState("");
 
   // An answer that is already on the deal opens closed; a missing one opens as
   // an input, because that is the only thing the close is actually waiting for.
@@ -118,14 +113,14 @@ export function ClosePanel({
 
   const numericValue = Number(value);
   const priceReady = Number.isFinite(numericValue) && numericValue > 0;
-  const depositAmount = (() => {
-    if (!termsNeedDeposit(terms)) return terms === "full_upfront" ? (priceReady ? numericValue : 0) : 0;
-    const typed = Number(deposit);
-    if (Number.isFinite(typed) && typed > 0) return typed;
-    return terms === "deposit_balance" && priceReady
-      ? Math.round((numericValue * depositPercent) / 100)
-      : 0;
-  })();
+  // The POs still wait on the account's own deposit rule (Company.requiresDeposit
+  // / depositPercent) - the free-text terms are for people, not for the gate.
+  const accountDeposit = roundCents(((priceReady ? numericValue : 0) * depositPercent) / 100);
+  const gateLine = isProject
+    ? requiresDeposit
+      ? `Deposit per account terms: ${depositPercent}% (${fmtUSD(accountDeposit, { cents: true })})`
+      : "No deposit required for this account"
+    : "Full payment before POs go out";
 
   function pickLocation(nextId: string) {
     setLocationId(nextId);
@@ -155,8 +150,7 @@ export function ClosePanel({
     if (!form || !form.reportValidity()) return;
     setWonSummary({
       value: numericValue,
-      terms,
-      deposit: depositAmount,
+      terms: terms.trim(),
       locationName: locationName.trim(),
       address: address.trim(),
       neededBy,
@@ -187,8 +181,8 @@ export function ClosePanel({
     >
       <form ref={wonFormRef} action={markOpportunityWon} className="space-y-3">
         <input type="hidden" name="id" value={opportunityId} />
-        {/* Tells the action these fields were really asked (a blank deposit
-            means "the terms don't need one", not "this form didn't ask"). */}
+        {/* Tells the action these fields were really asked (a blank price is a
+            missing answer, not "this form didn't ask"). */}
         <input type="hidden" name="closePanel" value="1" />
 
         <p className="section-label !mb-0">Won</p>
@@ -314,58 +308,19 @@ export function ClosePanel({
           </>
         )}
 
-        {/* Terms ARE the invoice: applyTermsToOrder writes the deposit gate and
-            creates the payment rows from whatever is picked here. */}
-        <div className="rounded-[10px] border border-border bg-panel p-3">
-          <label className="block">
-            <span className="field-label">Payment terms</span>
-            <select
-              name="paymentTerms"
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
-              className="input-klyne w-full"
-            >
-              {PAYMENT_TERMS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {termsNeedDeposit(terms) ? (
-            <label className="mt-3 block">
-              <span className="field-label">Deposit amount</span>
-              <input
-                type="number"
-                name="depositAmount"
-                min="0"
-                step="0.01"
-                value={deposit}
-                onChange={(e) => setDeposit(e.target.value)}
-                placeholder="0"
-                className="input-klyne w-full"
-              />
-            </label>
-          ) : null}
-          <p className="mt-1.5 text-xs text-gray">
-            {terms === "deposit_balance"
-              ? `Prefilled at ${depositPercent}% for this account - change it to whatever was agreed. The balance is invoiced before delivery.`
-              : terms === "full_upfront"
-                ? "The full amount is invoiced now - POs wait until it is paid."
-                : terms === "custom"
-                  ? "Nothing is invoiced automatically beyond the deposit typed above."
-                  : "Nothing blocks the POs - the invoice is due after delivery."}
-          </p>
-          <label className="mt-3 block">
-            <span className="field-label">Terms notes</span>
-            <input
-              type="text"
-              name="termsNotes"
-              placeholder="Anything the client agreed that the terms don't say"
-              className="input-klyne w-full"
-            />
-          </label>
-        </div>
+        {/* Sep 4 (client): one free-text box. The salesperson reads the quote and
+            writes what was agreed; the invoices are added by hand later. */}
+        <label className="block">
+          <span className="field-label">Terms</span>
+          <textarea
+            name="termsNotes"
+            rows={3}
+            value={terms}
+            onChange={(e) => setTerms(e.target.value)}
+            placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
+            className="input-klyne w-full"
+          />
+        </label>
 
         {isProject ? null : (
           <p className="text-[13px] text-gray-dark">
@@ -406,15 +361,13 @@ export function ClosePanel({
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-gray-dark">Terms</dt>
-                <dd className="text-right text-ink">{labelFor(PAYMENT_TERMS, wonSummary.terms)}</dd>
+                <dd className="whitespace-pre-line text-right text-ink">
+                  {wonSummary.terms || <span className="empty-value">no terms written yet</span>}
+                </dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-gray-dark">Payment gate</dt>
-                <dd className="text-right text-ink">
-                  {wonSummary.deposit > 0
-                    ? `${fmtUSD(wonSummary.deposit, { cents: true })} before POs go out`
-                    : "Nothing due before POs - billed later"}
-                </dd>
+                <dd className="text-right text-ink">{gateLine}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-gray-dark">Deliver to</dt>
@@ -429,7 +382,7 @@ export function ClosePanel({
               </div>
               <p className="pt-2 text-xs text-gray">
                 This moves the deal to Won and creates a live order in fulfillment with its line
-                items and the invoices these terms imply.
+                items. No invoice is created - add those by hand on the order&rsquo;s Invoice tab.
               </p>
             </dl>
           ) : null}

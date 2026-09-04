@@ -18,12 +18,10 @@ import {
   DELIVERY_STATUSES,
   DELIVERY_MODES,
   DELIVERY_LEG_STATUSES,
-  PAYMENT_TERMS,
   QUOTE_STATUSES,
 } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
-import { applyTermsToOrder } from "@/lib/terms";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import {
@@ -367,12 +365,23 @@ async function resolveVendor(
  * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
  * match for) one instead - exactly one of the two should be set.
  */
+/**
+ * A PO's ship-to follows its delivery mode: a drop-ship (manufacturer straight
+ * to the customer) is "client_direct"; every other mode routes through the
+ * HSS warehouse first, so it stays "hss". Used both when a PO is created and
+ * when its delivery mode is changed later.
+ */
+function shipToForMode(mode: string): string {
+  return mode === "manufacturer_to_customer" ? "client_direct" : "hss";
+}
+
 export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
   lineItemIds: string[],
   newVendorName: string = "",
-  autoQuotesPoNumber: string = ""
+  autoQuotesPoNumber: string = "",
+  deliveryMode: string = ""
 ): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
@@ -382,6 +391,13 @@ export async function createPurchaseOrder(
   const aqNumber = autoQuotesPoNumber.trim();
   if (aqNumber.length > 40) {
     return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
+  }
+  // Empty = the current default (the schema's own "hss" ship-to reads as
+  // manufacturer_to_hss_to_customer) - the Create PO dropdown always sends a
+  // value, so this only matters for callers that don't.
+  const mode = deliveryMode.trim() || modeForShipTo("hss");
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a valid delivery option." };
   }
   return safeAction(async () => {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -402,7 +418,14 @@ export async function createPurchaseOrder(
       const poNumber = `PO-${base}-${existing + 1}`;
       try {
         po = await prisma.purchaseOrder.create({
-          data: { orderId, supplierId: vendor.id, poNumber, status: "draft", autoQuotesPoNumber: aqNumber || null },
+          data: {
+            orderId,
+            supplierId: vendor.id,
+            poNumber,
+            status: "draft",
+            autoQuotesPoNumber: aqNumber || null,
+            shipTo: shipToForMode(mode),
+          },
         });
         break;
       } catch (err) {
@@ -413,11 +436,11 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
-    // One PO -> one delivery leg by default (plan §3B.3). The mode follows the
-    // PO's ship-to: a client_direct PO is a drop-ship, everything else routes
-    // through HSS. Splitting it later is a job for the Delivery tab.
+    // One PO -> one delivery leg by default (plan §3B.3), using the mode
+    // chosen on the Create PO form. Splitting it later is a job for the
+    // Delivery tab.
     const delivery = await prisma.delivery.create({
-      data: { orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
+      data: { orderId, purchaseOrderId: po.id, mode },
     });
 
     await prisma.lineItem.updateMany({
@@ -960,6 +983,39 @@ export async function setPoAutoQuotesNumber(poId: string, value: string): Promis
 }
 
 /**
+ * Change a PO's delivery mode after it's created (the modal's BadgeSelect).
+ * Updates the PO's own ship-to and every one of its delivery legs that hasn't
+ * landed yet - a leg already delivered_partial/delivered_full is history, not
+ * something a later mode change should rewrite.
+ */
+export async function setPoDeliveryMode(poId: string, mode: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a valid delivery option." };
+  }
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: { shipTo: shipToForMode(mode) },
+    });
+    const updated = await prisma.delivery.updateMany({
+      where: { purchaseOrderId: poId, status: { notIn: ["delivered_partial", "delivered_full"] } },
+      data: { mode },
+    });
+    await log(
+      po.orderId,
+      "po_delivery_mode_set",
+      `PO ${po.poNumber ?? po.id} delivery mode set to ${labelFor(DELIVERY_MODES, mode)}${
+        updated.count > 0 ? ` (${updated.count} delivery leg(s) updated)` : ""
+      }`
+    );
+    await recomputeOrderStatus(po.orderId);
+    revalidateOrder(po.orderId);
+  }, "Could not update the delivery mode. Please try again.");
+}
+
+/**
  * The Invoice tab's quote row: quoteStatus + the link to the customer-facing
  * quote. Setting status to "sent" stamps quoteSentAt the first time only -
  * re-sending doesn't reset the clock.
@@ -999,60 +1055,25 @@ export async function setOrderQuote(
 }
 
 /**
- * The Invoice tab's TermsCard "Edit terms" save: re-runs applyTermsToOrder
- * (writes paymentTerms/termsNotes/depositRequired and rebuilds the
- * source="terms" invoices) in a transaction. Once a payment on the order has
- * been marked paid, terms are locked - only the notes can still change, so
- * the terms/deposit inputs are silently ignored rather than erroring (the UI
- * hides them once a payment is paid, this is the server-side backstop).
+ * The Invoice tab's Terms card save. Sep 4 (client): terms are one free-text
+ * box that someone writes after reading the quote - nothing is derived from it
+ * and no invoice is created (those are added by hand on the same tab).
  */
-export async function updateOrderTerms(
-  orderId: string,
-  input: { terms: string; depositAmount?: number | null; notes: string }
-): Promise<ActionResult> {
+export async function updateOrderTermsText(orderId: string, text: string): Promise<ActionResult> {
   const denied = await requirePermission("terms.edit");
   if (denied) return denied;
-  if (!isValidValue(PAYMENT_TERMS, input.terms)) {
-    return { ok: false, message: "Pick a valid payment terms option." };
-  }
-  if (input.depositAmount != null && (!Number.isFinite(input.depositAmount) || input.depositAmount < 0)) {
-    return { ok: false, message: "Enter a valid deposit amount." };
+  const trimmed = text.trim();
+  if (trimmed.length > 4000) {
+    return { ok: false, message: "Those terms are too long - keep them under 4000 characters." };
   }
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({
+    await prisma.order.update({
       where: { id: orderId },
-      select: {
-        id: true,
-        orderValue: true,
-        payments: { select: { status: true } },
-      },
+      data: { termsNotes: trimmed || null },
     });
-    if (!order) throw new Error("Order not found");
-    const anyPaid = order.payments.some((p) => p.status === "paid");
-    const notes = input.notes.trim() || null;
-
-    if (anyPaid) {
-      await prisma.order.update({ where: { id: orderId }, data: { termsNotes: notes } });
-      await log(
-        orderId,
-        "terms_notes_updated",
-        "Terms notes updated - terms and deposit are locked because a payment on this order is already paid"
-      );
-      revalidateOrder(orderId);
-      return;
-    }
-
-    await prisma.$transaction((tx) =>
-      applyTermsToOrder(tx, orderId, {
-        terms: input.terms,
-        value: order.orderValue ?? 0,
-        depositAmount: input.depositAmount,
-        notes,
-      })
-    );
-    await recomputeOrderStatus(orderId);
+    await log(orderId, "terms_updated", trimmed ? `Terms updated: ${trimmed}` : "Terms cleared");
     revalidateOrder(orderId);
-  }, "Could not update the terms. Please try again.");
+  }, "Could not save the terms. Please try again.");
 }
 
 /** Payment row inline edit: attach/replace/clear the QuickBooks link. */

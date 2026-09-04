@@ -47,11 +47,18 @@ export type Ball = {
   court: Court | null;
   /** Short next-action text, e.g. "Price 3 items" or the payment gate reason. */
   hint: string;
+  /** Who actually holds the ball right now - a person's name, a role label, or
+   *  the court name. Filled in server-side by @/lib/courtHolders (withHolder);
+   *  left unset here since this module is pure and doesn't touch the DB. */
+  holder?: string;
 };
 
 /** What orderBall() needs: the flow-engine order plus quote/terms/PO-link/issue facts. */
 export type OrderBallInput = Omit<FlowOrder, "lineItems"> & {
   quoteStatus: string;
+  /** Free-text terms written on the order (the Sales Order + Terms step). */
+  termsNotes: string | null;
+  /** Legacy PAYMENT_TERMS value on orders closed before terms became free text. */
   paymentTerms: string | null;
   lineItems: (FlowLineItem & { purchaseOrderId: string | null })[];
   /** Service issues still open or in progress (see OPEN_SERVICE_ISSUE_STATUSES). */
@@ -78,6 +85,15 @@ function plural(n: number, one: string, many: string = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/**
+ * The Sales Order + Terms step is satisfied once someone has written the terms
+ * on the order. Orders closed before terms became free text carry a
+ * PAYMENT_TERMS value instead - those count as set too.
+ */
+export function hasOrderTerms(order: { termsNotes: string | null; paymentTerms: string | null }): boolean {
+  return (order.termsNotes?.trim().length ?? 0) > 0 || order.paymentTerms != null;
+}
+
 /** PO statuses that still need purchasing's attention. */
 const PO_OPEN_STATUSES = new Set(["draft", "sent", "acknowledged"]);
 
@@ -88,7 +104,7 @@ export function orderBall(order: OrderBallInput): Ball {
   if (order.quoteStatus === "needed") return ball("quote", "Prepare quote");
   if (order.quoteStatus === "sent") return ball("quote", "Awaiting quote approval");
 
-  if (!order.paymentTerms) return ball("terms", "Set terms");
+  if (!hasOrderTerms(order)) return ball("terms", "Set terms");
 
   const gate = evaluatePaymentGate(order);
   if (!gate.open) return ball("deposit", gate.reason);

@@ -1,19 +1,33 @@
-// Key/value app settings (AppSetting table): company details for PO PDFs, the
-// default customer-service assignee, and similar one-off knobs. Keys are typed
+// Key/value app settings (AppSetting table): the default customer-service
+// assignee, ball-in-court holders, and similar one-off knobs. Keys are typed
 // here so a typo can't silently create a new setting.
 
 import { prisma } from "@/lib/prisma";
 
-export type SettingKey =
-  | "company.name"
-  | "company.address"
-  | "company.phone"
-  | "company.email"
-  | "service.defaultAssigneeId"
-  | "po.pdfFooter"
+export const SETTING_KEYS = [
+  "service.defaultAssigneeId",
   // "off" enforces the role matrix; anything else (unset included) means open
-  // mode: every role can do everything. Open by default.
-  | "permissions.openMode";
+  // mode: every role can do everything. Open by default (Sep 3: "open it up
+  // for everyone until I tell you otherwise").
+  "permissions.openMode",
+  // Ball-in-court holders (Sep 4: "set the roles = ball in court"). One role
+  // and one optional specific person per court; read via @/lib/courtHolders,
+  // which fills in shipped defaults when these are unset.
+  "court.sales.role",
+  "court.sales.userId",
+  "court.office.role",
+  "court.office.userId",
+  "court.billing.role",
+  "court.billing.userId",
+  "court.purchasing.role",
+  "court.purchasing.userId",
+  "court.service.role",
+  "court.service.userId",
+] as const;
+
+export type SettingKey = (typeof SETTING_KEYS)[number];
+
+
 
 /** One setting, or null when unset. Never throws (a missing table reads as unset). */
 export async function getSetting(key: SettingKey): Promise<string | null> {

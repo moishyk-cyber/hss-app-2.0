@@ -5,12 +5,10 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   OPPORTUNITY_STAGES,
-  PAYMENT_TERMS,
   RFQ_STATUSES,
   isValidValue,
   labelFor,
 } from "@/lib/constants";
-import { applyTermsToOrder, depositForTerms } from "@/lib/terms";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus, syncOrderValueFromLineItems } from "@/lib/flow";
@@ -436,12 +434,12 @@ export async function markOpportunityLost(formData: FormData) {
 /**
  * Mark Won - driven by the Close panel on the deal page (Aug 31 feedback): the
  * salesperson confirms the price agreed, where it is going, when it is needed
- * and on what terms. Those answers ARE the order: the value, the location, and
- * (through applyTermsToOrder, in this same transaction) the depositRequired
- * payment gate and the invoices it implies.
+ * and what was agreed on terms. Those answers ARE the order: the value, the
+ * location and the free-text terms.
  *
- * Without those fields (the pre-panel recovery path, or a tampered payload) it
- * falls back to the per-account terms: Company.requiresDeposit / depositPercent.
+ * Sep 4 (client): no invoice is ever created here. The terms are free text, and
+ * the payment gate falls back to the account's own rule
+ * (Company.requiresDeposit / depositPercent, see evaluatePaymentGate).
  */
 export async function markOpportunityWon(formData: FormData) {
   const id = str(formData, "id");
@@ -454,7 +452,6 @@ export async function markOpportunityWon(formData: FormData) {
     include: {
       lineItems: true,
       orders: { select: { id: true } },
-      company: { select: { requiresDeposit: true, depositPercent: true } },
     },
   });
   if (!opportunity) throw new Error("Opportunity not found");
@@ -466,8 +463,8 @@ export async function markOpportunityWon(formData: FormData) {
     redirect(`/pipeline/${opportunity.id}`);
   }
 
-  // Marks a submission from the Close panel, so a blank deposit reads as "these
-  // terms need none" instead of "this form didn't ask".
+  // Marks a submission from the Close panel, so a blank field reads as "asked and
+  // left empty" instead of "this form didn't ask".
   const fromClosePanel = formData.get("closePanel") === "1";
   const submittedValue = num(formData, "value");
 
@@ -520,32 +517,10 @@ export async function markOpportunityWon(formData: FormData) {
   }
 
   const isProject = opportunity.orderType === "project";
-  // No company on the deal - fall back to the old house default rather than skipping the deposit.
-  const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
-  const depositPercent = opportunity.company?.depositPercent ?? 30;
 
-  // Terms picked on the call ARE the order's money: applyTermsToOrder turns them
-  // into depositRequired (the payment gate) and the invoices, inside the same
-  // transaction that creates the order. Nothing is hand-built here any more.
-  // Without a Close-panel submission (the recovery path, or a tampered payload)
-  // fall back to the account's own terms.
-  const submittedTerms = str(formData, "paymentTerms");
-  const fallbackTerms = !isProject
-    ? "full_upfront"
-    : requiresDeposit
-      ? "deposit_balance"
-      : "on_delivery";
-  const terms =
-    fromClosePanel && isValidValue(PAYMENT_TERMS, submittedTerms)
-      ? submittedTerms!
-      : fallbackTerms;
-  const typedDeposit = num(formData, "depositAmount");
-  const depositAmount = depositForTerms({
-    terms,
-    value,
-    depositPercent,
-    agreedDeposit: fromClosePanel ? typedDeposit : null,
-  });
+  // Whatever was agreed on the call, in the salesperson's own words. Nothing is
+  // derived from it: depositRequired stays null so the gate reads the account's
+  // deposit rule exactly as it did before terms existed.
   const termsNotes = str(formData, "termsNotes");
 
   let order;
@@ -567,15 +542,10 @@ export async function markOpportunityWon(formData: FormData) {
           // A project is quoted to the customer before the sales order goes
           // out; a straight order never is (see QUOTE_STATUSES).
           quoteStatus: isProject ? "needed" : "not_needed",
+          termsNotes,
+          paymentTerms: null,
+          depositRequired: null,
         },
-      });
-
-      // Writes paymentTerms/termsNotes/depositRequired and creates the invoices.
-      await applyTermsToOrder(tx, created.id, {
-        terms,
-        value,
-        depositAmount,
-        notes: termsNotes,
       });
 
       // Every line item that wasn't removed follows the deal into the order.
@@ -620,10 +590,9 @@ export async function markOpportunityWon(formData: FormData) {
     "order",
     order.id,
     "order_created",
-    `Order created from opportunity "${opportunity.title}" on ${labelFor(
-      PAYMENT_TERMS,
-      terms
-    )}${depositAmount > 0 ? ` - $${depositAmount} due before POs go out` : ""}`
+    `Order created from opportunity "${opportunity.title}"${
+      termsNotes ? ` - terms: ${termsNotes}` : " - no terms written yet"
+    }`
   );
 
   // The order was created as "new"; re-derive it so it reads awaiting_payment (or

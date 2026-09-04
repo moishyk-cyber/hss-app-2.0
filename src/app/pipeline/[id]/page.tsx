@@ -8,6 +8,7 @@ import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
 import { fmtDateUTC } from "@/lib/dates";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
@@ -40,6 +41,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
   company: { select: { requiresDeposit: true, depositPercent: true } },
@@ -103,19 +105,10 @@ export default async function OpportunityDetailPage({
   const isProject = opportunity.orderType === "project";
   const linkedOrder = opportunity.orders[0] ?? null;
 
-  // Deposit terms come from the account, and prefill the Close panel - where the
-  // salesperson can override them with whatever was actually agreed on the call.
+  // Deposit terms come from the account. They are what the payment gate reads -
+  // the Close panel shows them, it no longer asks the salesperson to pick terms.
   const requiresDeposit = opportunity.company?.requiresDeposit ?? true;
   const depositPercent = opportunity.company?.depositPercent ?? 30;
-  const suggestedDeposit = Math.round(((opportunity.value ?? 0) * depositPercent) / 100);
-  // Terms the Close panel opens on: the account's own terms for a project, and
-  // full payment for a straight order (which is how those have always closed -
-  // markOpportunityWon falls back to exactly the same pair).
-  const defaultTerms = !isProject
-    ? "full_upfront"
-    : requiresDeposit
-      ? "deposit_balance"
-      : "on_delivery";
   const closeLocations = (opportunity.company?.locations ?? []).map((l) => ({
     id: l.id,
     name: l.name,
@@ -137,11 +130,15 @@ export default async function OpportunityDetailPage({
 
   // Ball-in-court: the single next thing that has to happen, and who has to do
   // it. A won deal delegates straight to its order (orderBall).
-  const ball = opportunityBall({
-    stage: opportunity.stage,
-    lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
-    order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
-  });
+  const holders = await getCourtHolders();
+  const ball = withHolder(
+    opportunityBall({
+      stage: opportunity.stage,
+      lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
+      order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
+    }),
+    holders
+  );
 
   // The 9-step full flow (sales through customer service), post-processed so
   // the sales-side steps stay clickable exactly like the old 5-step stepper:
@@ -538,19 +535,18 @@ export default async function OpportunityDetailPage({
               >
                 {needsOrderRecovery ? (
                   <p className="mb-4 text-[13px] text-gray-dark">
-                    This deal is marked Won but has no order. Confirm the agreed terms and the
-                    order will be created with its line items and payment.
+                    This deal is marked Won but has no order. Confirm the details and the order
+                    will be created with its line items.
                   </p>
                 ) : null}
 
                 <ClosePanel
                   opportunityId={opportunity.id}
                   isProject={isProject}
+                  requiresDeposit={requiresDeposit}
                   depositPercent={depositPercent}
-                  suggestedDeposit={suggestedDeposit}
                   needsOrderRecovery={needsOrderRecovery}
                   defaultValue={opportunity.value}
-                  defaultTerms={defaultTerms}
                   locations={closeLocations}
                   defaultLocationId={opportunity.locationId}
                   defaultLocationName={opportunity.location?.name ?? opportunity.locationName}

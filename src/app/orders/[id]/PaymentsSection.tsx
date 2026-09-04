@@ -274,23 +274,18 @@ export default function PaymentsSection({
   orderId,
   payments,
   gate,
-  orderValue,
-  depositPercent,
   terms,
   quote,
 }: {
   orderId: string;
   payments: Payment[];
   gate: PaymentGate;
-  orderValue: number | null;
-  depositPercent: number;
-  terms: { paymentTerms: string | null; termsNotes: string | null; depositRequired: number | null };
+  terms: { termsNotes: string | null; paymentTerms: string | null };
   quote: { quoteStatus: string; quoteUrl: string | null; quoteSentAt: Date | null };
 }) {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(payments.length === 0);
   const { toast } = useToast();
-  const anyPaid = payments.some((p) => p.status === "paid");
 
   async function handleAddInvoice(formData: FormData) {
     const type = String(formData.get("type") ?? "deposit");
@@ -314,12 +309,8 @@ export default function PaymentsSection({
     <div className="space-y-5">
       <TermsCard
         orderId={orderId}
-        paymentTerms={terms.paymentTerms}
         termsNotes={terms.termsNotes}
-        depositRequired={terms.depositRequired}
-        orderValue={orderValue}
-        depositPercent={depositPercent}
-        anyPaid={anyPaid}
+        paymentTerms={terms.paymentTerms}
         quoteStatus={quote.quoteStatus}
         quoteUrl={quote.quoteUrl}
         quoteSentAt={quote.quoteSentAt}

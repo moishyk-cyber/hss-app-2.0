@@ -19,13 +19,20 @@ import {
   labelFor,
 } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
-import { advancePoStatus, createPurchaseOrder, markPoShipped, setPoAutoQuotesNumber } from "../actions";
+import {
+  advancePoStatus,
+  createPurchaseOrder,
+  markPoShipped,
+  setPoAutoQuotesNumber,
+  setPoDeliveryMode,
+} from "../actions";
 import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
-import { PendingButton, ActionButton } from "@/lib/ui";
+import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { SearchCombobox } from "@/lib/Combobox";
 import { Avatar } from "@/lib/Avatar";
 import { hasTruckerLeg } from "../../deliveries/_ui";
+import FilesSection, { type FileDocData } from "./FilesSection";
 
 type PoLineItem = { id: string; name: string; qty: number };
 type Po = {
@@ -75,12 +82,17 @@ export default function PurchaseOrdersSection({
   unassignedLineItems,
   vendors,
   gate,
+  documentsByPoId,
+  uploadsEnabled,
 }: {
   orderId: string;
   purchaseOrders: Po[];
   unassignedLineItems: UnassignedLineItem[];
   vendors: Vendor[];
   gate: PaymentGate;
+  /** The AutoQuotes PDF (and any other attachment) on file per PO id. */
+  documentsByPoId: Record<string, FileDocData[]>;
+  uploadsEnabled: boolean;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Once anything still needs a PO, the form stays up - there's nothing to
@@ -157,13 +169,15 @@ export default function PurchaseOrdersSection({
       setCreateError("AutoQuotes PO # is too long (max 40 characters).");
       return;
     }
+    const deliveryMode = String(formData.get("deliveryMode") ?? "");
     setCreateError(null);
     const result = await createPurchaseOrder(
       orderId,
       supplierId,
       lineItemIds,
       supplierId ? "" : typedVendor,
-      autoQuotesPoNumber
+      autoQuotesPoNumber,
+      deliveryMode
     );
     if (result.ok) {
       setShowEmptyForm(false);
@@ -230,6 +244,22 @@ export default function PurchaseOrdersSection({
               />
             </label>
           </div>
+          <div className="max-w-xs">
+            <label className="block">
+              <span className="field-label">Delivery</span>
+              <select
+                name="deliveryMode"
+                defaultValue="manufacturer_to_hss_to_customer"
+                className="input-klyne w-full px-2 py-1.5 text-sm"
+              >
+                {DELIVERY_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div>
             <span className="field-label">Items</span>
             {unassignedLineItems.length === 0 ? (
@@ -292,6 +322,8 @@ export default function PurchaseOrdersSection({
               const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
               const blocked = po.status === "draft" && !gate.open;
               const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
+              const mode = po.deliveries[0]?.mode ?? null;
+              const docCount = (documentsByPoId[po.id] ?? []).length;
               return (
                 // The row's click target is a real <button> (title cell) whose
                 // ::after is stretched to cover the full row - same overlay
@@ -331,20 +363,25 @@ export default function PurchaseOrdersSection({
                         sent {sentDaysAgo}d ago
                       </span>
                     )}
+                    {mode && (
+                      <span className="hidden shrink-0 lg:block">
+                        <span className={`badge ${DELIVERY_MODE_COLORS[mode] ?? "badge-gray"}`}>
+                          {labelFor(DELIVERY_MODES, mode)}
+                        </span>
+                      </span>
+                    )}
+                    {docCount > 0 && (
+                      <span
+                        className="hidden shrink-0 text-[12px] text-gray-dark sm:block"
+                        title={`${docCount} file${docCount === 1 ? "" : "s"} attached`}
+                      >
+                        PDF attached{docCount > 1 ? ` (${docCount})` : ""}
+                      </span>
+                    )}
                     <span className="shrink-0">
                       <span className={`badge ${PO_STATUS_COLORS[po.status] ?? "badge-gray"}`}>
                         {labelFor(PO_STATUSES, po.status)}
                       </span>
-                    </span>
-                    <span className="relative z-10 shrink-0">
-                      <a
-                        href={`/orders/${orderId}/po/${po.id}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-sm active:scale-[0.99]"
-                      >
-                        PDF
-                      </a>
                     </span>
                     {next && (
                       <span className="relative z-10">
@@ -365,7 +402,14 @@ export default function PurchaseOrdersSection({
         </div>
       )}
 
-      {openPo ? <PoDetailModal orderId={orderId} po={openPo} onClose={() => setOpenPoId(null)} /> : null}
+      {openPo ? (
+        <PoDetailModal
+          po={openPo}
+          documents={documentsByPoId[openPo.id] ?? []}
+          uploadsEnabled={uploadsEnabled}
+          onClose={() => setOpenPoId(null)}
+        />
+      ) : null}
 
       {shipPo ? (
         <ShipPoDialog
@@ -381,8 +425,18 @@ export default function PurchaseOrdersSection({
   );
 }
 
-/** PO popup: items, ship-to, the dates, and a read-only look at its delivery leg. */
-function PoDetailModal({ orderId, po, onClose }: { orderId: string; po: Po; onClose: () => void }) {
+/** PO popup: items, ship-to, the dates, the AutoQuotes PDF, and a read-only look at its delivery leg. */
+function PoDetailModal({
+  po,
+  documents,
+  uploadsEnabled,
+  onClose,
+}: {
+  po: Po;
+  documents: FileDocData[];
+  uploadsEnabled: boolean;
+  onClose: () => void;
+}) {
   const panelRef = useRef<HTMLDivElement>(null);
   // A split PO has more than one leg; the modal summarizes the first and sends
   // people to the Delivery tab for the rest.
@@ -444,14 +498,7 @@ function PoDetailModal({ orderId, po, onClose }: { orderId: string; po: Po; onCl
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <AutoQuotesField po={po} />
-          <a
-            href={`/orders/${orderId}/po/${po.id}/pdf`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-sm active:scale-[0.99]"
-          >
-            PDF
-          </a>
+          <DeliveryModeField po={po} />
         </div>
 
         <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
@@ -463,8 +510,39 @@ function PoDetailModal({ orderId, po, onClose }: { orderId: string; po: Po; onCl
         </ul>
 
         <DeliveryReadout delivery={delivery} />
+
+        <div className="border-t border-border pt-3">
+          <div className="section-label">AutoQuotes PDF</div>
+          <FilesSection
+            linkedType="purchase_order"
+            linkedId={po.id}
+            docs={documents}
+            ownLabel="AutoQuotes PDF"
+            uploadsEnabled={uploadsEnabled}
+            compact
+            defaultKind="po"
+            addLabel="+ Attach PDF"
+            emptyText="No AutoQuotes PDF attached yet - paste a link or upload it."
+          />
+        </div>
       </div>
     </div>
+  );
+}
+
+/** Modal's delivery-mode picker: same badge everyone else sees, editable in place. */
+function DeliveryModeField({ po }: { po: Po }) {
+  const delivery = po.deliveries[0] ?? null;
+  const mode =
+    delivery?.mode ?? (po.shipTo === "client_direct" ? "manufacturer_to_customer" : "manufacturer_to_hss_to_customer");
+  return (
+    <BadgeSelect
+      value={mode}
+      options={DELIVERY_MODES}
+      action={(next) => setPoDeliveryMode(po.id, next)}
+      colorMap={DELIVERY_MODE_COLORS}
+      ariaLabel="Change delivery mode"
+    />
   );
 }
 

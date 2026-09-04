@@ -16,6 +16,7 @@ import {
 import { fmtDateUTC, isPastDay } from "@/lib/dates";
 import { currentUserId } from "@/lib/identityServer";
 import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
@@ -51,6 +52,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
   company: { select: { requiresDeposit: true, depositPercent: true } },
@@ -304,6 +306,8 @@ export default async function DashboardPage({
       take: 5,
     }),
   ]);
+
+  const holders = await getCourtHolders();
 
   // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
   const myPricingItems = myPricingItemsRaw.filter((i) => !isDeadDealItem(i));
@@ -576,11 +580,14 @@ export default async function DashboardPage({
             viewAllHref="/pipeline"
             viewAllLabel="All deals"
             rows={myDeals.slice(0, 8).map((d): QueueRow => {
-              const ball = opportunityBall({
-                stage: d.stage,
-                lineItems: d.lineItems,
-                order: null,
-              });
+              const ball = withHolder(
+                opportunityBall({
+                  stage: d.stage,
+                  lineItems: d.lineItems,
+                  order: null,
+                }),
+                holders
+              );
               return {
                 href: `/pipeline/${d.id}`,
                 primary: d.title,
@@ -610,7 +617,7 @@ export default async function DashboardPage({
             viewAllHref="/orders"
             viewAllLabel="All orders"
             rows={myOrders.slice(0, 8).map((o): QueueRow => {
-              const ball = orderBall(toOrderBallInput(o));
+              const ball = withHolder(orderBall(toOrderBallInput(o)), holders);
               return {
                 href: `/orders/${o.id}`,
                 primary: o.title,

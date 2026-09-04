@@ -6,7 +6,10 @@ import { logActivity } from "@/lib/log";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { REQUIRABLE_FIELDS, type RequirableEntity, type RequirableField } from "@/lib/fieldRequirements";
 import { requirePermission } from "@/lib/permissionsServer";
-import { setSetting } from "@/lib/settings";
+import { setSetting, type SettingKey } from "@/lib/settings";
+import { isRole } from "@/lib/permissions";
+import { labelFor, USER_ROLES } from "@/lib/constants";
+import { COURTS, type Court } from "@/lib/ballInCourt";
 
 /** Every place a required-field change could change what a form demands. */
 function revalidateAffectedForms() {
@@ -44,32 +47,45 @@ export async function setFieldRequired(
 }
 
 // ---------------------------------------------------------------------------
-// App settings (plan §3C.4): company details for the PO PDF, and the default
-// customer-service assignee. Stored in AppSetting via @/lib/settings.
+// App settings (plan §3C.4): the default customer-service assignee and the
+// ball-in-court holders. Stored in AppSetting via @/lib/settings.
 // ---------------------------------------------------------------------------
 
-/** "Company details (PO PDF)" card - one save for all five fields. */
-export async function saveCompanySettings(formData: FormData): Promise<ActionResult> {
+const COURT_SETTING_KEYS: Record<Court, { role: SettingKey; userId: SettingKey }> = {
+  sales: { role: "court.sales.role", userId: "court.sales.userId" },
+  office: { role: "court.office.role", userId: "court.office.userId" },
+  billing: { role: "court.billing.role", userId: "court.billing.userId" },
+  purchasing: { role: "court.purchasing.role", userId: "court.purchasing.userId" },
+  service: { role: "court.service.role", userId: "court.service.userId" },
+};
+
+/** "Ball in court" card - one row per court, saved on change. */
+export async function setCourtHolder(court: string, role: string, userId: string): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
 
-  const name = String(formData.get("name") ?? "").trim();
-  const address = String(formData.get("address") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const footer = String(formData.get("footer") ?? "").trim();
+  if (!(court in COURT_SETTING_KEYS)) return { ok: false, message: "Not a recognised court." };
+  const c = court as Court;
+  if (!isRole(role)) return { ok: false, message: "Not a valid role." };
+  if (userId) {
+    const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, active: true } });
+    if (!exists || !exists.active) return { ok: false, message: "Pick an active teammate." };
+  }
 
   return safeAction(async () => {
-    await Promise.all([
-      setSetting("company.name", name),
-      setSetting("company.address", address),
-      setSetting("company.phone", phone),
-      setSetting("company.email", email),
-      setSetting("po.pdfFooter", footer),
-    ]);
-    await logActivity("setting", "company", "setting_changed", "Company details (PO PDF) updated");
+    const keys = COURT_SETTING_KEYS[c];
+    await Promise.all([setSetting(keys.role, role), setSetting(keys.userId, userId)]);
+    await logActivity(
+      "setting",
+      court,
+      "court_holder_changed",
+      `${COURTS[c]} ball-in-court holder set to ${labelFor(USER_ROLES, role)}${
+        userId ? ` (pinned to a person)` : ""
+      }`
+    );
     revalidatePath("/admin/settings");
-  }, "Could not save the company details. Please try again.");
+    revalidatePath("/", "layout");
+  }, "Could not save that court holder. Please try again.");
 }
 
 /** "Customer service default assignee" select - the fallback used by /service intake. */

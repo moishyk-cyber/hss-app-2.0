@@ -3,8 +3,10 @@ import { UserSelect } from "@/lib/UserSelect";
 import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements";
 import { getSettings } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
+import { COURTS, type Court } from "@/lib/ballInCourt";
+import { getCourtHolders } from "@/lib/courtHolders";
 import { setFieldRequired, setServiceDefaultAssignee } from "./actions";
-import { CompanySettingsForm } from "./CompanySettingsForm";
+import { CourtHolderRow } from "./CourtHolderRow";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +21,14 @@ const ENTITY_LABELS: Record<string, string> = {
   opportunity: "Deal form",
 };
 
+const COURT_ORDER = Object.keys(COURTS) as Court[];
+
 export default async function AdminSettingsPage() {
-  const [requirements, companySettings, users] = await Promise.all([
+  const [requirements, settings, users, courtHolders] = await Promise.all([
     getFieldRequirements(),
-    getSettings(["company.name", "company.address", "company.phone", "company.email", "po.pdfFooter", "service.defaultAssigneeId"]),
+    getSettings(["service.defaultAssigneeId"]),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getCourtHolders(),
   ]);
   const byEntity = new Map<string, typeof REQUIRABLE_FIELDS[number][]>();
   for (const f of REQUIRABLE_FIELDS) {
@@ -32,21 +37,26 @@ export default async function AdminSettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="card space-y-4">
-        <div>
-          <h2 className="section-label">Company details (PO PDF)</h2>
-          <p className="page-sub">
-            Shown on every purchase-order PDF. Falls back to &ldquo;HSS Kitchen Equipment
-            Inc&rdquo; / &ldquo;Brooklyn, NY&rdquo; until this is filled in.
-          </p>
-        </div>
-        <CompanySettingsForm
-          name={companySettings["company.name"] ?? ""}
-          address={companySettings["company.address"] ?? ""}
-          phone={companySettings["company.phone"] ?? ""}
-          email={companySettings["company.email"] ?? ""}
-          footer={companySettings["po.pdfFooter"] ?? ""}
-        />
+      <div>
+        <h2 className="section-label">Ball in court</h2>
+        <p className="page-sub">
+          Who the ball-in-court badge names for each court. Pin a person, or leave it on
+          &ldquo;Anyone in that role&rdquo; to show the role instead.
+        </p>
+      </div>
+      <div className="card card-flush overflow-hidden">
+        <ul className="divide-y divide-border">
+          {COURT_ORDER.map((court) => (
+            <CourtHolderRow
+              key={court}
+              court={court}
+              courtLabel={COURTS[court]}
+              role={courtHolders[court].role ?? "sales"}
+              userId={courtHolders[court].userId ?? ""}
+              users={users}
+            />
+          ))}
+        </ul>
       </div>
 
       <div className="card space-y-3">
@@ -57,7 +67,7 @@ export default async function AdminSettingsPage() {
           </p>
         </div>
         <UserSelect
-          value={companySettings["service.defaultAssigneeId"] ?? ""}
+          value={settings["service.defaultAssigneeId"] ?? ""}
           users={users}
           action={setServiceDefaultAssignee}
         />

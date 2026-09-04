@@ -15,9 +15,9 @@ import type { IssueRowData } from "../../service/IssueRow";
 import { FlowStepper } from "@/lib/FlowStepper";
 import { BackLink } from "@/lib/BackLink";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { fullFlowSteps, orderBall } from "@/lib/ballInCourt";
+import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
-import { PAYMENT_TERMS, PAYMENT_TERM_COLORS, labelFor } from "@/lib/constants";
 import { uploadsConfigured } from "@/lib/storage";
 import { ActionButton } from "@/lib/ui";
 import { acknowledgeAllSentPos, markOrderComplete } from "../actions";
@@ -113,10 +113,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   if (!order) notFound();
 
+  // Document is polymorphic (no Prisma relation to PurchaseOrder), so its POs'
+  // attached AutoQuotes PDFs are a separate lookup by linkedId, grouped below.
+  const poIds = order.purchaseOrders.map((po) => po.id);
+
   // The Service tab's rows (same shape /service builds) and the Files tab's
   // documents - this order's own plus the deal's, since drawings and quotes
   // arrive during sales and nobody should have to go hunting for them.
-  const [issues, documents] = await Promise.all([
+  const [issues, documents, poDocuments] = await Promise.all([
     prisma.serviceIssue.findMany({
       where: { orderId: order.id },
       include: {
@@ -139,12 +143,27 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       },
       orderBy: { uploadedAt: "desc" },
     }),
+    poIds.length > 0
+      ? prisma.document.findMany({
+          where: { linkedType: "purchase_order", linkedId: { in: poIds } },
+          orderBy: { uploadedAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   const gate = evaluatePaymentGate(order);
   // One source of truth for "what happens next" - the header stepper, the badge,
   // the primary action and the opening tab all read this (see @/lib/ballInCourt).
-  const ball = orderBall(orderBallInput(order));
+  const ball = withHolder(orderBall(orderBallInput(order)), await getCourtHolders());
+
+  // Terms are free text (Sep 4 client decision) - the header grid shows the
+  // first line, the Invoice tab holds the whole thing.
+  const termsSummary = (() => {
+    const raw = order.termsNotes?.trim();
+    if (!raw) return null;
+    const firstLine = raw.split("\n")[0].trim();
+    return firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine;
+  })();
 
   const unassignedLineItems = order.lineItems
     .filter((li) => !li.purchaseOrderId && li.rfqStatus !== "removed")
@@ -172,7 +191,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         Set quote status
       </a>
     );
-  } else if (isOpen && !order.paymentTerms) {
+  } else if (isOpen && !hasOrderTerms(order)) {
     primaryAction = (
       <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
         Set terms
@@ -269,6 +288,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   });
   const orderDocs = documents.filter((d) => d.linkedType === "order").map(toDoc);
   const dealDocs = documents.filter((d) => d.linkedType === "opportunity").map(toDoc);
+  const documentsByPoId: Record<string, FileDocData[]> = {};
+  for (const d of poDocuments) {
+    (documentsByPoId[d.linkedId] ??= []).push(toDoc(d));
+  }
 
   return (
     <div className="space-y-8">
@@ -364,10 +387,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div>
             <div className="field-label">Terms</div>
             <div className="text-ink">
-              {order.paymentTerms ? (
-                <span className={`badge ${PAYMENT_TERM_COLORS[order.paymentTerms] ?? "badge-gray"}`}>
-                  {labelFor(PAYMENT_TERMS, order.paymentTerms)}
-                </span>
+              {termsSummary ? (
+                // The full text lives on the Invoice tab - the header shows the
+                // first line so the grid stays a grid.
+                <span title={order.termsNotes ?? undefined}>{termsSummary}</span>
               ) : (
                 <span className="empty-value">not set</span>
               )}
@@ -403,13 +426,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               orderId={order.id}
               payments={order.payments}
               gate={gate}
-              orderValue={order.orderValue}
-              depositPercent={order.company?.depositPercent ?? 30}
-              terms={{
-                paymentTerms: order.paymentTerms,
-                termsNotes: order.termsNotes,
-                depositRequired: order.depositRequired,
-              }}
+              terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms }}
               quote={{
                 quoteStatus: order.quoteStatus,
                 quoteUrl: order.quoteUrl,
@@ -424,6 +441,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               unassignedLineItems={unassignedLineItems}
               vendors={vendors}
               gate={gate}
+              documentsByPoId={documentsByPoId}
+              uploadsEnabled={uploadsConfigured()}
             />
           }
           delivery={

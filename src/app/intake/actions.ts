@@ -6,9 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
 import { currentUserId } from "@/lib/identityServer";
-import { PAYMENT_TERMS, isValidValue, labelFor } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
-import { applyTermsToOrder, depositForTerms } from "@/lib/terms";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
 
@@ -91,10 +89,10 @@ export async function submitIntake(formData: FormData) {
   const neededByDate = date(formData, "neededByDate");
   const items = parseItems(formData);
   const payload = JSON.stringify(formSnapshot(formData));
-  // Terms only reach the form when the intake becomes an order straight away;
-  // anything unrecognised (or absent) falls back to the house default.
-  const rawTerms = str(formData, "paymentTerms");
-  const terms = isValidValue(PAYMENT_TERMS, rawTerms) ? rawTerms! : "full_upfront";
+  // Terms only reach the form when the intake becomes an order straight away.
+  // Free text since Sep 4 (client) - nothing is derived from it and no invoice
+  // is created; those are added by hand on the order's Invoice tab.
+  const termsNotes = str(formData, "termsNotes");
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
@@ -175,10 +173,9 @@ export async function submitIntake(formData: FormData) {
       ? `Intake form created opportunity "${result.title}" with ${items.length} item(s)${
           items.some((i) => i.unitPrice != null) ? " (some already priced)" : " needing pricing"
         }`
-      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s) on ${labelFor(
-          PAYMENT_TERMS,
-          terms
-        )}`
+      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s)${
+          termsNotes ? ` - terms: ${termsNotes}` : " - no terms written yet"
+        }`
   );
 
   // Branch B skips the pipeline, so nothing else ever derives this order's status.
@@ -198,8 +195,6 @@ export async function submitIntake(formData: FormData) {
     let companyName = "New client";
     /** Address on file for the picked business - the default destination. */
     let companyDeliveryAddress: string | null = null;
-    /** Deposit terms of the account, used when the intake's terms need a deposit. */
-    let depositPercent = 30;
     /** Set when this intake creates the business's first Location. */
     let createdLocationId: string | null = null;
 
@@ -220,7 +215,6 @@ export async function submitIntake(formData: FormData) {
       companyId = company.id;
       companyName = company.name;
       companyDeliveryAddress = company.deliveryAddress;
-      depositPercent = company.depositPercent;
       // A new business's delivery address IS its first location (Sep 3 plan A1.2).
       if (company.deliveryAddress) {
         const firstLocation = await tx.location.create({
@@ -239,7 +233,6 @@ export async function submitIntake(formData: FormData) {
         const company = await tx.company.findUnique({ where: { id: companyId } });
         companyName = company?.name ?? companyName;
         companyDeliveryAddress = company?.deliveryAddress ?? null;
-        depositPercent = company?.depositPercent ?? depositPercent;
       }
     }
 
@@ -383,6 +376,7 @@ export async function submitIntake(formData: FormData) {
         locationId,
         deliveryAddress,
         notes: str(formData, "notes"),
+        termsNotes,
         lineItems: {
           create: items.map((item) => ({
             name: item.name,
@@ -393,18 +387,6 @@ export async function submitIntake(formData: FormData) {
           })),
         },
       },
-    });
-
-    // Terms in the same transaction as the order, so the invoice exists the
-    // moment the order does (Sep 3 plan A1.3) - never a hand-built Payment row.
-    await applyTermsToOrder(tx, order.id, {
-      terms,
-      value: orderValue ?? 0,
-      depositAmount: depositForTerms({
-        terms,
-        value: orderValue ?? 0,
-        depositPercent,
-      }),
     });
 
     await tx.intakeSubmission.create({

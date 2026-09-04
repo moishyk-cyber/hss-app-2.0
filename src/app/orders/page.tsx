@@ -12,6 +12,7 @@ import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
+import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
@@ -27,6 +28,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
   company: { select: { requiresDeposit: true, depositPercent: true } },
@@ -149,6 +151,8 @@ export default async function OrdersPage({
     ...(orderBy ? { orderBy } : {}),
   });
 
+  const holders = await getCourtHolders();
+
   // Default view (no explicit sort chosen): soonest needed-by first, orders
   // with no due date last - the client asked to filter by due date instead
   // of a manual urgency flag.
@@ -208,7 +212,7 @@ export default async function OrdersPage({
                 due === "overdue" ? "border-l-4 border-red" : due === "soon" ? "border-l-4 border-orange" : "";
               const ps = paymentState(order.payments);
               const summary = itemSummary(order.lineItems);
-              const ball = orderBall(toOrderBallInput(order));
+              const ball = withHolder(orderBall(toOrderBallInput(order)), holders);
               return (
                 <li
                   key={order.id}
