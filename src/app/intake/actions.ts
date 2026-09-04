@@ -26,14 +26,6 @@ function date(formData: FormData, key: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-/** Money typed into the form: null when blank, ignored when it isn't real money. */
-function money(formData: FormData, key: string): number | null {
-  const raw = str(formData, key);
-  if (raw == null) return null;
-  const parsed = Number(raw.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(parsed) && parsed > 0 ? roundCents(parsed) : null;
-}
-
 function all(formData: FormData, key: string): string[] {
   return formData.getAll(key).map((v) => (typeof v === "string" ? v : ""));
 }
@@ -99,8 +91,6 @@ export async function submitIntake(formData: FormData) {
   const neededByDate = date(formData, "neededByDate");
   const items = parseItems(formData);
   const payload = JSON.stringify(formSnapshot(formData));
-  /** "Total price agreed" - optional, and the number that wins when it is there. */
-  const typedTotal = money(formData, "totalPrice");
   // Terms only reach the form when the intake becomes an order straight away;
   // anything unrecognised (or absent) falls back to the house default.
   const rawTerms = str(formData, "paymentTerms");
@@ -183,7 +173,7 @@ export async function submitIntake(formData: FormData) {
     "intake_submitted",
     result.type === "opportunity"
       ? `Intake form created opportunity "${result.title}" with ${items.length} item(s)${
-          typedTotal != null ? ` - $${typedTotal} agreed` : " needing pricing"
+          items.some((i) => i.unitPrice != null) ? " (some already priced)" : " needing pricing"
         }`
       : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s) on ${labelFor(
           PAYMENT_TERMS,
@@ -328,9 +318,9 @@ export async function submitIntake(formData: FormData) {
           // Carry the form's real answer. Hard-coding true told the RFQ queue every
           // deal needed quoting, including ones the salesperson had already priced.
           needsPricing,
-          // A price agreed on the call is the deal's value - the pipeline never
-          // has to ask for it again (Sep 3 plan A1.3).
-          value: typedTotal,
+          // The price is agreed at close, not at intake (the Close panel asks
+          // for it). Item prices typed here still roll up via the RFQ pricing sync.
+          value: null,
           neededByDate,
           locationId,
           deliveryAddress,
@@ -374,11 +364,11 @@ export async function submitIntake(formData: FormData) {
       return { type: "opportunity" as const, id: opportunity.id, title };
     }
 
-    // Priced on the call: the typed total wins, otherwise the items add up to it.
+    // Priced on the call: the order is worth what its item prices add up to.
     const itemsTotal = roundCents(
       items.reduce((sum, item) => sum + (item.unitPrice ?? 0) * item.qty, 0)
     );
-    const orderValue = typedTotal ?? (itemsTotal > 0 ? itemsTotal : null);
+    const orderValue = itemsTotal > 0 ? itemsTotal : null;
 
     const order = await tx.order.create({
       data: {

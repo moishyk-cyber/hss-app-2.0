@@ -4,8 +4,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   ORDER_STATUSES,
-  ORDER_URGENCIES,
-  URGENCY_COLORS,
   ORDER_STATUS_COLORS,
   OPEN_SERVICE_ISSUE_STATUSES,
   labelFor,
@@ -15,7 +13,7 @@ import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { fmtDate, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
+import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 /**
  * Just enough of an Order to compute orderBall() - a narrower stand-in for
@@ -48,8 +46,6 @@ function toOrderBallInput(order: OrderBallRow): OrderBallInput {
 }
 
 export const dynamic = "force-dynamic";
-
-const URGENCY_RANK: Record<string, number> = { emergency: 0, same_day: 1, standard: 2 };
 
 // Not a shared enum in lib/constants.ts (only two values, order-module local).
 const ORDER_TYPE_OPTIONS = [
@@ -102,7 +98,6 @@ export default async function OrdersPage({
     { key: "title", label: "Title", type: "text" },
     { key: "company", label: "Company", type: "text" },
     { key: "status", label: "Status", type: "enum", options: ORDER_STATUSES, filterable: false },
-    { key: "urgency", label: "Urgency", type: "enum", options: ORDER_URGENCIES },
     { key: "orderType", label: "Order Type", type: "enum", options: ORDER_TYPE_OPTIONS },
     { key: "value", label: "Value", type: "number", filterable: false },
     { key: "neededBy", label: "Needed By", type: "date" },
@@ -121,7 +116,6 @@ export default async function OrdersPage({
   }
   if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
   if (filters.company) where.company = { name: { contains: filters.company, mode: "insensitive" } };
-  if (filters.urgency) where.urgency = filters.urgency;
   if (filters.orderType) where.orderType = filters.orderType;
   if (filters.owner) where.ownerId = filters.owner;
   if (filters.neededBy) {
@@ -134,7 +128,6 @@ export default async function OrdersPage({
     title: { title: sortDir },
     company: { company: { name: sortDir } },
     status: { status: sortDir },
-    urgency: { urgency: sortDir },
     orderType: { orderType: sortDir },
     value: { orderValue: sortDir },
     neededBy: { neededByDate: sortDir },
@@ -156,11 +149,11 @@ export default async function OrdersPage({
     ...(orderBy ? { orderBy } : {}),
   });
 
-  // Default view (no explicit sort chosen): urgent first, then soonest needed-by.
+  // Default view (no explicit sort chosen): soonest needed-by first, orders
+  // with no due date last - the client asked to filter by due date instead
+  // of a manual urgency flag.
   if (!orderBy) {
     orders.sort((a, b) => {
-      const ur = (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9);
-      if (ur !== 0) return ur;
       const ad = a.neededByDate ? new Date(a.neededByDate).getTime() : Infinity;
       const bd = b.neededByDate ? new Date(b.neededByDate).getTime() : Infinity;
       return ad - bd;
@@ -210,12 +203,9 @@ export default async function OrdersPage({
         <div className="card card-flush overflow-hidden">
           <ul className="divide-y divide-border">
             {orders.map((order) => {
+              const due = dueState(order.neededByDate, order.status);
               const accent =
-                order.urgency === "emergency"
-                  ? "border-l-4 border-red"
-                  : order.urgency === "same_day"
-                  ? "border-l-4 border-orange"
-                  : "";
+                due === "overdue" ? "border-l-4 border-red" : due === "soon" ? "border-l-4 border-orange" : "";
               const ps = paymentState(order.payments);
               const summary = itemSummary(order.lineItems);
               const ball = orderBall(toOrderBallInput(order));
@@ -244,16 +234,9 @@ export default async function OrdersPage({
                   </span>
 
                   {/* Quiet by default (Moishy: "too many details") - badges only
-                      when they say something: urgency only when urgent, payment
-                      only while money is still owed. */}
-                  {order.urgency !== "standard" ? (
-                    <span className="hidden shrink-0 sm:block">
-                      <span className={`badge ${URGENCY_COLORS[order.urgency] ?? "badge-gray"}`}>
-                        {order.urgency.replace("_", " ")}
-                      </span>
-                    </span>
-                  ) : null}
-
+                      when they say something: payment only while money is
+                      still owed. Due-date urgency reads from the left accent
+                      and the Due column instead of its own badge. */}
                   <span className="shrink-0">
                     <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
                       {labelFor(ORDER_STATUSES, order.status)}
@@ -271,7 +254,7 @@ export default async function OrdersPage({
                   </span>
 
                   <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
-                    {fmtDate(order.neededByDate)}
+                    <DueCell neededByDate={order.neededByDate} status={order.status} />
                   </span>
 
                   <span className="relative z-10 shrink-0">

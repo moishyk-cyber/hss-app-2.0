@@ -61,9 +61,9 @@ One row per item, sales → fulfillment, same row throughout.
 
 ### orders
 Created when an opportunity is Won, or directly from a simple no-pricing intake.
-`id, opportunity_id (nullable), company_id, contact_id, owner_id (users), order_type (project | order), status, urgency (standard | same_day | emergency), po_number_client, job_id, quickbooks_invoice_no, order_value, deposit_required, location_id (locations, nullable), delivery_address, needed_by_date, next_follow_up, files, created_at`
+`id, opportunity_id (nullable), company_id, contact_id, owner_id (users), order_type (project | order), status, po_number_client, job_id, quickbooks_invoice_no, order_value, deposit_required, location_id (locations, nullable), delivery_address, needed_by_date, next_follow_up, files, created_at`
 Terms + quote (decisions 10, 11): `payment_terms (deposit_balance | full_upfront | on_delivery | net_30 | custom), terms_notes, quote_status (not_needed | needed | sent | accepted), quote_url, quote_sent_at`
-(`urgency`: same-day/next-day delivery and 1-hour emergency response are a core HSS selling point — the fulfillment dashboard must surface these above everything else.)
+(The manual `urgency` field standard/same_day/emergency was removed - the client's call: "remove all the urgency, and we'll just filter it by due date." Every surface that used to sort/highlight on urgency now uses `needed_by_date` instead.)
 
 **Status enum (fulfillment, per roadmap steps 1–6):**
 `new → awaiting_payment → payment_received → pos_in_progress → in_transit → delivery_scheduled → delivered → complete` | `stuck`

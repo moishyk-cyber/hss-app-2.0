@@ -7,6 +7,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { requirePermission } from "@/lib/permissionsServer";
 import { isPermission, isRole, permissionLabel } from "@/lib/permissions";
 import { USER_ROLES, labelFor } from "@/lib/constants";
+import { setSetting } from "@/lib/settings";
 
 /** Every place a role-permission change could change what someone can do. */
 function refresh() {
@@ -60,4 +61,28 @@ export async function resetRolePermissions(role: string): Promise<ActionResult> 
     );
     refresh();
   }, "Could not reset that role. Please try again.");
+}
+
+/**
+ * Open mode switch. "on" = every role can do everything (the shipped default);
+ * "off" = enforce the matrix below. Guarded by admin.manage, which in open mode
+ * everyone passes - the point is that an admin can close the door from here.
+ */
+export async function setPermissionsOpenMode(next: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
+  if (next !== "on" && next !== "off") return { ok: false, message: "Pick on or off." };
+
+  return safeAction(async () => {
+    await setSetting("permissions.openMode", next);
+    await logActivity(
+      "role_permission",
+      "open_mode",
+      "permissions_open_mode_changed",
+      next === "on"
+        ? "Open mode ON - every role can do everything"
+        : "Open mode OFF - the role matrix is enforced"
+    );
+    refresh();
+  }, "Could not change open mode. Please try again.");
 }

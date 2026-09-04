@@ -11,6 +11,10 @@ export const SETTING_KEYS = [
   "company.email",
   "service.defaultAssigneeId",
   "po.pdfFooter",
+  // "off" enforces the role matrix; anything else (unset included) means open
+  // mode: every role can do everything. Open by default (Sep 3: "open it up
+  // for everyone until I tell you otherwise").
+  "permissions.openMode",
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -22,6 +26,7 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
   "company.email": "Company email",
   "service.defaultAssigneeId": "Default customer-service assignee",
   "po.pdfFooter": "PO PDF footer",
+  "permissions.openMode": "Permissions open mode",
 };
 
 export function isSettingKey(value: string | null | undefined): value is SettingKey {

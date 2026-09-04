@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { UrgencyStatusControls } from "./OrderHeaderControls";
+import { StatusOwnerControls } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
 import PurchaseOrdersSection from "./PurchaseOrdersSection";
 import DeliverySection from "./DeliverySection";
@@ -319,9 +319,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          <UrgencyStatusControls
+          <StatusOwnerControls
             orderId={order.id}
-            urgency={order.urgency}
             status={order.status}
             ownerId={order.ownerId}
             users={users}
