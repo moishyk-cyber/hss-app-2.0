@@ -201,7 +201,7 @@ function FileRow({ doc, canDelete }: { doc: FileDocData; canDelete: boolean }) {
   );
 }
 
-function KindSelect({ defaultValue = "other" }: { defaultValue?: string }) {
+function KindSelect({ defaultValue }: { defaultValue: string }) {
   return (
     <label className="block w-40">
       <span className="field-label">Kind</span>
@@ -224,6 +224,10 @@ export default function FilesSection({
   inheritedDocs = [],
   inheritedLabel = "From the deal",
   uploadsEnabled,
+  compact = false,
+  defaultKind = "other",
+  addLabel = "+ Add a file",
+  emptyText = "No files here yet. Paste a link or upload a PDF or drawing above.",
 }: {
   linkedType: FileLinkedType;
   linkedId: string;
@@ -234,6 +238,16 @@ export default function FilesSection({
   inheritedDocs?: FileDocData[];
   inheritedLabel?: string;
   uploadsEnabled: boolean;
+  /**
+   * Drops the "Files" section heading, the ownLabel subheading, and the
+   * inherited-docs block - for embedding inside a surface that already has
+   * its own heading (the PO modal's "AutoQuotes PDF" block).
+   */
+  compact?: boolean;
+  /** Preselected kind on the add form, e.g. "po" for a purchase-order attachment. */
+  defaultKind?: string;
+  addLabel?: string;
+  emptyText?: string;
 }) {
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState<"link" | "upload">("link");
@@ -320,15 +334,25 @@ export default function FilesSection({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="section-label !mb-0">Files</h3>
-        {!adding && (
-          <button type="button" onClick={() => setAdding(true)} className="btn btn-sm active:scale-[0.99]">
-            + Add a file
-          </button>
-        )}
-      </div>
+    <div className={compact ? "space-y-2" : "space-y-4"}>
+      {compact ? (
+        !adding && (
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setAdding(true)} className="btn btn-sm active:scale-[0.99]">
+              {addLabel}
+            </button>
+          </div>
+        )
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="section-label !mb-0">Files</h3>
+          {!adding && (
+            <button type="button" onClick={() => setAdding(true)} className="btn btn-sm active:scale-[0.99]">
+              {addLabel}
+            </button>
+          )}
+        </div>
+      )}
 
       {adding && (
         <div className="card space-y-3">
@@ -375,7 +399,7 @@ export default function FilesSection({
                 />
               </label>
               <div className="flex flex-wrap items-end gap-3">
-                <KindSelect />
+                <KindSelect defaultValue={defaultKind} />
                 <label className="block min-w-48 flex-1">
                   <span className="field-label">File name</span>
                   <input name="fileName" placeholder="Optional" className="input-klyne w-full" />
@@ -405,7 +429,7 @@ export default function FilesSection({
                 <input ref={fileRef} type="file" accept={ACCEPT} required className="input-klyne w-full" />
               </label>
               <div className="flex flex-wrap items-end gap-3">
-                <KindSelect />
+                <KindSelect defaultValue={defaultKind} />
                 <label className="block min-w-48 flex-1">
                   <span className="field-label">Note</span>
                   <input name="note" placeholder="Optional" className="input-klyne w-full" />
@@ -425,11 +449,9 @@ export default function FilesSection({
       )}
 
       <div className="space-y-2">
-        <h4 className="field-label">{ownLabel}</h4>
+        {!compact && <h4 className="field-label">{ownLabel}</h4>}
         {docs.length === 0 ? (
-          <div className="empty-state">
-            No files here yet. Paste a link or upload a PDF or drawing above.
-          </div>
+          <div className={compact ? "text-xs text-gray-dark" : "empty-state"}>{emptyText}</div>
         ) : (
           <div className="divide-y divide-border rounded-lg border border-border px-4">
             {docs.map((doc) => (
@@ -439,7 +461,7 @@ export default function FilesSection({
         )}
       </div>
 
-      {inheritedDocs.length > 0 && (
+      {!compact && inheritedDocs.length > 0 && (
         <div className="space-y-2">
           <h4 className="field-label">{inheritedLabel}</h4>
           <div className="divide-y divide-border rounded-lg border border-border px-4">

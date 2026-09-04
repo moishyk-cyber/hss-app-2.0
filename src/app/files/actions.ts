@@ -29,7 +29,7 @@ import {
 } from "@/lib/storage";
 
 /** The records a file can hang off in this UI. */
-export type FileLinkedType = "order" | "opportunity";
+export type FileLinkedType = "order" | "opportunity" | "purchase_order";
 
 export type SignedUploadResult =
   | { ok: true; uploadUrl: string; token: string; storagePath: string }
@@ -45,7 +45,7 @@ function isAllowedMime(mimeType: string): boolean {
 }
 
 function isLinkedType(value: string): value is FileLinkedType {
-  return value === "order" || value === "opportunity";
+  return value === "order" || value === "opportunity" || value === "purchase_order";
 }
 
 /** Google Drive share links get their own source so the list can label them. */
@@ -63,13 +63,24 @@ function parseHttpUrl(raw: string): URL | null {
   }
 }
 
-function revalidateFor(linkedType: string, linkedId: string): void {
+/**
+ * A "purchase_order" document is polymorphic against the PO, not the order -
+ * so revalidating the order page it lives on means resolving the PO's orderId
+ * first. A PO that has since been deleted just skips the revalidate.
+ */
+async function revalidateFor(linkedType: string, linkedId: string): Promise<void> {
   if (linkedType === "order") {
     revalidatePath(`/orders/${linkedId}`);
     revalidatePath("/orders");
   } else if (linkedType === "opportunity") {
     revalidatePath(`/pipeline/${linkedId}`);
     revalidatePath("/pipeline");
+  } else if (linkedType === "purchase_order") {
+    const po = await prisma.purchaseOrder.findUnique({ where: { id: linkedId }, select: { orderId: true } });
+    if (po) {
+      revalidatePath(`/orders/${po.orderId}`);
+      revalidatePath("/orders");
+    }
   }
 }
 
@@ -117,7 +128,7 @@ export async function createLinkDocument(
       "document_linked",
       `${labelFor(DOCUMENT_KINDS, doc.kind)} link added${fileName ? `: ${fileName}` : ""}`
     );
-    revalidateFor(linkedType, linkedId);
+    await revalidateFor(linkedType, linkedId);
   }, "Could not save that link. Please try again.");
 }
 
@@ -212,7 +223,7 @@ export async function finalizeUpload(
       "document_uploaded",
       `${labelFor(DOCUMENT_KINDS, input.kind)} uploaded: ${fileName}`
     );
-    revalidateFor(linkedType, linkedId);
+    await revalidateFor(linkedType, linkedId);
   }, "Could not save that upload. Please try again.");
 }
 
@@ -260,6 +271,6 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
       "document_deleted",
       `${labelFor(DOCUMENT_KINDS, doc.kind)} removed${doc.fileName ? `: ${doc.fileName}` : ""}`
     );
-    revalidateFor(doc.linkedType, doc.linkedId);
+    await revalidateFor(doc.linkedType, doc.linkedId);
   }, "Could not delete that file. Please try again.");
 }

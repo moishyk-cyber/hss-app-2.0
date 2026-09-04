@@ -365,12 +365,23 @@ async function resolveVendor(
  * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
  * match for) one instead - exactly one of the two should be set.
  */
+/**
+ * A PO's ship-to follows its delivery mode: a drop-ship (manufacturer straight
+ * to the customer) is "client_direct"; every other mode routes through the
+ * HSS warehouse first, so it stays "hss". Used both when a PO is created and
+ * when its delivery mode is changed later.
+ */
+function shipToForMode(mode: string): string {
+  return mode === "manufacturer_to_customer" ? "client_direct" : "hss";
+}
+
 export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
   lineItemIds: string[],
   newVendorName: string = "",
-  autoQuotesPoNumber: string = ""
+  autoQuotesPoNumber: string = "",
+  deliveryMode: string = ""
 ): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
@@ -380,6 +391,13 @@ export async function createPurchaseOrder(
   const aqNumber = autoQuotesPoNumber.trim();
   if (aqNumber.length > 40) {
     return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
+  }
+  // Empty = the current default (the schema's own "hss" ship-to reads as
+  // manufacturer_to_hss_to_customer) - the Create PO dropdown always sends a
+  // value, so this only matters for callers that don't.
+  const mode = deliveryMode.trim() || modeForShipTo("hss");
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a valid delivery option." };
   }
   return safeAction(async () => {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -400,7 +418,14 @@ export async function createPurchaseOrder(
       const poNumber = `PO-${base}-${existing + 1}`;
       try {
         po = await prisma.purchaseOrder.create({
-          data: { orderId, supplierId: vendor.id, poNumber, status: "draft", autoQuotesPoNumber: aqNumber || null },
+          data: {
+            orderId,
+            supplierId: vendor.id,
+            poNumber,
+            status: "draft",
+            autoQuotesPoNumber: aqNumber || null,
+            shipTo: shipToForMode(mode),
+          },
         });
         break;
       } catch (err) {
@@ -411,11 +436,11 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
-    // One PO -> one delivery leg by default (plan §3B.3). The mode follows the
-    // PO's ship-to: a client_direct PO is a drop-ship, everything else routes
-    // through HSS. Splitting it later is a job for the Delivery tab.
+    // One PO -> one delivery leg by default (plan §3B.3), using the mode
+    // chosen on the Create PO form. Splitting it later is a job for the
+    // Delivery tab.
     const delivery = await prisma.delivery.create({
-      data: { orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
+      data: { orderId, purchaseOrderId: po.id, mode },
     });
 
     await prisma.lineItem.updateMany({
@@ -958,6 +983,39 @@ export async function setPoAutoQuotesNumber(poId: string, value: string): Promis
     );
     revalidateOrder(po.orderId);
   }, "Could not save the AutoQuotes PO #. Please try again.");
+}
+
+/**
+ * Change a PO's delivery mode after it's created (the modal's BadgeSelect).
+ * Updates the PO's own ship-to and every one of its delivery legs that hasn't
+ * landed yet - a leg already delivered_partial/delivered_full is history, not
+ * something a later mode change should rewrite.
+ */
+export async function setPoDeliveryMode(poId: string, mode: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick a valid delivery option." };
+  }
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: { shipTo: shipToForMode(mode) },
+    });
+    const updated = await prisma.delivery.updateMany({
+      where: { purchaseOrderId: poId, status: { notIn: ["delivered_partial", "delivered_full"] } },
+      data: { mode },
+    });
+    await log(
+      po.orderId,
+      "po_delivery_mode_set",
+      `PO ${po.poNumber ?? po.id} delivery mode set to ${labelFor(DELIVERY_MODES, mode)}${
+        updated.count > 0 ? ` (${updated.count} delivery leg(s) updated)` : ""
+      }`
+    );
+    await recomputeOrderStatus(po.orderId);
+    revalidateOrder(po.orderId);
+  }, "Could not update the delivery mode. Please try again.");
 }
 
 /**
