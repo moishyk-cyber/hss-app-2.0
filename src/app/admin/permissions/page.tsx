@@ -53,7 +53,7 @@ export default async function AdminPermissionsPage() {
           value={openMode ? "on" : "off"}
           options={OPEN_MODE_OPTIONS}
           colorMap={OPEN_MODE_COLORS}
-          action={(next) => setPermissionsOpenMode(next)}
+          action={setPermissionsOpenMode}
           ariaLabel="Permissions open mode"
         />
       </div>
