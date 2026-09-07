@@ -97,7 +97,7 @@ export default async function AdminSettingsPage() {
                     value={value}
                     options={REQUIRED_STATES}
                     colorMap={REQUIRED_COLORS}
-                    action={(next) => setFieldRequired(f.entity, f.field, next)}
+                    action={setFieldRequired.bind(null, f.entity, f.field)}
                   />
                 </li>
               );
