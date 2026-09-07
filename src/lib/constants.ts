@@ -21,6 +21,12 @@ export const RFQ_STATUSES = [
   { value: "removed", label: "Removed" },
 ] as const;
 
+/** Stock status set at the pricing stage, before an order exists. */
+export const STOCK_STATUSES = [
+  { value: "in_stock", label: "In Stock" },
+  { value: "backordered", label: "Backordered" },
+] as const;
+
 export const DELIVERY_STATUSES = [
   { value: "pending", label: "Pending" },
   { value: "ordered", label: "Ordered" },
@@ -142,6 +148,11 @@ export const RFQ_STATUS_COLORS: Record<string, string> = {
   priced_in_autoquotes: "badge-blue",
   approved: "badge-green",
   removed: "badge-gray",
+};
+
+export const STOCK_STATUS_COLORS: Record<string, string> = {
+  in_stock: "badge-green",
+  backordered: "badge-orange",
 };
 
 export const TASK_PRIORITY_COLORS: Record<string, string> = {

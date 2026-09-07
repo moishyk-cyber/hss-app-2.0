@@ -444,6 +444,7 @@ export default async function OpportunityDetailPage({
                       <th>Assignee</th>
                       <th>RFQ status</th>
                       <th>Delivery</th>
+                      <th>Stock</th>
                     </tr>
                   </thead>
                   <tbody>

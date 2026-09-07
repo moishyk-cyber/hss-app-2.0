@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { RFQ_STATUSES, RFQ_STATUS_COLORS, STOCK_STATUSES, STOCK_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { PendingButton, ActionButton, BadgeSelect, Spinner } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { parseMoney, fmtUSD } from "@/lib/money";
@@ -11,8 +11,10 @@ import { UserSelect } from "@/lib/UserSelect";
 import {
   markLineItemRemoved,
   setLineItemAssignee,
+  setLineItemBackorderExpected,
   setLineItemLeadTime,
   setLineItemRfqStatus,
+  setLineItemStockStatus,
   updateLineItemPricing,
 } from "./actions";
 
@@ -34,6 +36,8 @@ type RfqItem = {
   unitCost: number | null;
   unitPrice: number | null;
   rfqStatus: string;
+  stockStatus: string;
+  backorderExpected: Date | null;
   assigneeId: string | null;
   assignee: { name: string } | null;
 };
@@ -200,6 +204,69 @@ function LeadTimeCell({ item }: { item: RfqItem }) {
   );
 }
 
+/**
+ * Stock status pill for one line item, mirroring the order-side delivery
+ * status/backorder-date pattern (orders/[id]/LineItemsSection.tsx). Tracks
+ * the selected status locally so the expected-date input can appear right
+ * away, without waiting on the server revalidation round trip.
+ */
+function StockStatusCell({ item }: { item: RfqItem }) {
+  const [status, setStatus] = useState(item.stockStatus);
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <BadgeSelect
+        value={status}
+        options={STOCK_STATUSES}
+        colorMap={STOCK_STATUS_COLORS}
+        action={async (next) => {
+          setStatus(next);
+          return setLineItemStockStatus(item.id, next);
+        }}
+        ariaLabel={`Stock status for ${item.name}: ${labelFor(STOCK_STATUSES, item.stockStatus)}`}
+      />
+      {status === "backordered" && (
+        <BackorderExpectedInput itemId={item.id} itemName={item.name} value={item.backorderExpected} />
+      )}
+    </div>
+  );
+}
+
+function BackorderExpectedInput({
+  itemId,
+  itemName,
+  value,
+}: {
+  itemId: string;
+  itemName: string;
+  value: Date | null;
+}) {
+  const defaultValue = value ? new Date(value).toISOString().slice(0, 10) : "";
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(formData: FormData) {
+    const next = String(formData.get("backorderExpected") ?? "");
+    const result = await setLineItemBackorderExpected(itemId, next);
+    setError(result.ok ? null : result.message);
+  }
+
+  return (
+    <form action={handleSave} className="flex items-center gap-1">
+      <input
+        type="date"
+        name="backorderExpected"
+        className="input-klyne px-1.5 py-0.5 text-xs"
+        defaultValue={defaultValue}
+        aria-label={`Backorder expected date for ${itemName}`}
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="…">
+        Save
+      </PendingButton>
+      {error && <span role="alert" className="text-xs text-red">{error}</span>}
+    </form>
+  );
+}
+
 export default function RfqRow({
   item,
   users,
@@ -262,6 +329,9 @@ export default function RfqRow({
       </td>
       <td className="!py-1.5">
         <LeadTimeCell item={item} />
+      </td>
+      <td className="!py-1.5">
+        <StockStatusCell item={item} />
       </td>
       <td className="!py-1.5">
         <UserSelect
