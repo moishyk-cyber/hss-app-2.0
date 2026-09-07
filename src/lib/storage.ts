@@ -73,6 +73,21 @@ export async function createSignedUploadUrl(path: string): Promise<SignedUpload>
   return { uploadUrl: data.signedUrl, token: data.token, storagePath: data.path };
 }
 
+/**
+ * Upload bytes straight from the server (used by intake, which already has the
+ * file in hand from a plain form POST - no signed-URL round trip needed).
+ */
+export async function uploadObject(
+  path: string,
+  data: ArrayBuffer,
+  contentType: string
+): Promise<void> {
+  const { error } = await serviceClient()
+    .storage.from(UPLOAD_BUCKET)
+    .upload(path, data, { contentType, upsert: false });
+  if (error) throw error;
+}
+
 /** Time-limited download URL for a private object. */
 export async function createSignedDownloadUrl(
   path: string,

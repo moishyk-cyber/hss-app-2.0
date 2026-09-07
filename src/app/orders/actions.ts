@@ -914,6 +914,186 @@ export async function markPoShipped(
 }
 
 /**
+ * Change the order's business. Same-name-or-create pattern as resolveVendor,
+ * type "customer" (an order's client is never a supplier). Since the old
+ * contact/location/delivery address belong to the PREVIOUS business, they are
+ * cleared rather than left pointing at (or copying) the wrong company's data -
+ * the caller picks them again from the newly-picked business's own list.
+ */
+export async function setOrderCompany(
+  orderId: string,
+  companyId: string,
+  newCompanyName: string = ""
+): Promise<ActionResult> {
+  const trimmedName = newCompanyName.trim();
+  if (!companyId && !trimmedName) {
+    return { ok: false, message: "Pick or type a business name." };
+  }
+  return safeAction(async () => {
+    let company: { id: string; name: string } | null = null;
+    let created = false;
+    if (companyId) {
+      company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true, name: true } });
+      if (!company) throw new Error("Business not found");
+    } else {
+      const match = await findCompanyByNormalizedName(trimmedName);
+      if (match) {
+        company = match;
+      } else {
+        company = await prisma.company.create({ data: { name: trimmedName, type: "customer" } });
+        created = true;
+      }
+    }
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { companyId: company.id, contactId: null, locationId: null, deliveryAddress: null },
+    });
+    await log(
+      orderId,
+      "order_company_set",
+      `Business set to "${company.name}"${created ? " (newly created)" : ""} - contact, location and delivery address were cleared`
+    );
+    revalidateOrder(orderId);
+  }, "Could not update the business. Please try again.");
+}
+
+/**
+ * Change the order's contact. `contactId` picks an existing contact (must
+ * belong to the order's own business - a contact from another company is a
+ * tampered payload, same guard as setOrderLocation below); `newContactFirstName`
+ * creates a minimal contact (first name only, same as intake's "didn't catch a
+ * last name" allowance) under that business instead. Both empty clears it.
+ */
+export async function setOrderContact(
+  orderId: string,
+  contactId: string,
+  newContactFirstName: string = ""
+): Promise<ActionResult> {
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { companyId: true } });
+    if (!order) throw new Error("Order not found");
+
+    if (!contactId && !newContactFirstName.trim()) {
+      await prisma.order.update({ where: { id: orderId }, data: { contactId: null } });
+      await log(orderId, "order_contact_set", "Order is no longer linked to a contact");
+      revalidateOrder(orderId);
+      return;
+    }
+
+    if (!order.companyId) {
+      throw new Error("Pick a business before picking a contact");
+    }
+
+    let contact: { id: string; firstName: string; lastName: string | null };
+    if (contactId) {
+      const existing = await prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { id: true, firstName: true, lastName: true, companyId: true },
+      });
+      if (!existing || existing.companyId !== order.companyId) {
+        throw new Error("That contact belongs to another business");
+      }
+      contact = existing;
+    } else {
+      contact = await prisma.contact.create({
+        data: { firstName: newContactFirstName.trim(), companyId: order.companyId },
+      });
+    }
+
+    await prisma.order.update({ where: { id: orderId }, data: { contactId: contact.id } });
+    await log(
+      orderId,
+      "order_contact_set",
+      `Contact set to ${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}`
+    );
+    revalidateOrder(orderId);
+  }, "Could not update the contact. Please try again.");
+}
+
+/**
+ * Create a new location for the order's own business and point the order at
+ * it in one step (the location-field combobox's "add new" flow). Ignores any
+ * companyId the caller passes in favor of the order's own - the field it's
+ * called from only ever edits this order's location, never another business's.
+ */
+export async function createLocationForOrder(
+  orderId: string,
+  _companyId: string,
+  input: { name: string; address: string }
+): Promise<ActionResult> {
+  const name = input.name.trim();
+  const address = input.address.trim();
+  if (!name || !address) {
+    return { ok: false, message: "A location needs a name and an address." };
+  }
+  return safeAction(async () => {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { companyId: true } });
+    if (!order?.companyId) throw new Error("Pick a business before adding a location");
+
+    const existingCount = await prisma.location.count({ where: { companyId: order.companyId } });
+    const location = await prisma.location.create({
+      data: { companyId: order.companyId, name, address, isDefault: existingCount === 0 },
+    });
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { locationId: location.id, deliveryAddress: location.address },
+    });
+    await log(orderId, "order_location_set", `Location "${location.name}" added and set (${location.address})`);
+    revalidatePath(`/companies/${order.companyId}`);
+    revalidateOrder(orderId);
+  }, "Could not add the location. Please try again.");
+}
+
+export async function setOrderJobId(orderId: string, jobId: string): Promise<ActionResult> {
+  const trimmed = jobId.trim();
+  return safeAction(async () => {
+    await prisma.order.update({ where: { id: orderId }, data: { jobId: trimmed || null } });
+    await log(orderId, "order_job_id_set", `Job ID set to ${trimmed || "none"}`);
+    revalidateOrder(orderId);
+  }, "Could not save the Job ID. Please try again.");
+}
+
+export async function setOrderClientPoNumber(orderId: string, value: string): Promise<ActionResult> {
+  const trimmed = value.trim();
+  return safeAction(async () => {
+    await prisma.order.update({ where: { id: orderId }, data: { clientPoNumber: trimmed || null } });
+    await log(orderId, "order_client_po_set", `Client PO # set to ${trimmed || "none"}`);
+    revalidateOrder(orderId);
+  }, "Could not save the Client PO #. Please try again.");
+}
+
+/** `value` is a plain "YYYY-MM-DD" from a date input, or "" to clear it. */
+export async function setOrderNeededByDate(orderId: string, value: string): Promise<ActionResult> {
+  const trimmed = value.trim();
+  let neededByDate: Date | null = null;
+  if (trimmed) {
+    neededByDate = new Date(`${trimmed}T00:00:00.000Z`);
+    if (Number.isNaN(neededByDate.getTime())) {
+      return { ok: false, message: "Enter a valid date." };
+    }
+  }
+  return safeAction(async () => {
+    await prisma.order.update({ where: { id: orderId }, data: { neededByDate } });
+    await log(orderId, "order_needed_by_set", `Needed-by date set to ${trimmed || "none"}`);
+    revalidateOrder(orderId);
+  }, "Could not save the needed-by date. Please try again.");
+}
+
+/**
+ * Direct free-text edit of the delivery address - independent of
+ * setOrderLocation, for when the address needs a tweak (a suite number, a
+ * loading-dock note) without switching to a different saved location.
+ */
+export async function setOrderDeliveryAddress(orderId: string, value: string): Promise<ActionResult> {
+  const trimmed = value.trim();
+  return safeAction(async () => {
+    await prisma.order.update({ where: { id: orderId }, data: { deliveryAddress: trimmed || null } });
+    await log(orderId, "order_delivery_address_set", `Delivery address set to ${trimmed || "none"}`);
+    revalidateOrder(orderId);
+  }, "Could not save the delivery address. Please try again.");
+}
+
+/**
  * Point the order at one of its customer's saved locations (Sep 3 plan A1.6).
  * The Location row is the link; `deliveryAddress` stays the snapshot the
  * delivery leg actually reads, so picking a site copies its address across.

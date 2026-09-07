@@ -11,6 +11,7 @@ import { OverviewStrip } from "./OverviewStrip";
 import OrderIssuesPanel from "./OrderIssuesPanel";
 import { OrderTabs, type TabKey } from "./OrderTabs";
 import { OrderLocationField } from "./OrderLocationField";
+import { EditableCompanyField, EditableContactField } from "./OrderPartyFields";
 import type { IssueRowData } from "../../service/IssueRow";
 import { FlowStepper } from "@/lib/FlowStepper";
 import { BackLink } from "@/lib/BackLink";
@@ -19,8 +20,15 @@ import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
 import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
 import { uploadsConfigured } from "@/lib/storage";
-import { ActionButton } from "@/lib/ui";
-import { acknowledgeAllSentPos, markOrderComplete } from "../actions";
+import { ActionButton, InlineEditField } from "@/lib/ui";
+import {
+  acknowledgeAllSentPos,
+  markOrderComplete,
+  setOrderClientPoNumber,
+  setOrderDeliveryAddress,
+  setOrderJobId,
+  setOrderNeededByDate,
+} from "../actions";
 import { fmtDate } from "../utils";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +36,7 @@ export const dynamic = "force-dynamic";
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [order, vendors, users] = await Promise.all([
+  const [order, vendors, users, companies, contacts] = await Promise.all([
     prisma.order.findUnique({
       where: { id },
       include: {
@@ -109,6 +117,17 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       orderBy: { name: "asc" },
     }),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // For the Business/Contact/Location pencil-edit fields: loaded whole and
+    // filtered/searched client-side, same approach as the intake form.
+    prisma.company.findMany({
+      where: { type: { in: ["customer", "lead"] } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.contact.findMany({
+      select: { id: true, firstName: true, lastName: true, companyId: true },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    }),
   ]);
 
   if (!order) notFound();
@@ -352,13 +371,75 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm md:grid-cols-3">
           <div>
+            <div className="field-label">Business</div>
+            <div className="text-ink">
+              <EditableCompanyField
+                orderId={order.id}
+                companyId={order.companyId}
+                companyName={order.company?.name ?? null}
+                companies={companies}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="field-label">Contact</div>
+            <div className="text-ink">
+              <EditableContactField
+                orderId={order.id}
+                companyId={order.companyId}
+                contactId={order.contactId}
+                contactName={
+                  order.contact
+                    ? [order.contact.firstName, order.contact.lastName].filter(Boolean).join(" ")
+                    : null
+                }
+                contacts={contacts}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="field-label">Location</div>
+            <div className="text-ink">
+              <OrderLocationField
+                orderId={order.id}
+                companyId={order.companyId}
+                locationId={order.locationId}
+                locationName={location?.name ?? null}
+                locations={order.company?.locations ?? []}
+              />
+            </div>
+          </div>
+          <div className="col-span-2 md:col-span-3">
+            <div className="field-label">Delivery Address</div>
+            <div className="text-ink">
+              <InlineEditField
+                value={order.deliveryAddress ?? ""}
+                ariaLabel="Edit delivery address"
+                placeholder="Delivery address"
+                save={setOrderDeliveryAddress.bind(null, order.id)}
+              />
+            </div>
+          </div>
+          <div>
             <div className="field-label">Job ID</div>
-            <div className="text-ink">{order.jobId || <span className="empty-value">not set</span>}</div>
+            <div className="text-ink">
+              <InlineEditField
+                value={order.jobId ?? ""}
+                ariaLabel="Edit Job ID"
+                placeholder="Job ID"
+                save={setOrderJobId.bind(null, order.id)}
+              />
+            </div>
           </div>
           <div>
             <div className="field-label">Client PO #</div>
             <div className="text-ink">
-              {order.clientPoNumber || <span className="empty-value">not set</span>}
+              <InlineEditField
+                value={order.clientPoNumber ?? ""}
+                ariaLabel="Edit Client PO #"
+                placeholder="Client PO #"
+                save={setOrderClientPoNumber.bind(null, order.id)}
+              />
             </div>
           </div>
           <div>
@@ -369,19 +450,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               ) : (
                 <span className="empty-value">not set</span>
               )}
-            </div>
-          </div>
-          <div>
-            <div className="field-label">Location</div>
-            <div className="text-ink">
-              <OrderLocationField
-                orderId={order.id}
-                locationId={order.locationId}
-                locations={order.company?.locations ?? []}
-              />
-              {location?.address ? (
-                <div className="mt-0.5 text-[12.5px] text-gray-dark">{location.address}</div>
-              ) : null}
             </div>
           </div>
           <div>
@@ -399,20 +467,20 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div>
             <div className="field-label">Needed By</div>
             <div className="text-ink">
-              {order.neededByDate ? (
-                // Deterministic UTC formatting (see @/lib/dates), so this
-                // never reads a day earlier than the orders list for the
-                // same record.
-                fmtDate(order.neededByDate)
-              ) : (
-                <span className="empty-value">not set</span>
-              )}
-            </div>
-          </div>
-          <div className="col-span-2 md:col-span-3">
-            <div className="field-label">Delivery Address</div>
-            <div className="text-ink">
-              {order.deliveryAddress || <span className="empty-value">not set</span>}
+              <InlineEditField
+                type="date"
+                value={order.neededByDate ? order.neededByDate.toISOString().slice(0, 10) : ""}
+                displayValue={
+                  order.neededByDate ? (
+                    // Deterministic UTC formatting (see @/lib/dates), so this
+                    // never reads a day earlier than the orders list for the
+                    // same record.
+                    fmtDate(order.neededByDate)
+                  ) : undefined
+                }
+                ariaLabel="Edit needed-by date"
+                save={setOrderNeededByDate.bind(null, order.id)}
+              />
             </div>
           </div>
         </div>
