@@ -1353,6 +1353,32 @@ export function IntakeForm({
                   </div>
                 ) : null}
                 <div className="sm:col-span-2">
+                  <span className={labelClass}>Drawing or attachment</span>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="sr-only">Link to the drawing</span>
+                      <input
+                        name="drawingLink"
+                        type="url"
+                        placeholder="Paste a link (Google Drive, Dropbox, etc.)"
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="sr-only">Upload the drawing</span>
+                      <input
+                        name="drawingFile"
+                        type="file"
+                        accept="application/pdf,image/*"
+                        className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-hover file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-ink`}
+                      />
+                    </label>
+                  </div>
+                  <span className="mt-1 block text-xs text-gray">
+                    A PDF or a link both work - leave blank if there&rsquo;s no drawing yet.
+                  </span>
+                </div>
+                <div className="sm:col-span-2">
                   <span className={labelClass}>Installation needed?</span>
                   <div className="flex gap-2">
                     <InlineRadio

@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
-import { currentUserId } from "@/lib/identityServer";
+import { currentUserId, currentUserName } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
+import { MAX_UPLOAD_BYTES, storagePathFor, uploadObject, uploadsConfigured } from "@/lib/storage";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -26,6 +27,94 @@ function date(formData: FormData, key: string): Date | null {
 
 function all(formData: FormData, key: string): string[] {
   return formData.getAll(key).map((v) => (typeof v === "string" ? v : ""));
+}
+
+function parseHttpUrl(raw: string): URL | null {
+  try {
+    const parsed = new URL(raw.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Google Drive share links get their own source so the Files list can label them. */
+function sourceForUrl(url: URL): "link" | "google_drive" {
+  const host = url.hostname.toLowerCase();
+  return host === "drive.google.com" || host === "docs.google.com" ? "google_drive" : "link";
+}
+
+/** Drawings we accept as a direct upload: PDFs and images. */
+function isAllowedDrawingMime(mimeType: string): boolean {
+  return mimeType === "application/pdf" || mimeType.startsWith("image/");
+}
+
+/**
+ * Save the optional drawing/attachment (a pasted link, an uploaded PDF/image,
+ * or both) as Document row(s) on the record the intake just created. Runs
+ * AFTER the record is committed - a storage hiccup here must never roll back
+ * or block an otherwise-successful intake, so every failure is swallowed and
+ * logged rather than thrown.
+ */
+async function saveDrawingAttachment(
+  formData: FormData,
+  linkedType: "order" | "opportunity",
+  linkedId: string
+): Promise<void> {
+  const uploadedBy = await currentUserName();
+
+  const link = str(formData, "drawingLink");
+  if (link) {
+    const url = parseHttpUrl(link);
+    if (url) {
+      try {
+        await prisma.document.create({
+          data: {
+            linkedType,
+            linkedId,
+            kind: "drawing",
+            fileUrl: url.toString(),
+            source: sourceForUrl(url),
+            uploadedBy,
+          },
+        });
+      } catch (err) {
+        console.error("intake drawing link save failed", err);
+      }
+    }
+  }
+
+  const file = formData.get("drawingFile");
+  if (file instanceof File && file.size > 0) {
+    if (!isAllowedDrawingMime(file.type)) {
+      console.error(`intake drawing upload skipped - unsupported type ${file.type}`);
+    } else if (file.size > MAX_UPLOAD_BYTES) {
+      console.error("intake drawing upload skipped - file over the 25 MB limit");
+    } else if (!uploadsConfigured()) {
+      console.error("intake drawing upload skipped - storage is not configured");
+    } else {
+      try {
+        const storagePath = storagePathFor(linkedType, linkedId, file.name);
+        await uploadObject(storagePath, await file.arrayBuffer(), file.type);
+        await prisma.document.create({
+          data: {
+            linkedType,
+            linkedId,
+            kind: "drawing",
+            fileUrl: storagePath,
+            fileName: file.name,
+            source: "upload",
+            mimeType: file.type || null,
+            sizeBytes: file.size,
+            storagePath,
+            uploadedBy,
+          },
+        });
+      } catch (err) {
+        console.error("intake drawing upload failed", err);
+      }
+    }
+  }
 }
 
 /** Snapshot the raw submission so the intake can always be audited later. */
@@ -161,6 +250,10 @@ export async function submitIntake(formData: FormData) {
     console.error(err);
     redirect("/intake?error=save_failed");
   }
+
+  // After the commit too, same reasoning: a drawing attachment is a nice-to-have
+  // add-on, not something that should ever undo an otherwise-successful intake.
+  await saveDrawingAttachment(formData, result.type, result.id);
 
   // Logged after the commit: logActivity uses the global prisma client (so it can
   // attribute to the signed-in identity) and never throws, so it cannot roll the
