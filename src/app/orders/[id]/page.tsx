@@ -385,6 +385,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <div className="field-label">Contact</div>
             <div className="text-ink">
               <EditableContactField
+                // Remounts on business change so a Contact edit box left open
+                // (with the old business's typed name still in it) doesn't
+                // keep showing stale text after the business is switched -
+                // the server already cleared contactId, this clears the UI.
+                key={order.companyId ?? "no-company"}
                 orderId={order.id}
                 companyId={order.companyId}
                 contactId={order.contactId}
@@ -401,6 +406,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <div className="field-label">Location</div>
             <div className="text-ink">
               <OrderLocationField
+                // Same reasoning as the Contact field's key: a Location edit
+                // box left open across a business change shouldn't keep
+                // showing the old business's location.
+                key={order.companyId ?? "no-company"}
                 orderId={order.id}
                 companyId={order.companyId}
                 locationId={order.locationId}
@@ -413,6 +422,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <div className="field-label">Delivery Address</div>
             <div className="text-ink">
               <InlineEditField
+                // Same reasoning as the Contact/Location keys above -
+                // deliveryAddress is cleared server-side on a business
+                // change too, so this shouldn't keep showing (or re-save)
+                // an edit box left open with the old business's address.
+                key={order.companyId ?? "no-company"}
                 value={order.deliveryAddress ?? ""}
                 ariaLabel="Edit delivery address"
                 placeholder="Delivery address"
