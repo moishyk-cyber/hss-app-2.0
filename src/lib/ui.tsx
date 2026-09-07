@@ -28,13 +28,133 @@ function errorFrom(result: ActionResult | void): string | null {
 }
 
 /** Small inline banner anchored under a control, positioned so it doesn't reflow layout. */
-function InlineError({ message }: { message: string }) {
+export function InlineError({ message }: { message: string }) {
   return (
     <span
       role="alert"
       className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs"
     >
       {message}
+    </span>
+  );
+}
+
+/** Small pencil glyph for a "click to edit this field" affordance. */
+export function PencilIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
+/**
+ * A read-only value with a pencil icon that swaps in a plain text/date input.
+ * Commits on blur or Enter, reverts on Escape or a failed save. For a field
+ * whose new value can only come from picking/creating a related record
+ * (company, contact, location), use a combobox-based editor instead - this is
+ * for a plain scalar (text, date) saved with one server-action call.
+ */
+export function InlineEditField({
+  value,
+  displayValue,
+  placeholder,
+  type = "text",
+  ariaLabel,
+  save,
+  emptyLabel = "not set",
+}: {
+  /** Current value, in the shape the input itself expects (e.g. "" or "YYYY-MM-DD"). */
+  value: string;
+  /** What the read view shows - defaults to `value`, or emptyLabel when blank. */
+  displayValue?: React.ReactNode;
+  placeholder?: string;
+  type?: string;
+  ariaLabel: string;
+  save: (next: string) => Promise<ActionResult>;
+  emptyLabel?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  function commit() {
+    setEditing(false);
+    if (draft.trim() === (value ?? "").trim()) return;
+    startTransition(async () => {
+      setError(null);
+      const result = await save(draft.trim());
+      if (result && result.ok === false) {
+        setError(result.message);
+        setDraft(value);
+      } else {
+        // `value` is a prop from the server render - without a fresh one the
+        // read view would snap back to the pre-edit value once `editing` flips off.
+        router.refresh();
+      }
+    });
+  }
+
+  if (editing) {
+    return (
+      <span
+        className="relative inline-flex min-w-0 flex-1 items-center gap-2"
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) commit();
+        }}
+      >
+        <input
+          type={type}
+          autoFocus
+          value={draft}
+          placeholder={placeholder}
+          aria-label={ariaLabel}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              setDraft(value);
+              setEditing(false);
+            }
+          }}
+          className="input-klyne w-full min-w-0"
+        />
+        {pending && <Spinner className="shrink-0 text-gray" />}
+        {error && <InlineError message={error} />}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <span className="truncate text-ink">
+        {displayValue ?? (value.trim() || <span className="empty-value">{emptyLabel}</span>)}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}
+        aria-label={ariaLabel}
+        className="shrink-0 text-gray transition-colors hover:text-ink"
+      >
+        <PencilIcon />
+      </button>
     </span>
   );
 }
