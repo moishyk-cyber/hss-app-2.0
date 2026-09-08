@@ -174,6 +174,45 @@ export function deriveOrderStatus(order: FlowOrder): string {
   return "new"; // exempt account, nothing started yet
 }
 
+// ---------------------------------------------------------------------------
+// Kanban phase (Orders board)
+// ---------------------------------------------------------------------------
+
+/**
+ * ORDER_STATUSES -> ORDER_PHASES. The nine statuses the flow engine derives are
+ * finer-grained than the four columns the client works the board by, so each
+ * column owns a pair. "complete" is absent on purpose (see orderPhase), and so
+ * is "stuck", which is an alarm rather than a phase.
+ */
+const PHASE_BY_STATUS: Record<string, string> = {
+  new: "deposit",
+  awaiting_payment: "deposit",
+  payment_received: "pos",
+  pos_in_progress: "pos",
+  in_transit: "delivery",
+  delivery_scheduled: "delivery",
+  delivered: "customer_service",
+};
+
+/**
+ * Which Orders-board column an order belongs in, or null when it is finished
+ * and drops off the board.
+ *
+ * "stuck" is a manual alarm a person sets whenever an order stalls, and that
+ * can happen in any phase - before the deposit or long after it. Rather than
+ * exile every stuck order to a column of its own, re-derive where the order
+ * actually is from its payments/POs/deliveries (deriveOrderStatus ignores the
+ * stored status, so the real phase survives the flag) and let the card carry a
+ * Stuck badge on top. Sep 8 2026 client call: "mark it stuck, and the stage
+ * that it's stuck in".
+ */
+export function orderPhase(order: FlowOrder): string | null {
+  if (order.status === "complete") return null;
+  // deriveOrderStatus never returns "complete" or "stuck", so this resolves in one hop.
+  const status = order.status === "stuck" ? deriveOrderStatus(order) : order.status;
+  return PHASE_BY_STATUS[status] ?? "deposit";
+}
+
 /**
  * Mark-complete guard: payment gate open, every delivery leg fully delivered,
  * every active item arrived, and every PO landed - a PO counts as landed when
