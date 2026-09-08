@@ -36,7 +36,7 @@ Phone call / email
                                                                           │
                                               PAYMENT GATE (Mrs. Perl): deposit (project) / full (order)
                                                                           │
-                                              POs BY SUPPLIER (Sam): draft → sent → acknowledged
+                                              POs BY SUPPLIER (Sam): draft → sent → acknowledged (→ delivery)
                                                                           │
                                               TRANSIT: shipped → at HSS / direct → to client
                                                                           │
@@ -105,7 +105,8 @@ FlowStepper at top. Sections in flow order, and the CURRENT phase's section is
 visually prominent (accent left border): Payment (top while unpaid) → Line Items
 → Purchase Orders → Delivery info. Header primary action is contextual:
 unpaid → "Record payment"; paid+items unassigned to POs → "Create POs";
-POs sent → "Mark acknowledged"; all delivered → "Mark complete".
+POs sent → "Acknowledge POs" (each PO is acknowledged on its own, since that
+step picks how it ships and creates the delivery); all delivered → "Mark complete".
 
 ### H. Consistent detail-page header pattern (both)
 Back link · title · badges · ONE contextual primary action (btn-primary) right.

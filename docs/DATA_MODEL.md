@@ -72,11 +72,15 @@ Terms + quote (decisions 10, 11): `payment_terms (deposit_balance | full_upfront
 ### purchase_orders
 Per supplier per order.
 `id, order_id, supplier_id, po_number, auto_quotes_po_number, status, sent_date, ack_date, files, notes`
-**Status enum:** `draft → sent → acknowledged → shipped → received` (ship-to on the PO: `hss | client_direct`)
+**Status enum:** `draft → sent → acknowledged → shipped → received` (ship-to on the PO: `hss | client_direct`, derived from its delivery's mode)
+A PO is vendor + AutoQuotes PO # + items only. **Acknowledged is the hinge**: the vendor has
+confirmed, so that step picks the delivery mode and creates the `deliveries` row (Sep 8 2026
+client call). Nothing about how the goods travel lives on the PO itself.
 Deprecated (backfilled into `deliveries`, dropped from the schema in a later pass; DB columns kept): `tracking_url, tracking_carrier, expected_delivery, trucker, pickup_address, scheduled_delivery_date, ship_cost, charged_to_customer, delivery_contact_phone, delivery_status`.
 
 ### deliveries
-One delivery leg (decision 9). Default one per PO; HSS-stock deliveries have no PO.
+One delivery leg (decision 9). Created when its PO is acknowledged - default one per PO,
+splittable; HSS-stock deliveries have no PO.
 `id, order_id, purchase_order_id (nullable), mode (manufacturer_to_customer | hss_to_customer | manufacturer_to_hss_to_customer), status (pending | scheduled | in_transit | delivered_partial | delivered_full),`
 Leg 1 (manufacturer shipment, modes manufacturer_*): `tracking_carrier, tracking_url, expected_delivery`
 Leg 2 (HSS trucker to the customer, modes *_to_customer via HSS): `trucker, pickup_address, scheduled_delivery_date, ship_cost, charged_to_customer (bool), delivery_contact_phone`

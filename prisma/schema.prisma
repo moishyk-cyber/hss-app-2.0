@@ -270,7 +270,8 @@ model PurchaseOrder {
   shipTo           String     @default("hss") // hss | client_direct
   sentDate         DateTime?
   ackDate          DateTime?
-  // Logistics live on Delivery (one or more legs per PO): trucker, pickup
+  // A PO is vendor + AutoQuotes PO # + items. Logistics live on Delivery (one
+  // or more legs per PO, created at acknowledgment): trucker, pickup
   // address, scheduled date, ship cost, charged-to-customer, delivery contact
   // phone, delivery status, carrier tracking and ETA. The old PurchaseOrder
   // columns were backfilled into Delivery by
@@ -288,9 +289,11 @@ model PurchaseOrder {
   @@index([status])
 }
 
-// One delivery leg. Default: one PO -> one Delivery, created with the PO; a
-// delivery can be split (items move whole to a second Delivery on the same PO).
-// HSS-stock deliveries have no PO. Modes describe which legs apply:
+// One delivery leg, created when its PO is acknowledged (a PO is vendor +
+// AutoQuotes # + items; acknowledgment is where it turns into a delivery and
+// the mode gets picked). Default one PO -> one Delivery; a delivery can be
+// split (items move whole to a second Delivery on the same PO). HSS-stock
+// deliveries have no PO. Modes describe which legs apply:
 //   manufacturer_to_customer         leg 1 only (drop-ship, carrier tracking)
 //   hss_to_customer                  leg 2 only (HSS trucker from stock)
 //   manufacturer_to_hss_to_customer  both legs

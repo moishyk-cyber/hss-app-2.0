@@ -358,30 +358,33 @@ async function resolveVendor(
 }
 
 /**
+ * A PO's ship-to follows the delivery mode picked when it is acknowledged: a
+ * drop-ship (manufacturer straight to the customer) is "client_direct"; every
+ * other mode routes through the HSS warehouse first, so it stays "hss".
+ */
+function shipToForMode(mode: string): string {
+  return mode === "manufacturer_to_customer" ? "client_direct" : "hss";
+}
+
+/**
  * Create a PO for one vendor, attaching only the explicitly chosen line items.
+ * A PO is vendor + AutoQuotes PO # + items, nothing else (Sep 8 2026 client
+ * call: "purchase orders and deliveries are two different things"). How the
+ * goods travel is decided later, when the vendor acknowledges the PO - see
+ * acknowledgePo, which is what actually creates the delivery leg.
+ *
  * PO numbers are allocated by counting existing POs on the order and retrying
  * on a collision (two people creating a PO on the same order at once), guarded
  * by the @@unique([orderId, poNumber]) constraint in the schema. `supplierId`
  * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
  * match for) one instead - exactly one of the two should be set.
  */
-/**
- * A PO's ship-to follows its delivery mode: a drop-ship (manufacturer straight
- * to the customer) is "client_direct"; every other mode routes through the
- * HSS warehouse first, so it stays "hss". Used both when a PO is created and
- * when its delivery mode is changed later.
- */
-function shipToForMode(mode: string): string {
-  return mode === "manufacturer_to_customer" ? "client_direct" : "hss";
-}
-
 export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
   lineItemIds: string[],
   newVendorName: string = "",
-  autoQuotesPoNumber: string = "",
-  deliveryMode: string = ""
+  autoQuotesPoNumber: string = ""
 ): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
@@ -391,13 +394,6 @@ export async function createPurchaseOrder(
   const aqNumber = autoQuotesPoNumber.trim();
   if (aqNumber.length > 40) {
     return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
-  }
-  // Empty = the current default (the schema's own "hss" ship-to reads as
-  // manufacturer_to_hss_to_customer) - the Create PO dropdown always sends a
-  // value, so this only matters for callers that don't.
-  const mode = deliveryMode.trim() || modeForShipTo("hss");
-  if (!isValidValue(DELIVERY_MODES, mode)) {
-    return { ok: false, message: "Pick a valid delivery option." };
   }
   return safeAction(async () => {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
@@ -424,7 +420,8 @@ export async function createPurchaseOrder(
             poNumber,
             status: "draft",
             autoQuotesPoNumber: aqNumber || null,
-            shipTo: shipToForMode(mode),
+            // Provisional until the delivery mode is picked at acknowledgment.
+            shipTo: "hss",
           },
         });
         break;
@@ -436,16 +433,11 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
-    // One PO -> one delivery leg by default (plan §3B.3), using the mode
-    // chosen on the Create PO form. Splitting it later is a job for the
-    // Delivery tab.
-    const delivery = await prisma.delivery.create({
-      data: { orderId, purchaseOrderId: po.id, mode },
-    });
-
+    // No delivery leg yet on purpose: the PO has to come back acknowledged
+    // before anyone knows how it is travelling. acknowledgePo creates it.
     await prisma.lineItem.updateMany({
       where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-      data: { purchaseOrderId: po.id, deliveryId: delivery.id },
+      data: { purchaseOrderId: po.id },
     });
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     await recomputeOrderStatus(orderId);
@@ -453,25 +445,17 @@ export async function createPurchaseOrder(
   }, "Could not create the purchase order. Please try again.");
 }
 
-/** Header CTA: bulk-advance every "sent" PO on the order to "acknowledged" in one click. */
-export async function acknowledgeAllSentPos(orderId: string): Promise<ActionResult> {
-  const denied = await requirePermission("pos.edit");
-  if (denied) return denied;
-  return safeAction(async () => {
-    const result = await prisma.purchaseOrder.updateMany({
-      where: { orderId, status: "sent" },
-      data: { status: "acknowledged", ackDate: new Date() },
-    });
-    if (result.count > 0) {
-      await log(orderId, "po_status_advanced", `${result.count} PO(s) advanced to acknowledged`);
-    }
-    await recomputeOrderStatus(orderId);
-    revalidateOrder(orderId);
-  }, "Could not acknowledge the purchase orders. Please try again.");
-}
-
 const PO_ORDER = ["draft", "sent", "acknowledged", "shipped", "received"];
 
+/**
+ * The PO ladder, minus the one rung that needs facts typed in first: sent ->
+ * acknowledged runs through acknowledgePo below, because acknowledgment is
+ * where the delivery is born and its mode picked.
+ *
+ * draft -> sent is gated on payment. acknowledged -> shipped puts the PO's
+ * delivery leg in transit and starts its items moving (into the HSS warehouse
+ * on the two-leg mode, straight to the client on a drop-ship).
+ */
 export async function advancePoStatus(poId: string): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
@@ -485,12 +469,20 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
             company: { select: { requiresDeposit: true, depositPercent: true } },
           },
         },
+        deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
       },
     });
     if (!po) return { ok: false, message: "PO not found" };
     const idx = PO_ORDER.indexOf(po.status);
     if (idx < 0 || idx >= PO_ORDER.length - 1) return { ok: false, message: "Already at final status" };
     const next = PO_ORDER[idx + 1];
+
+    if (next === "acknowledged") {
+      return {
+        ok: false,
+        message: "Acknowledging a PO sets up its delivery - use the Acknowledge button so you can pick how it ships.",
+      };
+    }
 
     if (po.status === "draft" && next === "sent") {
       const gate = evaluatePaymentGate(po.order);
@@ -501,7 +493,34 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
 
     const data: Record<string, unknown> = { status: next };
     if (next === "sent" && !po.sentDate) data.sentDate = new Date();
-    if (next === "acknowledged" && !po.ackDate) data.ackDate = new Date();
+
+    if (next === "shipped") {
+      // A PO acknowledged before this flow existed (or one whose leg was
+      // deleted) gets its default leg now rather than shipping into nothing.
+      let delivery = po.deliveries[0] ?? null;
+      if (!delivery) {
+        delivery = await prisma.delivery.create({
+          data: { orderId: po.orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
+          select: { id: true, mode: true },
+        });
+        await prisma.lineItem.updateMany({
+          where: { purchaseOrderId: po.id, deliveryId: null },
+          data: { deliveryId: delivery.id },
+        });
+      }
+      await prisma.delivery.updateMany({
+        where: { purchaseOrderId: po.id, status: { in: ["pending", "scheduled"] } },
+        data: { status: "in_transit" },
+      });
+      await prisma.lineItem.updateMany({
+        where: {
+          purchaseOrderId: po.id,
+          deliveryStatus: { in: ["pending", "ordered"] },
+          rfqStatus: { not: "removed" },
+        },
+        data: { deliveryStatus: inTransitItemStatus(delivery.mode) },
+      });
+    }
 
     await prisma.purchaseOrder.update({ where: { id: poId }, data });
     await log(po.orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to ${next}`);
@@ -514,9 +533,142 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * "Acknowledge": the vendor has confirmed the PO, so this is the moment the
+ * order stops being a purchase and becomes a shipment (Sep 8 2026 client call:
+ * "when it's acknowledged, that's when it turns into a delivery"). One
+ * acknowledged PO makes one delivery leg - splitting it is a job for the
+ * Delivery tab - carrying the mode picked here plus whichever facts that mode
+ * needs:
+ *
+ *   manufacturer_to_customer         carrier tracking + expected date
+ *   hss_to_customer                  trucker + scheduled date + cost
+ *   manufacturer_to_hss_to_customer  both
+ *
+ * Re-acknowledging a PO that already has a leg updates that leg rather than
+ * making a second one.
+ */
+export async function acknowledgePo(
+  poId: string,
+  details: {
+    mode: string;
+    trackingCarrier?: string;
+    trackingUrl?: string;
+    expectedDelivery?: string;
+    trucker?: string;
+    pickupAddress?: string;
+    scheduledDeliveryDate?: string;
+    shipCost?: string;
+    chargedToCustomer?: boolean;
+    deliveryContactPhone?: string;
+    notes?: string;
+  }
+): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
+  const mode = details.mode;
+  if (!isValidValue(DELIVERY_MODES, mode)) {
+    return { ok: false, message: "Pick how this PO is coming over." };
+  }
+  const carrierLeg = hasCarrierLeg(mode);
+  const truckerLeg = hasTruckerLeg(mode);
+
+  if (carrierLeg) {
+    const urlError = trackingUrlError((details.trackingUrl ?? "").trim());
+    if (urlError) return { ok: false, message: urlError };
+  }
+  let shipCost: number | null = null;
+  if (truckerLeg) {
+    const parsed = parseShipCost(details.shipCost);
+    if ("error" in parsed) return { ok: false, message: parsed.error };
+    shipCost = parsed.value;
+  }
+
+  return safeAction(async () => {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      select: {
+        id: true,
+        orderId: true,
+        poNumber: true,
+        status: true,
+        ackDate: true,
+        supplier: { select: { deliveryAddress: true } },
+        deliveries: { select: { id: true }, orderBy: { createdAt: "asc" }, take: 1 },
+      },
+    });
+    if (!po) throw new Error("PO not found");
+    if (po.status === "draft") throw new Error("Send this PO to the vendor before acknowledging it");
+
+    const legFields = {
+      mode,
+      notes: (details.notes ?? "").trim() || null,
+      ...(carrierLeg
+        ? {
+            trackingCarrier: (details.trackingCarrier ?? "").trim() || null,
+            trackingUrl: (details.trackingUrl ?? "").trim() || null,
+            expectedDelivery: parseDate(details.expectedDelivery),
+          }
+        : {}),
+      ...(truckerLeg
+        ? {
+            trucker: (details.trucker ?? "").trim() || null,
+            // The vendor's own address is the pickup point unless someone says
+            // otherwise - it is the one HSS's driver actually goes to.
+            pickupAddress:
+              (details.pickupAddress ?? "").trim() || po.supplier?.deliveryAddress || null,
+            scheduledDeliveryDate: parseDate(details.scheduledDeliveryDate),
+            shipCost,
+            chargedToCustomer: details.chargedToCustomer === true,
+            deliveryContactPhone: (details.deliveryContactPhone ?? "").trim() || null,
+          }
+        : {}),
+    };
+
+    const existingLeg = po.deliveries[0] ?? null;
+    let deliveryId: string;
+    if (existingLeg) {
+      await prisma.delivery.update({ where: { id: existingLeg.id }, data: legFields });
+      deliveryId = existingLeg.id;
+    } else {
+      const created = await prisma.delivery.create({
+        data: { orderId: po.orderId, purchaseOrderId: po.id, ...legFields },
+      });
+      deliveryId = created.id;
+    }
+
+    // Everything on the PO that isn't already riding another leg travels on
+    // this one (a split later moves items off it, never back onto the PO).
+    await prisma.lineItem.updateMany({
+      where: { purchaseOrderId: po.id, deliveryId: null, rfqStatus: { not: "removed" } },
+      data: { deliveryId },
+    });
+
+    // A PO already shipped or received keeps that status - re-running this on
+    // one (to correct its delivery) must not walk the ladder backwards.
+    const alreadyMovedOn = po.status === "shipped" || po.status === "received";
+    await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        ...(alreadyMovedOn ? {} : { status: "acknowledged" }),
+        ackDate: po.ackDate ?? new Date(),
+        shipTo: shipToForMode(mode),
+      },
+    });
+
+    await log(
+      po.orderId,
+      "po_acknowledged",
+      `PO ${po.poNumber ?? po.id} acknowledged - delivery set to ${labelFor(DELIVERY_MODES, mode)}`
+    );
+    await recomputeOrderStatus(po.orderId);
+    revalidateOrder(po.orderId);
+  }, "Could not acknowledge the PO. Please try again.");
+}
+
 // ---------------------------------------------------------------------------
-// Deliveries (plan §3B). A Delivery is one delivery leg: one PO -> one Delivery
-// by default (created with the PO below), splittable, and HSS-stock legs carry
+// Deliveries (plan §3B). A Delivery is one delivery leg: one acknowledged PO ->
+// one Delivery (see acknowledgePo above), splittable, and HSS-stock legs carry
 // no PO at all. Every logistics field lives on Delivery, never on PurchaseOrder.
 // ---------------------------------------------------------------------------
 
@@ -626,7 +778,7 @@ export async function updateDelivery(
   return safeAction(async () => {
     const existing = await prisma.delivery.findUnique({
       where: { id: deliveryId },
-      select: { orderId: true, purchaseOrder: { select: { poNumber: true } } },
+      select: { orderId: true, purchaseOrderId: true, purchaseOrder: { select: { poNumber: true } } },
     });
     if (!existing) throw new Error("Delivery not found");
 
@@ -654,6 +806,17 @@ export async function updateDelivery(
           : {}),
       },
     });
+
+    // The PO's ship-to is a read of its delivery mode, so changing the mode
+    // here keeps it honest rather than leaving the PO claiming a route the
+    // goods no longer take.
+    if (existing.purchaseOrderId) {
+      await prisma.purchaseOrder.update({
+        where: { id: existing.purchaseOrderId },
+        data: { shipTo: shipToForMode(mode) },
+      });
+    }
+
     await log(
       existing.orderId,
       "delivery_updated",
@@ -830,87 +993,6 @@ export async function deleteEmptyDelivery(deliveryId: string): Promise<ActionRes
     await recomputeOrderStatus(existing.orderId);
     revalidateOrder(existing.orderId);
   }, "Could not delete the delivery. Please try again.");
-}
-
-/**
- * PO "Advance to Shipped": the dialog's shipment details save onto the PO's
- * delivery, the leg goes in_transit, the PO advances, and any item still
- * sitting at pending/ordered starts moving (to HSS on mode 3, straight to the
- * client on a drop-ship). Advancing to any other status stays on
- * advancePoStatus above - including the payment gate on draft -> sent.
- */
-export async function markPoShipped(
-  poId: string,
-  shipment: {
-    trackingCarrier?: string;
-    trackingUrl?: string;
-    expectedDelivery?: string;
-    trucker?: string;
-    scheduledDeliveryDate?: string;
-  }
-): Promise<ActionResult> {
-  const urlError = trackingUrlError((shipment.trackingUrl ?? "").trim());
-  if (urlError) return { ok: false, message: urlError };
-
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: poId },
-      select: {
-        id: true,
-        orderId: true,
-        poNumber: true,
-        status: true,
-        shipTo: true,
-        deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
-      },
-    });
-    if (!po) throw new Error("PO not found");
-    if (po.status === "received") throw new Error("This PO has already been received");
-
-    // A PO created before deliveries existed (or one whose leg was deleted)
-    // gets its default leg now rather than losing the shipment details.
-    let delivery = po.deliveries[0] ?? null;
-    if (!delivery) {
-      delivery = await prisma.delivery.create({
-        data: { orderId: po.orderId, purchaseOrderId: po.id, mode: modeForShipTo(po.shipTo) },
-        select: { id: true, mode: true },
-      });
-      await prisma.lineItem.updateMany({
-        where: { purchaseOrderId: po.id, deliveryId: null },
-        data: { deliveryId: delivery.id },
-      });
-    }
-
-    await prisma.delivery.update({
-      where: { id: delivery.id },
-      data: {
-        status: "in_transit",
-        trackingCarrier: (shipment.trackingCarrier ?? "").trim() || null,
-        trackingUrl: (shipment.trackingUrl ?? "").trim() || null,
-        expectedDelivery: parseDate(shipment.expectedDelivery),
-        ...(hasTruckerLeg(delivery.mode)
-          ? {
-              trucker: (shipment.trucker ?? "").trim() || null,
-              scheduledDeliveryDate: parseDate(shipment.scheduledDeliveryDate),
-            }
-          : {}),
-      },
-    });
-
-    await prisma.lineItem.updateMany({
-      where: { deliveryId: delivery.id, deliveryStatus: { in: ["pending", "ordered"] }, rfqStatus: { not: "removed" } },
-      data: { deliveryStatus: inTransitItemStatus(delivery.mode) },
-    });
-
-    await prisma.purchaseOrder.update({ where: { id: poId }, data: { status: "shipped" } });
-    await log(
-      po.orderId,
-      "po_shipped",
-      `PO ${po.poNumber ?? po.id} marked shipped - delivery in transit`
-    );
-    await recomputeOrderStatus(po.orderId);
-    revalidateOrder(po.orderId);
-  }, "Could not mark the PO shipped. Please try again.");
 }
 
 /**
@@ -1160,39 +1242,6 @@ export async function setPoAutoQuotesNumber(poId: string, value: string): Promis
     );
     revalidateOrder(po.orderId);
   }, "Could not save the AutoQuotes PO #. Please try again.");
-}
-
-/**
- * Change a PO's delivery mode after it's created (the modal's BadgeSelect).
- * Updates the PO's own ship-to and every one of its delivery legs that hasn't
- * landed yet - a leg already delivered_partial/delivered_full is history, not
- * something a later mode change should rewrite.
- */
-export async function setPoDeliveryMode(poId: string, mode: string): Promise<ActionResult> {
-  const denied = await requirePermission("pos.edit");
-  if (denied) return denied;
-  if (!isValidValue(DELIVERY_MODES, mode)) {
-    return { ok: false, message: "Pick a valid delivery option." };
-  }
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({
-      where: { id: poId },
-      data: { shipTo: shipToForMode(mode) },
-    });
-    const updated = await prisma.delivery.updateMany({
-      where: { purchaseOrderId: poId, status: { notIn: ["delivered_partial", "delivered_full"] } },
-      data: { mode },
-    });
-    await log(
-      po.orderId,
-      "po_delivery_mode_set",
-      `PO ${po.poNumber ?? po.id} delivery mode set to ${labelFor(DELIVERY_MODES, mode)}${
-        updated.count > 0 ? ` (${updated.count} delivery leg(s) updated)` : ""
-      }`
-    );
-    await recomputeOrderStatus(po.orderId);
-    revalidateOrder(po.orderId);
-  }, "Could not update the delivery mode. Please try again.");
 }
 
 /**

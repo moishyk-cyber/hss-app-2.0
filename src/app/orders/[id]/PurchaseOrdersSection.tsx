@@ -2,12 +2,16 @@
 
 // Purchase Orders tab (Aug 31 feedback: creating POs is "very not
 // streamlined"). While any line item still needs a PO, the create form sits
-// at the top with nothing to click through - no toggle to find. Shipment/
-// trucking/scheduled-delivery details and the PO's own delivery-status pill
-// now live on the Delivery tab (see DeliverySection.tsx); this tab keeps the
-// PO status ladder, sent-aging, gate blocking, and a read-only view of the
-// PO's delivery leg. Advancing to Shipped asks for the shipment details once
-// and writes them onto that leg.
+// at the top with nothing to click through - no toggle to find.
+//
+// A purchase order is vendor + AutoQuotes PO # + items, full stop (Sep 8 2026
+// client call: "purchase orders and deliveries are two different things - you
+// confused them"). Nothing about how the goods travel is asked here. The PO
+// walks its own ladder - draft -> sent -> acknowledged - and Acknowledge is
+// the hinge: the vendor has confirmed, so the PO turns into a delivery, and
+// that dialog is where the mode gets picked and the tracking or trucker facts
+// collected. From there the delivery is the Delivery tab's to edit; this tab
+// only reads it back.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,18 +24,17 @@ import {
 } from "@/lib/constants";
 import type { PaymentGate } from "@/lib/flow";
 import {
+  acknowledgePo,
   advancePoStatus,
   createPurchaseOrder,
-  markPoShipped,
   setPoAutoQuotesNumber,
-  setPoDeliveryMode,
 } from "../actions";
 import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
-import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
+import { PendingButton, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { SearchCombobox } from "@/lib/Combobox";
 import { Avatar } from "@/lib/Avatar";
-import { hasTruckerLeg } from "../../deliveries/_ui";
+import { hasCarrierLeg, hasTruckerLeg } from "../../deliveries/_ui";
 import FilesSection, { type FileDocData } from "./FilesSection";
 
 type PoLineItem = { id: string; name: string; qty: number };
@@ -61,7 +64,12 @@ type PoDelivery = {
   trackingUrl: string | null;
   expectedDelivery: Date | null;
   trucker: string | null;
+  pickupAddress: string | null;
   scheduledDeliveryDate: Date | null;
+  shipCost: number | null;
+  chargedToCustomer: boolean;
+  deliveryContactPhone: string | null;
+  notes: string | null;
 };
 
 type UnassignedLineItem = { id: string; name: string; qty: number };
@@ -74,6 +82,10 @@ const PO_AGING_THRESHOLD_DAYS = 5;
 function daysSince(date: Date | null): number | null {
   if (!date) return null;
   return Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000);
+}
+
+function dateInputValue(d: Date | null): string {
+  return d ? new Date(d).toISOString().slice(0, 10) : "";
 }
 
 export default function PurchaseOrdersSection({
@@ -114,10 +126,10 @@ export default function PurchaseOrdersSection({
   // "Make it list": rows stay compact, the full PO detail pops up.
   const [openPoId, setOpenPoId] = useState<string | null>(null);
   const openPo = purchaseOrders.find((po) => po.id === openPoId) ?? null;
-  // Advancing to Shipped is the one step that needs facts typed in first, so it
-  // opens a dialog instead of firing straight away.
-  const [shipPoId, setShipPoId] = useState<string | null>(null);
-  const shipPo = purchaseOrders.find((po) => po.id === shipPoId) ?? null;
+  // Acknowledging is the one step that needs decisions typed in first (this is
+  // where the delivery is created), so it opens a dialog rather than firing.
+  const [ackPoId, setAckPoId] = useState<string | null>(null);
+  const ackPo = purchaseOrders.find((po) => po.id === ackPoId) ?? null;
   const { toast } = useToast();
 
   function clearError(poId: string) {
@@ -133,9 +145,9 @@ export default function PurchaseOrdersSection({
       setErrors((e) => ({ ...e, [po.id]: gate.reason }));
       return;
     }
-    if (next === "shipped") {
+    if (next === "acknowledged") {
       clearError(po.id);
-      setShipPoId(po.id);
+      setAckPoId(po.id);
       return;
     }
     const res = await advancePoStatus(po.id);
@@ -169,15 +181,13 @@ export default function PurchaseOrdersSection({
       setCreateError("AutoQuotes PO # is too long (max 40 characters).");
       return;
     }
-    const deliveryMode = String(formData.get("deliveryMode") ?? "");
     setCreateError(null);
     const result = await createPurchaseOrder(
       orderId,
       supplierId,
       lineItemIds,
       supplierId ? "" : typedVendor,
-      autoQuotesPoNumber,
-      deliveryMode
+      autoQuotesPoNumber
     );
     if (result.ok) {
       setShowEmptyForm(false);
@@ -203,6 +213,9 @@ export default function PurchaseOrdersSection({
       {formVisible ? (
         <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
           <div className="section-label">Create Purchase Order</div>
+          <p className="text-xs text-gray-dark">
+            Vendor, AutoQuotes PO # and items. How it ships is decided when the vendor acknowledges it.
+          </p>
           <div className="max-w-xs">
             <SearchCombobox
               label="Vendor"
@@ -242,22 +255,6 @@ export default function PurchaseOrdersSection({
                 placeholder="AutoQuotes PO #"
                 className="input-klyne w-full px-2 py-1.5 text-sm"
               />
-            </label>
-          </div>
-          <div className="max-w-xs">
-            <label className="block">
-              <span className="field-label">Delivery</span>
-              <select
-                name="deliveryMode"
-                defaultValue="manufacturer_to_hss_to_customer"
-                className="input-klyne w-full px-2 py-1.5 text-sm"
-              >
-                {DELIVERY_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
             </label>
           </div>
           <div>
@@ -322,7 +319,6 @@ export default function PurchaseOrdersSection({
               const next = idx >= 0 && idx < PO_ORDER.length - 1 ? PO_ORDER[idx + 1] : null;
               const blocked = po.status === "draft" && !gate.open;
               const sentDaysAgo = po.status === "sent" ? daysSince(po.sentDate) : null;
-              const mode = po.deliveries[0]?.mode ?? null;
               const docCount = (documentsByPoId[po.id] ?? []).length;
               return (
                 // The row's click target is a real <button> (title cell) whose
@@ -363,13 +359,6 @@ export default function PurchaseOrdersSection({
                         sent {sentDaysAgo}d ago
                       </span>
                     )}
-                    {mode && (
-                      <span className="hidden shrink-0 lg:block">
-                        <span className={`badge ${DELIVERY_MODE_COLORS[mode] ?? "badge-gray"}`}>
-                          {labelFor(DELIVERY_MODES, mode)}
-                        </span>
-                      </span>
-                    )}
                     {docCount > 0 && (
                       <span
                         className="hidden shrink-0 text-[12px] text-gray-dark sm:block"
@@ -389,7 +378,12 @@ export default function PurchaseOrdersSection({
                           action={() => handleAdvance(po, blocked, next)}
                           className={`btn btn-sm active:scale-[0.99] ${blocked ? "opacity-60" : ""}`}
                         >
-                          Advance to {labelFor(PO_STATUSES, next)}
+                          {/* Acknowledge opens the dialog that creates the
+                              delivery, so it reads as its own step rather than
+                              one more rung of "Advance to…". */}
+                          {next === "acknowledged"
+                            ? "Acknowledge & set delivery"
+                            : `Advance to ${labelFor(PO_STATUSES, next)}`}
                         </ActionButton>
                       </span>
                     )}
@@ -411,13 +405,13 @@ export default function PurchaseOrdersSection({
         />
       ) : null}
 
-      {shipPo ? (
-        <ShipPoDialog
-          po={shipPo}
-          onClose={() => setShipPoId(null)}
-          onShipped={(poNumber) => {
-            setShipPoId(null);
-            toast({ kind: "success", message: `${poNumber} marked shipped` });
+      {ackPo ? (
+        <AcknowledgePoDialog
+          po={ackPo}
+          onClose={() => setAckPoId(null)}
+          onAcknowledged={(poNumber) => {
+            setAckPoId(null);
+            toast({ kind: "success", message: `${poNumber} acknowledged - delivery created` });
           }}
         />
       ) : null}
@@ -498,7 +492,6 @@ function PoDetailModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <AutoQuotesField po={po} />
-          <DeliveryModeField po={po} />
         </div>
 
         <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
@@ -527,22 +520,6 @@ function PoDetailModal({
         </div>
       </div>
     </div>
-  );
-}
-
-/** Modal's delivery-mode picker: same badge everyone else sees, editable in place. */
-function DeliveryModeField({ po }: { po: Po }) {
-  const delivery = po.deliveries[0] ?? null;
-  const mode =
-    delivery?.mode ?? (po.shipTo === "client_direct" ? "manufacturer_to_customer" : "manufacturer_to_hss_to_customer");
-  return (
-    <BadgeSelect
-      value={mode}
-      options={DELIVERY_MODES}
-      action={(next) => setPoDeliveryMode(po.id, next)}
-      colorMap={DELIVERY_MODE_COLORS}
-      ariaLabel="Change delivery mode"
-    />
   );
 }
 
@@ -613,8 +590,7 @@ function DeliveryReadout({ delivery }: { delivery: PoDelivery | null }) {
   if (!delivery) {
     return (
       <div className="border-t border-border pt-3 text-xs">
-        <span className="empty-value">No delivery leg yet</span> - one is created with the PO, and advancing to
-        Shipped sets one up.
+        <span className="empty-value">No delivery yet</span> - acknowledging this PO is what creates one.
       </div>
     );
   }
@@ -664,25 +640,35 @@ function DeliveryReadout({ delivery }: { delivery: PoDelivery | null }) {
 }
 
 /**
- * "Advance to Shipped" asks for the shipment facts once, then writes them onto
- * the PO's delivery leg, puts that leg in transit, and advances the PO. Trucker
- * and scheduled date only appear when the leg has an HSS run to the customer.
+ * "Acknowledge & set delivery" - the hinge between a purchase order and a
+ * delivery (Sep 8 2026 client call: "when it's acknowledged, that's when it
+ * turns into a delivery. At that point we need to select how it's going to
+ * come over"). Pick one of the three modes and the form asks for exactly what
+ * that mode needs:
+ *
+ *   1. Manufacturer → customer         tracking + estimated date
+ *   2. HSS pickup → customer           trucker + estimated date + cost
+ *   3. Manufacturer → HSS → customer   all of it
+ *
+ * Everything here stays editable afterwards on the Delivery tab, which is also
+ * where a delivery gets split if half the PO ships early.
  */
-function ShipPoDialog({
+function AcknowledgePoDialog({
   po,
   onClose,
-  onShipped,
+  onAcknowledged,
 }: {
   po: Po;
   onClose: () => void;
-  onShipped: (poNumber: string) => void;
+  onAcknowledged: (poNumber: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // Re-acknowledging a PO that already has a delivery edits that delivery, so
+  // start from whatever it already says.
   const delivery = po.deliveries[0] ?? null;
-  // No leg on file yet (a PO from before deliveries existed): markPoShipped
-  // creates one from the PO's ship-to, so show the fields that mode will have.
-  const mode = delivery?.mode ?? (po.shipTo === "client_direct" ? "manufacturer_to_customer" : "manufacturer_to_hss_to_customer");
+  const [mode, setMode] = useState(delivery?.mode ?? "manufacturer_to_hss_to_customer");
+  const showCarrierLeg = hasCarrierLeg(mode);
   const showTruckerLeg = hasTruckerLeg(mode);
 
   useEffect(() => {
@@ -702,17 +688,23 @@ function ShipPoDialog({
     panelRef.current?.focus();
   }, []);
 
-  async function handleShip(formData: FormData) {
-    const result = await markPoShipped(po.id, {
+  async function handleAcknowledge(formData: FormData) {
+    const result = await acknowledgePo(po.id, {
+      mode: String(formData.get("mode") ?? ""),
       trackingCarrier: String(formData.get("trackingCarrier") ?? ""),
       trackingUrl: String(formData.get("trackingUrl") ?? ""),
       expectedDelivery: String(formData.get("expectedDelivery") ?? ""),
       trucker: String(formData.get("trucker") ?? ""),
+      pickupAddress: String(formData.get("pickupAddress") ?? ""),
       scheduledDeliveryDate: String(formData.get("scheduledDeliveryDate") ?? ""),
+      shipCost: String(formData.get("shipCost") ?? ""),
+      chargedToCustomer: formData.get("chargedToCustomer") === "1",
+      deliveryContactPhone: String(formData.get("deliveryContactPhone") ?? ""),
+      notes: String(formData.get("notes") ?? ""),
     });
     if (result.ok) {
       setError(null);
-      onShipped(po.poNumber ?? "The PO");
+      onAcknowledged(po.poNumber ?? "The PO");
     } else {
       setError(result.message);
     }
@@ -729,53 +721,84 @@ function ShipPoDialog({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="ship-po-title"
+        aria-labelledby="ack-po-title"
         tabIndex={-1}
         className="card w-full max-w-md space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
       >
         <div>
-          <h2 id="ship-po-title" className="text-base font-semibold text-ink">
-            Mark {po.poNumber ?? "this PO"} shipped
+          <h2 id="ack-po-title" className="text-base font-semibold text-ink">
+            Acknowledge {po.poNumber ?? "this PO"}
           </h2>
           <div className="text-xs text-gray-dark">
-            Saved onto its delivery leg ({labelFor(DELIVERY_MODES, mode)}), which goes In Transit.
+            {po.supplier?.name ?? "The vendor"} confirmed the order. This creates its delivery -
+            {delivery ? " updating the one already on file." : " one delivery per PO, splittable later."}
           </div>
         </div>
 
-        <form action={handleShip} className="space-y-2 border-t border-border pt-4">
+        <form action={handleAcknowledge} className="space-y-3 border-t border-border pt-4">
           {error && <div className="banner-warn">{error}</div>}
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="field-label">Carrier</span>
-              <input
-                name="trackingCarrier"
-                className="input-klyne w-full px-2 py-1 text-xs"
-                placeholder="e.g. UPS Freight"
-                defaultValue={delivery?.trackingCarrier ?? ""}
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Expected delivery</span>
-              <input
-                type="date"
-                name="expectedDelivery"
-                className="input-klyne w-full px-2 py-1 text-xs"
-                defaultValue={delivery?.expectedDelivery ? new Date(delivery.expectedDelivery).toISOString().slice(0, 10) : ""}
-              />
-            </label>
-            <label className="col-span-2 block">
-              <span className="field-label">Tracking URL</span>
-              <input
-                name="trackingUrl"
-                className="input-klyne w-full px-2 py-1 text-xs"
-                placeholder="https://…"
-                defaultValue={delivery?.trackingUrl ?? ""}
-              />
-            </label>
-            {showTruckerLeg && (
-              <>
+
+          <label className="block">
+            <span className="field-label">How is it coming over?</span>
+            <select
+              name="mode"
+              className="input-klyne w-full px-2 py-1.5 text-sm"
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+            >
+              {DELIVERY_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {showCarrierLeg && (
+            <fieldset className="space-y-2 rounded-lg border border-border p-2.5">
+              <legend className="field-label px-1">
+                {showTruckerLeg ? "Leg 1 - manufacturer to HSS" : "Manufacturer to the customer"}
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
                 <label className="block">
-                  <span className="field-label">Trucker (optional)</span>
+                  <span className="field-label">Carrier</span>
+                  <input
+                    name="trackingCarrier"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder="e.g. UPS Freight"
+                    defaultValue={delivery?.trackingCarrier ?? ""}
+                  />
+                </label>
+                <label className="block">
+                  <span className="field-label">Estimated arrival</span>
+                  <input
+                    type="date"
+                    name="expectedDelivery"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    defaultValue={dateInputValue(delivery?.expectedDelivery ?? null)}
+                  />
+                </label>
+                <label className="col-span-2 block">
+                  <span className="field-label">Tracking URL</span>
+                  <input
+                    name="trackingUrl"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder="https://…"
+                    defaultValue={delivery?.trackingUrl ?? ""}
+                  />
+                </label>
+              </div>
+            </fieldset>
+          )}
+
+          {showTruckerLeg && (
+            <fieldset className="space-y-2 rounded-lg border border-border p-2.5">
+              <legend className="field-label px-1">
+                {showCarrierLeg ? "Leg 2 - HSS to the customer" : "HSS pickup to the customer"}
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="field-label">Trucker</span>
                   <input
                     name="trucker"
                     className="input-klyne w-full px-2 py-1 text-xs"
@@ -784,27 +807,75 @@ function ShipPoDialog({
                   />
                 </label>
                 <label className="block">
-                  <span className="field-label">Scheduled delivery (optional)</span>
+                  <span className="field-label">Estimated delivery</span>
                   <input
                     type="date"
                     name="scheduledDeliveryDate"
                     className="input-klyne w-full px-2 py-1 text-xs"
-                    defaultValue={
-                      delivery?.scheduledDeliveryDate
-                        ? new Date(delivery.scheduledDeliveryDate).toISOString().slice(0, 10)
-                        : ""
-                    }
+                    defaultValue={dateInputValue(delivery?.scheduledDeliveryDate ?? null)}
                   />
                 </label>
-              </>
-            )}
-          </div>
+                <label className="block">
+                  <span className="field-label">Cost</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="shipCost"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder="$0.00"
+                    defaultValue={delivery?.shipCost ?? ""}
+                  />
+                </label>
+                <label className="block">
+                  <span className="field-label">Delivery contact phone</span>
+                  <input
+                    type="tel"
+                    name="deliveryContactPhone"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder="Delivery-day contact #"
+                    defaultValue={delivery?.deliveryContactPhone ?? ""}
+                  />
+                </label>
+                <label className="col-span-2 block">
+                  <span className="field-label">Pickup address</span>
+                  <input
+                    name="pickupAddress"
+                    className="input-klyne w-full px-2 py-1 text-xs"
+                    placeholder={po.supplier?.deliveryAddress ?? "Where the driver picks up"}
+                    defaultValue={delivery?.pickupAddress ?? ""}
+                  />
+                </label>
+                <label className="col-span-2 flex items-center gap-2 pt-1 text-xs text-ink">
+                  <input
+                    type="checkbox"
+                    name="chargedToCustomer"
+                    value="1"
+                    defaultChecked={delivery?.chargedToCustomer ?? false}
+                    className="h-4 w-4 rounded border-border accent-accent"
+                  />
+                  Charge this cost to the customer?
+                </label>
+              </div>
+            </fieldset>
+          )}
+
+          <label className="block">
+            <span className="field-label">Notes</span>
+            <input
+              name="notes"
+              className="input-klyne w-full px-2 py-1 text-xs"
+              placeholder="Anything the driver or the office needs to know"
+              defaultValue={delivery?.notes ?? ""}
+            />
+          </label>
+
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className="btn btn-sm" onClick={onClose}>
               Cancel
             </button>
             <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-              Mark shipped
+              Acknowledge & create delivery
             </PendingButton>
           </div>
         </form>
