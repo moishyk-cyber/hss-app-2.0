@@ -19,11 +19,11 @@ type Item = {
   unitPrice: number | null;
   /**
    * Optional: DeliverySection.tsx (owned by the Deliveries agent) passes its
-   * own, narrower Item type through - leadTimeDays is a real column on every
+   * own, narrower Item type through - leadTimeDate is a real column on every
    * line item, it just may not be declared on that type. Optional here keeps
    * that pass-through assignable without a type change over there.
    */
-  leadTimeDays?: number | null;
+  leadTimeDate?: Date | null;
   deliveryStatus: string;
   backorderExpected: Date | null;
   assigneeId: string | null;
@@ -76,13 +76,7 @@ export default function LineItemsSection({
               <td className="font-medium text-ink">{item.name}</td>
               <td className="text-gray-dark">{item.qty}</td>
               <td className="text-gray-dark">{fmtMoney(item.unitPrice)}</td>
-              <td className="text-gray-dark">
-                {item.leadTimeDays != null ? (
-                  `${item.leadTimeDays} d`
-                ) : (
-                  <span className="empty-value">not set</span>
-                )}
-              </td>
+              <td className="text-gray-dark">{fmtDate(item.leadTimeDate)}</td>
               <td>
                 <UserSelect
                   value={item.assigneeId ?? ""}

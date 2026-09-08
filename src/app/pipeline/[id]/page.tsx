@@ -6,7 +6,6 @@ import { can } from "@/lib/permissionsServer";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, OPEN_SERVICE_ISSUE_STATUSES, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
-import { fmtDateUTC } from "@/lib/dates";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
@@ -58,12 +57,6 @@ type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT & 
 function toOrderBallInput(order: OrderBallRow): OrderBallInput {
   const { _count, ...rest } = order;
   return { ...rest, openIssueCount: _count.serviceIssues };
-}
-
-/** "N d · est. <date>" for a lead time measured from today. */
-function leadTimeSummary(days: number): string {
-  const est = new Date(Date.now() + days * 86_400_000);
-  return `${days} d · est. ${fmtDateUTC(est)}`;
 }
 
 export const dynamic = "force-dynamic";
@@ -118,10 +111,12 @@ export default async function OpportunityDetailPage({
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
   const needsPricingCount = liveItems.filter((li) => li.rfqStatus === "needs_pricing").length;
+  // The item called for furthest out is what the whole deal waits on.
   const leadTimes = liveItems
-    .map((li) => li.leadTimeDays)
-    .filter((d): d is number => d != null);
-  const longestLeadTimeDays = leadTimes.length > 0 ? Math.max(...leadTimes) : null;
+    .map((li) => li.leadTimeDate)
+    .filter((d): d is Date => d != null);
+  const latestLeadTimeDate =
+    leadTimes.length > 0 ? new Date(Math.max(...leadTimes.map((d) => d.getTime()))) : null;
 
   // A won deal that never got an order is only half-closed - the Close panel stays
   // open as the recovery route (it reuses the same Won form).
@@ -322,8 +317,8 @@ export default async function OpportunityDetailPage({
             />
             <DetailRow label="Budget" value={fmtMoney(opportunity.budget)} />
             <DetailRow
-              label="Longest lead time"
-              value={longestLeadTimeDays != null ? leadTimeSummary(longestLeadTimeDays) : null}
+              label="Latest lead time"
+              value={fmtDate(latestLeadTimeDate)}
               emptyLabel="not known yet"
             />
             <DetailRow
@@ -443,7 +438,6 @@ export default async function OpportunityDetailPage({
                       <th>Lead time</th>
                       <th>Assignee</th>
                       <th>RFQ status</th>
-                      <th>Delivery</th>
                       <th>Stock</th>
                     </tr>
                   </thead>
