@@ -22,7 +22,6 @@ import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInp
 import { uploadsConfigured } from "@/lib/storage";
 import { ActionButton, InlineEditField } from "@/lib/ui";
 import {
-  acknowledgeAllSentPos,
   markOrderComplete,
   setOrderClientPoNumber,
   setOrderDeliveryAddress,
@@ -92,7 +91,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           include: {
             supplier: { select: { name: true, deliveryAddress: true } },
             lineItems: { select: { id: true, name: true, qty: true } },
-            // Read-only on this tab: the PO's leg powers the shipped dialog.
+            // The PO's delivery: read-only on this tab, except through the
+            // acknowledge dialog that creates (or re-edits) it.
             deliveries: {
               select: {
                 id: true,
@@ -102,7 +102,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 trackingUrl: true,
                 expectedDelivery: true,
                 trucker: true,
+                pickupAddress: true,
                 scheduledDeliveryDate: true,
+                shipCost: true,
+                chargedToCustomer: true,
+                deliveryContactPhone: true,
+                notes: true,
               },
               orderBy: { createdAt: "asc" },
             },
@@ -229,10 +234,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       </a>
     );
   } else if (isOpen && anySent) {
+    // Acknowledging is per-PO now: each one asks how those goods are coming
+    // over and turns into a delivery, so there is nothing to bulk-click.
     primaryAction = (
-      <ActionButton action={acknowledgeAllSentPos.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
-        Mark acknowledged
-      </ActionButton>
+      <a href="#purchase-orders" className="btn btn-primary active:scale-[0.99]">
+        Acknowledge POs
+      </a>
     );
   } else if (isOpen && canCompleteOrder(order)) {
     // canCompleteOrder is vacuously true when there are no POs at all (a direct

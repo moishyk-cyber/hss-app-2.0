@@ -53,7 +53,7 @@ Company gets `locations Location[]`. Opportunity and Order get `locationId Strin
 on Opportunity and Order STAY as the snapshot actually used for delivery; picking a
 location copies its name/address into them.
 
-**Delivery** - one delivery leg. Default: one PO → one delivery. Splittable.
+**Delivery** - one delivery leg. Default: one acknowledged PO → one delivery. Splittable.
 ```
 Delivery { id, orderId (FK, required), purchaseOrderId? (FK PurchaseOrder),
   mode String @default("manufacturer_to_hss_to_customer")
@@ -293,19 +293,23 @@ of the deprecated PO columns only), `src/lib/flow.ts` if needed.
 2. Split: in the delivery modal, "Split items into a new delivery" - pick items → creates a
    second Delivery on the same PO/order, moves those items. Also "Move to another
    delivery". Merge = move all items back and delete the empty delivery.
-3. Auto-create: `createPurchaseOrder` also creates the PO's default Delivery (mode from
-   shipTo) and attaches the items; a delivery is created for HSS-stock items that have no
-   PO via a "New delivery (from HSS stock)" button (mode hss_to_customer).
-4. PO "Advance to Shipped" opens a dialog: carrier, tracking URL, ETA (+ optional
-   trucker/scheduled date when mode 3). Saves to the PO's delivery, sets delivery status
-   `in_transit`, advances the PO. Remove the old `TrackingEdit` form; the PO modal shows the
-   delivery's tracking read-only with a link to the Delivery tab.
+3. Create: a PO is vendor + AutoQuotes PO # + items and nothing else - `createPurchaseOrder`
+   creates NO delivery (Sep 8 2026 client call: POs and deliveries are two different
+   things). The delivery is born at acknowledgment (4). A delivery is also created for
+   HSS-stock items that have no PO via a "New delivery (from HSS stock)" button (mode
+   hss_to_customer).
+4. PO "Acknowledge & set delivery" opens a dialog: pick the mode, then only what that mode
+   needs - mode 1 carrier/tracking/ETA, mode 2 trucker/scheduled date/cost, mode 3 both.
+   `acknowledgePo` creates (or re-edits) the PO's one delivery, attaches its items, sets
+   the PO's ship-to from the mode, and advances it to acknowledged. "Advance to Shipped"
+   then needs no input: it puts the delivery `in_transit` and starts the items moving. The
+   PO modal shows the delivery read-only with a link to the Delivery tab.
 5. `/deliveries` page: query Delivery instead of PurchaseOrder. Sections as today (needs
    attention / scheduled / recently delivered), mode badge, inline trucker + status.
    `TruckerSelect`, `DeliveryStatusPill` re-pointed to Delivery ids/actions.
 6. Actions (replace the PO logistics ones): `createDelivery`, `updateDelivery`,
    `setDeliveryStatus`, `setDeliveryTrucker`, `splitDelivery`, `moveItemsToDelivery`,
-   `deleteEmptyDelivery`, `markPoShipped`. Each calls `recomputeOrderStatus`.
+   `deleteEmptyDelivery`, `acknowledgePo`. Each calls `recomputeOrderStatus`.
 7. Remove the deprecated PO logistics fields from `prisma/schema.prisma` (schema only - no
    SQL) and from every remaining reference; `prisma generate && tsc` must pass.
 

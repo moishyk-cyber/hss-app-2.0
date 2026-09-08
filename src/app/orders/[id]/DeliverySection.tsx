@@ -8,8 +8,8 @@
 // this to one thing only, not two - the form should only pop up when the item
 // is clicked", so nothing is permanently expanded.
 //
-// A leg is a Delivery row, not a PO: one PO creates one leg by default, a split
-// PO has two, and an HSS-stock run has no PO at all. Which fields the modal
+// A leg is a Delivery row, not a PO: acknowledging a PO creates one leg, a
+// split PO has two, and an HSS-stock run has no PO at all. Which fields the modal
 // shows follows the leg's mode - carrier tracking for the manufacturer's
 // shipment, trucker/pickup/cost for HSS's own run to the customer, both for a
 // leg that does manufacturer -> HSS -> customer.
@@ -131,7 +131,8 @@ export default function DeliverySection({
 
         {deliveries.length === 0 ? (
           <div className="empty-state">
-            No deliveries yet. Creating a purchase order sets one up automatically, or start one here from HSS stock.
+            No deliveries yet. A purchase order becomes a delivery when you acknowledge it, or start one here from HSS
+            stock.
           </div>
         ) : (
           <div className="card card-flush overflow-hidden">
