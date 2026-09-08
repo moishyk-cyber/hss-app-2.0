@@ -42,6 +42,23 @@ export const ORDER_STATUSES = [
   { value: "stuck", label: "Stuck" },
 ] as const;
 
+/**
+ * Columns on the Orders kanban board - the four working phases of fulfillment
+ * (Sep 8 2026 client call: "once the deposit is received, it goes to POs,
+ * delivery, customer service. That's the orders").
+ *
+ * NOT a stored field. An order's phase is derived from its ORDER_STATUSES value
+ * by orderPhase() in @/lib/flowRules, so there is no second status to keep in
+ * sync and no migration behind this board. Orders marked "complete" have no
+ * phase and drop off the board entirely.
+ */
+export const ORDER_PHASES = [
+  { value: "deposit", label: "Deposit" },
+  { value: "pos", label: "POs" },
+  { value: "delivery", label: "Delivery" },
+  { value: "customer_service", label: "Customer Service" },
+] as const;
+
 export const PO_STATUSES = [
   { value: "draft", label: "Draft" },
   { value: "sent", label: "Sent" },

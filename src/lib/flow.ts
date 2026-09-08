@@ -17,6 +17,7 @@ import type { OrderBallInput } from "@/lib/ballInCourt";
 export {
   evaluatePaymentGate,
   deriveOrderStatus,
+  orderPhase,
   canCompleteOrder,
   FLOW_ORDER_INCLUDE,
 } from "@/lib/flowRules";

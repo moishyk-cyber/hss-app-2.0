@@ -8,12 +8,14 @@ import {
   OPEN_SERVICE_ISSUE_STATUSES,
   labelFor,
 } from "@/lib/constants";
+import { orderPhase } from "@/lib/flow";
 import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getCourtHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { OrdersKanbanBoard, type OrderCard } from "./OrdersKanbanBoard";
 import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 /**
@@ -21,6 +23,9 @@ import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from 
  * ORDER_BALL_INCLUDE (@/lib/flow) so this list isn't dragging every payment/
  * PO/delivery column along for a badge. Kept structurally in sync with
  * OrderBallInput by hand; a tsc failure here means it drifted.
+ *
+ * It doubles as everything orderPhase() needs for the kanban board (FlowOrder:
+ * gate inputs plus items/POs/deliveries), so the board costs no extra query.
  */
 const ORDER_BALL_SELECT = {
   status: true,
@@ -77,7 +82,10 @@ function itemSummary(
   return parts.join(" · ");
 }
 
-type OrdersSearchParams = { status?: string; due?: string } & Record<string, string | string[] | undefined>;
+type OrdersSearchParams = { status?: string; due?: string; view?: string } & Record<
+  string,
+  string | string[] | undefined
+>;
 
 export default async function OrdersPage({
   searchParams,
@@ -86,6 +94,11 @@ export default async function OrdersPage({
 }) {
   const sp = await searchParams;
   const { status, due } = sp;
+
+  // Board is the default view, matching /pipeline. The status chips and the
+  // Sort by / Filter by controls belong to the list - the board is fed by the
+  // flow engine and shows every live order, so it takes no filters.
+  const isList = sp.view === "list";
 
   const users = await prisma.user.findMany({
     where: { active: true },
@@ -111,19 +124,21 @@ export default async function OrdersPage({
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const where: Prisma.OrderWhereInput = {};
-  if (status) where.status = status;
-  if (due === "week") {
-    where.neededByDate = { gte: now, lte: in7Days };
-    where.status = { notIn: ["delivered", "complete"] };
-  }
-  if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
-  if (filters.company) where.company = { name: { contains: filters.company, mode: "insensitive" } };
-  if (filters.orderType) where.orderType = filters.orderType;
-  if (filters.owner) where.ownerId = filters.owner;
-  if (filters.neededBy) {
-    const day = new Date(filters.neededBy);
-    const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
-    where.neededByDate = { gte: day, lt: nextDay };
+  if (isList) {
+    if (status) where.status = status;
+    if (due === "week") {
+      where.neededByDate = { gte: now, lte: in7Days };
+      where.status = { notIn: ["delivered", "complete"] };
+    }
+    if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
+    if (filters.company) where.company = { name: { contains: filters.company, mode: "insensitive" } };
+    if (filters.orderType) where.orderType = filters.orderType;
+    if (filters.owner) where.ownerId = filters.owner;
+    if (filters.neededBy) {
+      const day = new Date(filters.neededBy);
+      const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+      where.neededByDate = { gte: day, lt: nextDay };
+    }
   }
 
   const ORDER_BY: Record<string, Prisma.OrderOrderByWithRelationInput> = {
@@ -135,7 +150,7 @@ export default async function OrdersPage({
     neededBy: { neededByDate: sortDir },
     owner: { owner: { name: sortDir } },
   };
-  const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
+  const orderBy = isList && sortKey ? ORDER_BY[sortKey] : undefined;
 
   const orders = await prisma.order.findMany({
     where,
@@ -155,7 +170,7 @@ export default async function OrdersPage({
 
   // Default view (no explicit sort chosen): soonest needed-by first, orders
   // with no due date last - the client asked to filter by due date instead
-  // of a manual urgency flag.
+  // of a manual urgency flag. The board inherits this ordering per column.
   if (!orderBy) {
     orders.sort((a, b) => {
       const ad = a.neededByDate ? new Date(a.neededByDate).getTime() : Infinity;
@@ -164,115 +179,182 @@ export default async function OrdersPage({
     });
   }
 
+  // Board cards. orderPhase() returns null for completed orders, which is how
+  // they drop off the board without disappearing from the list.
+  const cards: OrderCard[] = orders.flatMap((order) => {
+    const phase = orderPhase(order);
+    if (!phase) return [];
+    return [
+      {
+        id: order.id,
+        title: order.title,
+        phase,
+        status: order.status,
+        companyName: order.company?.name ?? null,
+        ownerName: order.owner?.name ?? null,
+        value: order.orderValue,
+        neededByDate: order.neededByDate,
+        itemSummary: itemSummary(order.lineItems),
+        ball: withHolder(orderBall(toOrderBallInput(order)), holders),
+      },
+    ];
+  });
+
+  const boardValue = cards.reduce((sum, c) => sum + (c.value ?? 0), 0);
+
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="page-title">Orders</h1>
-        <p className="page-sub">Fulfillment pipeline - payment, POs, delivery.</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Link href="/orders" className={!status && !due ? "chip chip-active" : "chip"}>
-          All
-        </Link>
-        {ORDER_STATUSES.map((s) => (
-          <Link key={s.value} href={`/orders?status=${s.value}`} className={status === s.value ? "chip chip-active" : "chip"}>
-            {s.label}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="page-title">Orders</h1>
+          <p className="page-sub">
+            {isList
+              ? "Fulfillment pipeline - payment, POs, delivery."
+              : `${cards.length} live · ${fmtMoney(boardValue)} in fulfillment`}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Link
+            href="/orders"
+            className={`chip transition-colors active:scale-[0.98] ${isList ? "" : "chip-active"}`}
+          >
+            Kanban
           </Link>
-        ))}
-        <Link href="/orders?due=week" className={due === "week" ? "chip chip-active" : "chip"}>
-          Due this week
-        </Link>
+          <Link
+            href="/orders?view=list"
+            className={`chip transition-colors active:scale-[0.98] ${isList ? "chip-active" : ""}`}
+          >
+            List
+          </Link>
+        </div>
       </div>
 
-      <Suspense>
-        <ListControls fields={FIELDS} />
-      </Suspense>
-
-      {orders.length === 0 ? (
-        <div className="empty-state">
-          {status || due ? (
-            "No orders match this filter."
-          ) : (
-            <>
-              No orders yet. Orders are created automatically when an opportunity is won, or directly from a
-              simple intake.{" "}
-              <Link href="/intake" className="text-blue transition-colors hover:underline">
-                Go to Intake
+      {isList ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/orders?view=list" className={!status && !due ? "chip chip-active" : "chip"}>
+              All
+            </Link>
+            {ORDER_STATUSES.map((s) => (
+              <Link
+                key={s.value}
+                href={`/orders?view=list&status=${s.value}`}
+                className={status === s.value ? "chip chip-active" : "chip"}
+              >
+                {s.label}
               </Link>
-            </>
+            ))}
+            <Link href="/orders?view=list&due=week" className={due === "week" ? "chip chip-active" : "chip"}>
+              Due this week
+            </Link>
+          </div>
+
+          <Suspense>
+            <ListControls fields={FIELDS} />
+          </Suspense>
+
+          {orders.length === 0 ? (
+            <div className="empty-state">
+              {status || due ? (
+                "No orders match this filter."
+              ) : (
+                <>
+                  No orders yet. Orders are created automatically when an opportunity is won, or directly from a
+                  simple intake.{" "}
+                  <Link href="/intake" className="text-blue transition-colors hover:underline">
+                    Go to Intake
+                  </Link>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="card card-flush overflow-hidden">
+              <ul className="divide-y divide-border">
+                {orders.map((order) => {
+                  const due = dueState(order.neededByDate, order.status);
+                  const accent =
+                    due === "overdue" ? "border-l-4 border-red" : due === "soon" ? "border-l-4 border-orange" : "";
+                  const ps = paymentState(order.payments);
+                  const summary = itemSummary(order.lineItems);
+                  const ball = withHolder(orderBall(toOrderBallInput(order)), holders);
+                  return (
+                    <li
+                      key={order.id}
+                      className={`relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover ${accent}`}
+                    >
+                      <Avatar name={order.company?.name ?? "?"} kind="business" size="sm" />
+
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                      >
+                        {order.title}
+                      </Link>
+
+                      {summary ? (
+                        <span className="hidden shrink-0 text-[12px] text-gray-dark xl:block">
+                          {summary}
+                        </span>
+                      ) : null}
+
+                      <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
+                        {fmtMoney(order.orderValue)}
+                      </span>
+
+                      {/* Quiet by default (Moishy: "too many details") - badges only
+                          when they say something: payment only while money is
+                          still owed. Due-date urgency reads from the left accent
+                          and the Due column instead of its own badge. */}
+                      <span className="shrink-0">
+                        <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
+                          {labelFor(ORDER_STATUSES, order.status)}
+                        </span>
+                      </span>
+
+                      {ps !== "paid" ? (
+                        <span className="hidden shrink-0 md:block">
+                          <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
+                        </span>
+                      ) : null}
+
+                      <span className="hidden shrink-0 xl:block">
+                        <BallInCourtBadge ball={ball} />
+                      </span>
+
+                      <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
+                        <DueCell neededByDate={order.neededByDate} status={order.status} />
+                      </span>
+
+                      <span className="relative z-10 shrink-0">
+                        {order.owner ? (
+                          <span title={order.owner.name}>
+                            <Avatar name={order.owner.name} kind="person" size="sm" />
+                          </span>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
+        </>
+      ) : cards.length === 0 ? (
+        <div className="empty-state">
+          No live orders. Orders are created automatically when an opportunity is won, or directly from a
+          simple intake.{" "}
+          <Link href="/intake" className="text-blue transition-colors hover:underline">
+            Go to Intake
+          </Link>
         </div>
       ) : (
-        <div className="card card-flush overflow-hidden">
-          <ul className="divide-y divide-border">
-            {orders.map((order) => {
-              const due = dueState(order.neededByDate, order.status);
-              const accent =
-                due === "overdue" ? "border-l-4 border-red" : due === "soon" ? "border-l-4 border-orange" : "";
-              const ps = paymentState(order.payments);
-              const summary = itemSummary(order.lineItems);
-              const ball = withHolder(orderBall(toOrderBallInput(order)), holders);
-              return (
-                <li
-                  key={order.id}
-                  className={`relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover ${accent}`}
-                >
-                  <Avatar name={order.company?.name ?? "?"} kind="business" size="sm" />
-
-                  <Link
-                    href={`/orders/${order.id}`}
-                    className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
-                  >
-                    {order.title}
-                  </Link>
-
-                  {summary ? (
-                    <span className="hidden shrink-0 text-[12px] text-gray-dark xl:block">
-                      {summary}
-                    </span>
-                  ) : null}
-
-                  <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
-                    {fmtMoney(order.orderValue)}
-                  </span>
-
-                  {/* Quiet by default (Moishy: "too many details") - badges only
-                      when they say something: payment only while money is
-                      still owed. Due-date urgency reads from the left accent
-                      and the Due column instead of its own badge. */}
-                  <span className="shrink-0">
-                    <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
-                      {labelFor(ORDER_STATUSES, order.status)}
-                    </span>
-                  </span>
-
-                  {ps !== "paid" ? (
-                    <span className="hidden shrink-0 md:block">
-                      <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
-                    </span>
-                  ) : null}
-
-                  <span className="hidden shrink-0 xl:block">
-                    <BallInCourtBadge ball={ball} />
-                  </span>
-
-                  <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
-                    <DueCell neededByDate={order.neededByDate} status={order.status} />
-                  </span>
-
-                  <span className="relative z-10 shrink-0">
-                    {order.owner ? (
-                      <span title={order.owner.name}>
-                        <Avatar name={order.owner.name} kind="person" size="sm" />
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        <>
+          <p className="page-sub -mt-4">
+            Orders move on their own as you record payments, POs and deliveries - there is nothing to drag.
+            A stuck order stays in its phase and reads red.
+          </p>
+          <OrdersKanbanBoard cards={cards} />
+        </>
       )}
     </div>
   );
