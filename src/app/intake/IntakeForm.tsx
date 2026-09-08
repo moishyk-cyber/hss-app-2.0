@@ -673,6 +673,13 @@ export function IntakeForm({
   }
   const fieldsReady = Object.keys(fieldErrors).length === 0;
 
+  // Both are yyyy-mm-dd, so a plain string compare orders them correctly.
+  const quoteAfterDelivery =
+    goesToPipeline &&
+    quoteDueDate.trim() !== "" &&
+    neededByDate.trim() !== "" &&
+    quoteDueDate > neededByDate;
+
   const blockReason = !clientReady
     ? "Pick or create a business first"
     : badQtyRows.length > 0
@@ -683,13 +690,15 @@ export function IntakeForm({
           ? "A typed price has to be more than $0"
           : !fieldsReady
             ? "Fix the highlighted phone/email fields"
-            : !neededByDate.trim()
-              ? "Add a delivery due date"
-              : goesToPipeline && !quoteDueDate.trim()
-                ? "Add a due date"
-                : openSection < 3
-                  ? "Work through the steps above"
-                  : null;
+            : goesToPipeline && !quoteDueDate.trim()
+              ? "Add a quote due date"
+              : !neededByDate.trim()
+                ? "Add a delivery due date"
+                : quoteAfterDelivery
+                  ? "The quote due date has to be on or before the delivery due date"
+                  : openSection < 3
+                    ? "Work through the steps above"
+                    : null;
 
   const clientLabel =
     clientMode === "new"
@@ -772,8 +781,12 @@ export function IntakeForm({
         </FormAlert>
       ) : error === "dates_required" ? (
         <FormAlert>
-          Nothing was saved - a delivery due date is required, and a due date is required whenever
-          the deal still needs pricing.
+          Nothing was saved - a delivery due date is required, and a quote due date is required
+          whenever the deal still needs pricing.
+        </FormAlert>
+      ) : error === "quote_after_delivery" ? (
+        <FormAlert>
+          Nothing was saved - the quote due date has to be on or before the delivery due date.
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
@@ -1447,32 +1460,41 @@ export function IntakeForm({
           locked={openSection < 3}
           lockedHint="Answer step 2 first."
         >
+          {/* Quote first, then delivery - the quote is due before the truck rolls. */}
           <div className="flex flex-wrap gap-4">
+            {goesToPipeline ? (
+              <label className="block max-w-xs">
+                <span className={labelClass}>Quote due date</span>
+                <input
+                  type="date"
+                  name="estDueDate"
+                  required
+                  max={neededByDate || undefined}
+                  value={quoteDueDate}
+                  onChange={(e) => setQuoteDueDate(e.target.value)}
+                  aria-invalid={quoteAfterDelivery}
+                  className={`${inputClass} ${quoteAfterDelivery ? "!border-red" : ""}`}
+                />
+              </label>
+            ) : null}
             <label className="block max-w-xs">
               <span className={labelClass}>Delivery due date</span>
               <input
                 type="date"
                 name="neededByDate"
                 required
+                min={quoteDueDate || undefined}
                 value={neededByDate}
                 onChange={(e) => setNeededByDate(e.target.value)}
                 className={inputClass}
               />
             </label>
-            {goesToPipeline ? (
-              <label className="block max-w-xs">
-                <span className={labelClass}>Due date</span>
-                <input
-                  type="date"
-                  name="estDueDate"
-                  required
-                  value={quoteDueDate}
-                  onChange={(e) => setQuoteDueDate(e.target.value)}
-                  className={inputClass}
-                />
-              </label>
-            ) : null}
           </div>
+          {quoteAfterDelivery ? (
+            <p role="alert" className="mt-1 text-xs text-red">
+              The quote is due before the delivery, not after it.
+            </p>
+          ) : null}
 
           {/* Salesperson is the sidebar identity, not a dropdown to fill in mid-call. */}
           <div className="mt-4">
