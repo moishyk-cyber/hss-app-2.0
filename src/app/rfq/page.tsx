@@ -47,7 +47,7 @@ export default async function RfqPage({
     { key: "assignee", label: "Assignee", type: "enum", options: users.map((u) => ({ value: u.id, label: u.name })) },
     { key: "parentCompany", label: "Parent Company", type: "text", sortable: false },
     { key: "daysWaiting", label: "Days Waiting", type: "number", filterable: false },
-    { key: "leadTime", label: "Lead Time (days)", type: "number", filterable: false },
+    { key: "leadTime", label: "Lead Time", type: "date", filterable: false },
   ];
   const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
 
@@ -71,7 +71,7 @@ export default async function RfqPage({
     // "Days waiting" counts up from createdAt, so ascending days-waiting means
     // most-recently-created first (i.e. createdAt descending).
     daysWaiting: { createdAt: sortDir === "asc" ? "desc" : "asc" },
-    leadTime: { leadTimeDays: sortDir },
+    leadTime: { leadTimeDate: sortDir },
   };
   const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
 
@@ -145,9 +145,8 @@ export default async function RfqPage({
               </div>
             ) : (
               <div className="card card-flush overflow-hidden overflow-x-auto">
-                {/* 8 tighter columns (est. lead date folded under the item name, the
-                    Lead column itself is the editable day count) so the whole table
-                    fits a plain desktop without cutting off Assignee. */}
+                {/* 8 tighter columns so the whole table fits a plain desktop
+                    without cutting off Assignee. */}
                 <table className="table-klyne min-w-[920px]">
                   <thead>
                     <tr>
@@ -156,7 +155,7 @@ export default async function RfqPage({
                       <th>Parent</th>
                       <th>Waiting</th>
                       <th>Price</th>
-                      <th>Lead (days)</th>
+                      <th>Lead time</th>
                       <th>Assignee</th>
                       <th>Status</th>
                     </tr>
