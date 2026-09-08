@@ -389,7 +389,7 @@ async function main() {
         supplierId: chance(0.55) ? pick(vendorIds) : null,
         unitCost: priced ? cost : null,
         unitPrice: priced ? price : null,
-        leadTimeDays: chance(0.6) ? int(5, 45) : null,
+        leadTimeDate: chance(0.6) ? daysAhead(int(5, 45)) : null,
         rfqStatus,
         assigneeId: sam,
         nextFollowUp: chance(0.3) ? daysAhead(int(-8, 14)) : null,

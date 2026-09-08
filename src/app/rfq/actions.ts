@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
-import { isValidValue, RFQ_STATUSES } from "@/lib/constants";
+import { isValidValue, RFQ_STATUSES, STOCK_STATUSES } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
 import { requirePermission } from "@/lib/permissionsServer";
@@ -194,32 +194,98 @@ export async function markLineItemRemoved(lineItemId: string): Promise<ActionRes
 }
 
 /**
- * Estimated lead time in days, set from the RFQ row. Feeds the "Longest lead
- * time" summary on the deal and the read-only lead-time columns on the deal
- * and order line-item tables. `days === null` clears it.
+ * Stock status set at the pricing stage (before an order exists). Clears the
+ * backorder-expected date when moving back to in_stock, so a stale date can't
+ * linger and reappear if the item is marked backordered again later.
  */
-export async function setLineItemLeadTime(
+export async function setLineItemStockStatus(
   lineItemId: string,
-  days: number | null
+  stockStatus: string
 ): Promise<ActionResult> {
   const denied = await requirePermission("pricing.edit");
   if (denied) return denied;
-  if (days != null && (!Number.isFinite(days) || days < 0 || days > 365)) {
-    return { ok: false, message: "Lead time has to be between 0 and 365 days." };
+  if (!isValidValue(STOCK_STATUSES, stockStatus)) {
+    return { ok: false, message: "Not a valid stock status." };
   }
-  const leadTimeDays = days == null ? null : Math.round(days);
   return safeAction(async () => {
     const before = await prisma.lineItem.findUnique({
       where: { id: lineItemId },
       select: { name: true },
     });
     if (!before) throw new Error("Line item not found");
-    await prisma.lineItem.update({ where: { id: lineItemId }, data: { leadTimeDays } });
+    await prisma.lineItem.update({
+      where: { id: lineItemId },
+      data: {
+        stockStatus,
+        ...(stockStatus !== "backordered" ? { backorderExpected: null } : {}),
+      },
+    });
+    await log(lineItemId, "stock_status_set", `Stock status set to ${stockStatus} on "${before.name}"`);
+    await revalidateLineItem(lineItemId);
+  }, "Could not update stock status. Please try again.");
+}
+
+/** Expected-available date while an item is backordered at the pricing stage. */
+export async function setLineItemBackorderExpected(
+  lineItemId: string,
+  backorderExpected: string
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({
+      where: { id: lineItemId },
+      data: { backorderExpected: backorderExpected ? new Date(backorderExpected) : null },
+    });
+    await log(
+      lineItemId,
+      "backorder_expected_set",
+      `Backorder expected date ${backorderExpected ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
+    );
+    await revalidateLineItem(lineItemId);
+  }, "Could not save the expected date. Please try again.");
+}
+
+/**
+ * The date the item is called for, set from the RFQ row as "YYYY-MM-DD" and
+ * stored at UTC midnight (how every date-only field here is stored). Feeds the
+ * "Latest lead time" summary on the deal and the read-only lead-time columns on
+ * the deal and order line-item tables. An empty string clears it.
+ */
+export async function setLineItemLeadTime(
+  lineItemId: string,
+  date: string | null
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  const raw = date?.trim() ?? "";
+  let leadTimeDate: Date | null = null;
+  if (raw !== "") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return { ok: false, message: "Pick a date for the lead time." };
+    }
+    leadTimeDate = new Date(`${raw}T00:00:00.000Z`);
+    if (Number.isNaN(leadTimeDate.getTime())) {
+      return { ok: false, message: "Pick a date for the lead time." };
+    }
+  }
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({ where: { id: lineItemId }, data: { leadTimeDate } });
     await log(
       lineItemId,
       "lead_time_set",
-      leadTimeDays != null
-        ? `Lead time set to ${leadTimeDays}d on "${before.name}"`
+      leadTimeDate != null
+        ? `Lead time set to ${raw} on "${before.name}"`
         : `Lead time cleared on "${before.name}"`
     );
     await revalidateLineItem(lineItemId);

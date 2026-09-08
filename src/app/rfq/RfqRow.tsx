@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { RFQ_STATUSES, RFQ_STATUS_COLORS, STOCK_STATUSES, STOCK_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { PendingButton, ActionButton, BadgeSelect, Spinner } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { parseMoney, fmtUSD } from "@/lib/money";
@@ -11,16 +11,12 @@ import { UserSelect } from "@/lib/UserSelect";
 import {
   markLineItemRemoved,
   setLineItemAssignee,
+  setLineItemBackorderExpected,
   setLineItemLeadTime,
   setLineItemRfqStatus,
+  setLineItemStockStatus,
   updateLineItemPricing,
 } from "./actions";
-
-/** "N d lead · est. <date>" from an item's lead time, measured from today. */
-function leadTimeLabel(days: number): string {
-  const est = new Date(Date.now() + days * 86_400_000);
-  return `${days} d lead · est. ${fmtDateUTC(est)}`;
-}
 
 /** Amber past this many days sitting in the RFQ queue without a status change. */
 const RFQ_WAITING_THRESHOLD_DAYS = 7;
@@ -30,10 +26,12 @@ type RfqItem = {
   name: string;
   qty: number;
   brand: string | null;
-  leadTimeDays: number | null;
+  leadTimeDate: Date | null;
   unitCost: number | null;
   unitPrice: number | null;
   rfqStatus: string;
+  stockStatus: string;
+  backorderExpected: Date | null;
   assigneeId: string | null;
   assignee: { name: string } | null;
 };
@@ -128,44 +126,35 @@ function PriceCell({ item }: { item: RfqItem }) {
 }
 
 /**
- * Lead time in days, saved on blur/Enter (no separate button - matches the
- * inline-number pattern on the deal page). 0-365, empty clears.
+ * The date the item is called for, saved as soon as a whole date is picked (no
+ * separate button - matches the inline pattern on the deal page). Emptying the
+ * field clears the date.
  */
 function LeadTimeCell({ item }: { item: RfqItem }) {
   const { toast } = useToast();
-  const initial = item.leadTimeDays != null ? String(item.leadTimeDays) : "";
+  const initial = item.leadTimeDate ? new Date(item.leadTimeDate).toISOString().slice(0, 10) : "";
   const [value, setValue] = useState(initial);
+  // What the server last accepted - a failed save rolls the input back to it.
+  const [saved, setSaved] = useState(initial);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function commit() {
-    const trimmed = value.trim();
-    if (trimmed === initial) return;
-    if (trimmed !== "" && !/^\d+$/.test(trimmed)) {
-      setError("Enter a whole number of days.");
-      setValue(initial);
-      return;
-    }
-    const days = trimmed === "" ? null : Number(trimmed);
-    if (days != null && (days < 0 || days > 365)) {
-      setError("Enter 0-365 days.");
-      setValue(initial);
-      return;
-    }
+  function commit(next: string) {
+    if (next === saved) return;
     startTransition(async () => {
       setError(null);
-      const result = await setLineItemLeadTime(item.id, days);
+      const result = await setLineItemLeadTime(item.id, next || null);
       if (!result.ok) {
         setError(result.message);
-        setValue(initial);
+        setValue(saved);
         return;
       }
+      setSaved(next);
       toast({
-        kind: days != null ? "success" : "info",
-        message:
-          days != null
-            ? `Lead time set to ${days}d on "${item.name}"`
-            : `Lead time cleared on "${item.name}"`,
+        kind: next ? "success" : "info",
+        message: next
+          ? `Lead time set to ${fmtDateUTC(`${next}T00:00:00.000Z`)} on "${item.name}"`
+          : `Lead time cleared on "${item.name}"`,
       });
     });
   }
@@ -173,22 +162,18 @@ function LeadTimeCell({ item }: { item: RfqItem }) {
   return (
     <span className="relative inline-flex items-center gap-1">
       <input
-        type="number"
-        min={0}
-        max={365}
-        step={1}
+        type="date"
         value={value}
         disabled={pending}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
+        onChange={(e) => {
+          setValue(e.target.value);
+          // A date input reads "" while a date is half-typed, so only a whole
+          // date saves here - emptying the field is committed on blur instead.
+          if (e.target.value) commit(e.target.value);
         }}
-        className="input-klyne w-16 px-1.5 py-1 text-xs disabled:opacity-60"
-        aria-label={`Lead time in days for ${item.name}`}
+        onBlur={() => commit(value)}
+        className="input-klyne w-36 px-1.5 py-1 text-xs disabled:opacity-60"
+        aria-label={`Lead time date for ${item.name}`}
       />
       {pending ? <Spinner className="text-gray" /> : null}
       {error ? (
@@ -197,6 +182,69 @@ function LeadTimeCell({ item }: { item: RfqItem }) {
         </span>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * Stock status pill for one line item, mirroring the order-side delivery
+ * status/backorder-date pattern (orders/[id]/LineItemsSection.tsx). Tracks
+ * the selected status locally so the expected-date input can appear right
+ * away, without waiting on the server revalidation round trip.
+ */
+function StockStatusCell({ item }: { item: RfqItem }) {
+  const [status, setStatus] = useState(item.stockStatus);
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <BadgeSelect
+        value={status}
+        options={STOCK_STATUSES}
+        colorMap={STOCK_STATUS_COLORS}
+        action={async (next) => {
+          setStatus(next);
+          return setLineItemStockStatus(item.id, next);
+        }}
+        ariaLabel={`Stock status for ${item.name}: ${labelFor(STOCK_STATUSES, item.stockStatus)}`}
+      />
+      {status === "backordered" && (
+        <BackorderExpectedInput itemId={item.id} itemName={item.name} value={item.backorderExpected} />
+      )}
+    </div>
+  );
+}
+
+function BackorderExpectedInput({
+  itemId,
+  itemName,
+  value,
+}: {
+  itemId: string;
+  itemName: string;
+  value: Date | null;
+}) {
+  const defaultValue = value ? new Date(value).toISOString().slice(0, 10) : "";
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(formData: FormData) {
+    const next = String(formData.get("backorderExpected") ?? "");
+    const result = await setLineItemBackorderExpected(itemId, next);
+    setError(result.ok ? null : result.message);
+  }
+
+  return (
+    <form action={handleSave} className="flex items-center gap-1">
+      <input
+        type="date"
+        name="backorderExpected"
+        className="input-klyne px-1.5 py-0.5 text-xs"
+        defaultValue={defaultValue}
+        aria-label={`Backorder expected date for ${itemName}`}
+      />
+      <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="…">
+        Save
+      </PendingButton>
+      {error && <span role="alert" className="text-xs text-red">{error}</span>}
+    </form>
   );
 }
 
@@ -235,13 +283,8 @@ export default function RfqRow({
     <tr id={`li-${item.id}`} className="align-top scroll-mt-4 transition-colors hover:bg-hover">
       <td className="!py-1.5">
         <div className="text-[13.5px] font-semibold text-ink">{item.name}</div>
-        {(item.brand || item.leadTimeDays != null) && (
-          <div className="text-xs text-gray">
-            {item.brand}
-            {item.brand && item.leadTimeDays != null ? " · " : ""}
-            {item.leadTimeDays != null ? leadTimeLabel(item.leadTimeDays) : ""}
-          </div>
-        )}
+        {/* The lead time itself is the editable date column - not repeated here. */}
+        {item.brand && <div className="text-xs text-gray">{item.brand}</div>}
       </td>
       <td className="!py-1.5 text-gray-dark">{item.qty}</td>
       <td className="!py-1.5">
@@ -262,6 +305,9 @@ export default function RfqRow({
       </td>
       <td className="!py-1.5">
         <LeadTimeCell item={item} />
+      </td>
+      <td className="!py-1.5">
+        <StockStatusCell item={item} />
       </td>
       <td className="!py-1.5">
         <UserSelect

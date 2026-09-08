@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { DELIVERY_STATUSES, RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
+import { RFQ_STATUSES, RFQ_STATUS_COLORS, STOCK_STATUSES, labelFor } from "@/lib/constants";
 import { BadgeSelect, Spinner } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
+import { fmtDateUTC } from "@/lib/dates";
 import type { ActionResult } from "@/lib/actionResult";
 import {
   updateLineItemAssignee,
@@ -18,9 +19,10 @@ export type EditableLineItem = {
   qty: number;
   unitCost: number | null;
   unitPrice: number | null;
-  leadTimeDays: number | null;
+  leadTimeDate: Date | null;
   rfqStatus: string;
-  deliveryStatus: string;
+  stockStatus: string;
+  backorderExpected: Date | null;
   assigneeId: string | null;
 };
 
@@ -117,8 +119,8 @@ export function LineItemRow({
       {/* Cost and Price deliberately absent - pricing is edited in the RFQ queue. */}
 
       <td className="text-xs text-gray-dark">
-        {item.leadTimeDays != null ? (
-          `${item.leadTimeDays} d`
+        {item.leadTimeDate != null ? (
+          fmtDateUTC(item.leadTimeDate)
         ) : (
           <span className="empty-value">not set</span>
         )}
@@ -142,7 +144,12 @@ export function LineItemRow({
       </td>
 
       <td className="text-xs text-gray-dark">
-        {labelFor(DELIVERY_STATUSES, item.deliveryStatus)}
+        {labelFor(STOCK_STATUSES, item.stockStatus)}
+        {item.stockStatus === "backordered" && (
+          <div className="text-gray">
+            {item.backorderExpected ? `Expected ${fmtDateUTC(item.backorderExpected)}` : "No date set"}
+          </div>
+        )}
       </td>
     </tr>
   );

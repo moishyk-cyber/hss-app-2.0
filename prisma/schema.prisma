@@ -178,10 +178,14 @@ model LineItem {
   supplierId     String?
   unitCost       Float?
   unitPrice      Float?
-  leadTimeDays   Int?
+  // The date the item is called for (what the supplier quotes), not a day
+  // count: the old `leadTimeDays` column stays in the database (no destructive
+  // DDL this pass) but Prisma no longer maps it.
+  leadTimeDate   DateTime?
   rfqStatus      String       @default("needs_pricing") // needs_pricing | rfq_sent | quote_received | priced_in_autoquotes | approved | removed
+  stockStatus    String       @default("in_stock") // in_stock | backordered - set during pricing, before an order exists
   deliveryStatus String       @default("pending") // pending | ordered | backordered | in_transit_to_hss | in_transit_to_client | arrived_complete
-  backorderExpected DateTime? // expected-available date while deliveryStatus = backordered
+  backorderExpected DateTime? // expected-available date while stockStatus or deliveryStatus = backordered
   dateOrdered    DateTime?
   dateArrivedHss DateTime?
   dateArrivedClient DateTime?
@@ -196,6 +200,7 @@ model LineItem {
   createdAt      DateTime     @default(now())
 
   @@index([rfqStatus])
+  @@index([stockStatus])
   @@index([deliveryStatus])
   @@index([opportunityId])
   @@index([orderId])
