@@ -89,29 +89,22 @@ export function PipelineList({
               {fmtMoney(card.value) ?? <span className="empty-value">no value</span>}
             </span>
 
-            <span className="relative z-10 shrink-0">
+            {/*
+              Both badge columns get a fixed width so every row's columns line up:
+              the pills size themselves to their label, so left to their own width
+              a long stage ("Information Missing") would squeeze the flexible
+              title/company columns and shift that row out of line with the rest.
+            */}
+            <span className="relative z-10 w-44 shrink-0">
               <StageSelect opportunityId={card.id} stage={card.stage} />
             </span>
 
-            <span className="hidden shrink-0 lg:block">
+            <span className="hidden w-52 shrink-0 truncate lg:block">
               <BallInCourtBadge ball={card.ball} />
             </span>
 
             <span className="hidden w-24 shrink-0 text-right text-[13px] tabular-nums text-gray md:block">
               {card.daysInStage}d in stage
-            </span>
-
-            <span className="hidden w-36 shrink-0 text-right md:block">
-              {card.followUpLabel ? (
-                <span
-                  className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}
-                  title={card.followUpOverdue ? "Follow-up overdue" : "Next follow-up"}
-                >
-                  {card.followUpLabel}
-                </span>
-              ) : (
-                <span className="empty-value">not scheduled</span>
-              )}
             </span>
           </li>
         ))}
