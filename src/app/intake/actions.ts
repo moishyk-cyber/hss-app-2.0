@@ -199,6 +199,11 @@ export async function submitIntake(formData: FormData) {
     redirect("/intake?error=dates_required");
   }
 
+  // The quote is due before the delivery, never after it.
+  if (estDueDate && neededByDate && estDueDate > neededByDate) {
+    redirect("/intake?error=quote_after_delivery");
+  }
+
   // The salesperson dropdown is gone from the form (feedback: one more thing to fill
   // in mid-call, and it always meant "me"). Fall back to the sidebar identity - and
   // if there isn't one either, save it unassigned rather than blocking a live call.
