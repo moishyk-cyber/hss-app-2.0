@@ -1153,14 +1153,14 @@ export function IntakeForm({
                   value="yes"
                   checked={needsPricing === "yes"}
                   onChange={setNeedsPricing}
-                  label="Yes - send to pipeline"
+                  label="Yes"
                 />
                 <InlineRadio
                   name="needsPricing"
                   value="no"
                   checked={needsPricing === "no"}
                   onChange={setNeedsPricing}
-                  label="No - priced already"
+                  label="No"
                 />
               </div>
             </div>
