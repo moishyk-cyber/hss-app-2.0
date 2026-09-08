@@ -8,7 +8,7 @@ import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
 import { fmtDateUTC } from "@/lib/dates";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
-import { getCourtHolders, withHolder } from "@/lib/courtHolders";
+import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
@@ -130,7 +130,7 @@ export default async function OpportunityDetailPage({
 
   // Ball-in-court: the single next thing that has to happen, and who has to do
   // it. A won deal delegates straight to its order (orderBall).
-  const holders = await getCourtHolders();
+  const holders = await getStageHolders();
   const ball = withHolder(
     opportunityBall({
       stage: opportunity.stage,

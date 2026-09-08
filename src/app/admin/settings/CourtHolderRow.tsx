@@ -1,64 +1,72 @@
 "use client";
 
-// One row of the "Ball in court" card: a role select and a person select,
-// saved together on change via setCourtHolder. Plain selects (not
-// OptimisticSelect) because a row edits two values together, not one.
+// One row of the "Ball in court" card: a role select and a set of person
+// toggles (more than one person can hold a stage), saved together on change
+// via setStageHolder. Plain controls (not OptimisticSelect) because a row
+// edits two values together, not one.
 
 import { useState, useTransition } from "react";
 import { useToast } from "@/lib/toast";
 import { USER_ROLES } from "@/lib/constants";
 import type { Role } from "@/lib/permissions";
-import type { Court } from "@/lib/ballInCourt";
-import { setCourtHolder } from "./actions";
+import type { FlowStepKey } from "@/lib/ballInCourt";
+import { setStageHolder } from "./actions";
 
 type UserOption = { id: string; name: string };
 
 export function CourtHolderRow({
-  court,
-  courtLabel,
+  step,
+  stepLabel,
   role,
-  userId,
+  userIds,
   users,
 }: {
-  court: Court;
-  courtLabel: string;
+  step: FlowStepKey;
+  stepLabel: string;
   role: Role;
-  userId: string;
+  userIds: string[];
   users: UserOption[];
 }) {
   const [optimisticRole, setOptimisticRole] = useState<Role>(role);
-  const [optimisticUserId, setOptimisticUserId] = useState(userId);
+  const [optimisticUserIds, setOptimisticUserIds] = useState<string[]>(userIds);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  function save(nextRole: Role, nextUserId: string) {
+  function save(nextRole: Role, nextUserIds: string[]) {
     const prevRole = optimisticRole;
-    const prevUserId = optimisticUserId;
+    const prevUserIds = optimisticUserIds;
     setOptimisticRole(nextRole);
-    setOptimisticUserId(nextUserId);
+    setOptimisticUserIds(nextUserIds);
     setError(null);
     startTransition(async () => {
-      const result = await setCourtHolder(court, nextRole, nextUserId);
+      const result = await setStageHolder(step, nextRole, nextUserIds);
       if (result && result.ok === false) {
         setOptimisticRole(prevRole);
-        setOptimisticUserId(prevUserId);
+        setOptimisticUserIds(prevUserIds);
         setError(result.message);
       } else {
-        toast({ kind: "success", message: `${courtLabel} holder updated` });
+        toast({ kind: "success", message: `${stepLabel} holder updated` });
       }
     });
   }
 
+  function togglePerson(id: string) {
+    const next = optimisticUserIds.includes(id)
+      ? optimisticUserIds.filter((u) => u !== id)
+      : [...optimisticUserIds, id];
+    save(optimisticRole, next);
+  }
+
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-      <span className="text-[13.5px] font-medium text-ink">{courtLabel}</span>
-      <div className="flex items-center gap-2">
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[13.5px] font-medium text-ink">{stepLabel}</span>
         <select
           value={optimisticRole}
           disabled={isPending}
-          onChange={(e) => save(e.target.value as Role, optimisticUserId)}
-          aria-label={`${courtLabel} role`}
+          onChange={(e) => save(e.target.value as Role, optimisticUserIds)}
+          aria-label={`${stepLabel} role`}
           className="input-klyne w-auto py-1 text-[13px]"
         >
           {USER_ROLES.map((r) => (
@@ -67,23 +75,33 @@ export function CourtHolderRow({
             </option>
           ))}
         </select>
-        <select
-          value={optimisticUserId}
-          disabled={isPending}
-          onChange={(e) => save(optimisticRole, e.target.value)}
-          aria-label={`${courtLabel} person`}
-          className="input-klyne w-auto py-1 text-[13px]"
-        >
-          <option value="">Anyone in that role</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {users.map((u) => {
+          const picked = optimisticUserIds.includes(u.id);
+          return (
+            <button
+              key={u.id}
+              type="button"
+              disabled={isPending}
+              aria-pressed={picked}
+              onClick={() => togglePerson(u.id)}
+              className={`rounded-lg border px-2.5 py-1 text-[13px] transition-colors disabled:opacity-50 ${
+                picked
+                  ? "border-primary bg-hover text-ink"
+                  : "border-border bg-surface text-gray-dark hover:bg-hover"
+              }`}
+            >
               {u.name}
-            </option>
-          ))}
-        </select>
+            </button>
+          );
+        })}
+        {optimisticUserIds.length === 0 ? (
+          <span className="text-xs text-gray">Anyone in that role</span>
+        ) : null}
       </div>
       {error && (
-        <span role="alert" className="banner-alert w-full px-2.5 py-1.5 text-xs">
+        <span role="alert" className="banner-alert mt-2 block px-2.5 py-1.5 text-xs">
           {error}
         </span>
       )}

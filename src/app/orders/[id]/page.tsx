@@ -17,7 +17,7 @@ import { FlowStepper } from "@/lib/FlowStepper";
 import { BackLink } from "@/lib/BackLink";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
-import { getCourtHolders, withHolder } from "@/lib/courtHolders";
+import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
 import { uploadsConfigured } from "@/lib/storage";
 import { ActionButton, InlineEditField } from "@/lib/ui";
@@ -173,7 +173,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const gate = evaluatePaymentGate(order);
   // One source of truth for "what happens next" - the header stepper, the badge,
   // the primary action and the opening tab all read this (see @/lib/ballInCourt).
-  const ball = withHolder(orderBall(orderBallInput(order)), await getCourtHolders());
+  const ball = withHolder(orderBall(orderBallInput(order)), await getStageHolders());
 
   // Terms are free text (Sep 4 client decision) - the header grid shows the
   // first line, the Invoice tab holds the whole thing.

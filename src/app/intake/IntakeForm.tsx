@@ -684,9 +684,9 @@ export function IntakeForm({
           : !fieldsReady
             ? "Fix the highlighted phone/email fields"
             : !neededByDate.trim()
-              ? "Add a delivery date"
+              ? "Add a delivery due date"
               : goesToPipeline && !quoteDueDate.trim()
-                ? "Add a quote due date"
+                ? "Add a due date"
                 : openSection < 3
                   ? "Work through the steps above"
                   : null;
@@ -772,8 +772,8 @@ export function IntakeForm({
         </FormAlert>
       ) : error === "dates_required" ? (
         <FormAlert>
-          Nothing was saved - a delivery date is required, and a quote due date is required
-          whenever the deal still needs pricing.
+          Nothing was saved - a delivery due date is required, and a due date is required whenever
+          the deal still needs pricing.
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
@@ -1449,7 +1449,7 @@ export function IntakeForm({
         >
           <div className="flex flex-wrap gap-4">
             <label className="block max-w-xs">
-              <span className={labelClass}>When do you need it?</span>
+              <span className={labelClass}>Delivery due date</span>
               <input
                 type="date"
                 name="neededByDate"
@@ -1461,7 +1461,7 @@ export function IntakeForm({
             </label>
             {goesToPipeline ? (
               <label className="block max-w-xs">
-                <span className={labelClass}>When is the quote due?</span>
+                <span className={labelClass}>Due date</span>
                 <input
                   type="date"
                   name="estDueDate"

@@ -3,8 +3,8 @@ import { UserSelect } from "@/lib/UserSelect";
 import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements";
 import { getSettings } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
-import { COURTS, type Court } from "@/lib/ballInCourt";
-import { getCourtHolders } from "@/lib/courtHolders";
+import { FLOW_STEPS } from "@/lib/ballInCourt";
+import { getStageHolders } from "@/lib/courtHolders";
 import { setFieldRequired, setServiceDefaultAssignee } from "./actions";
 import { CourtHolderRow } from "./CourtHolderRow";
 
@@ -21,14 +21,12 @@ const ENTITY_LABELS: Record<string, string> = {
   opportunity: "Deal form",
 };
 
-const COURT_ORDER = Object.keys(COURTS) as Court[];
-
 export default async function AdminSettingsPage() {
-  const [requirements, settings, users, courtHolders] = await Promise.all([
+  const [requirements, settings, users, stageHolders] = await Promise.all([
     getFieldRequirements(),
     getSettings(["service.defaultAssigneeId"]),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    getCourtHolders(),
+    getStageHolders(),
   ]);
   const byEntity = new Map<string, typeof REQUIRABLE_FIELDS[number][]>();
   for (const f of REQUIRABLE_FIELDS) {
@@ -40,19 +38,19 @@ export default async function AdminSettingsPage() {
       <div>
         <h2 className="section-label">Ball in court</h2>
         <p className="page-sub">
-          Who the ball-in-court badge names for each court. Pin a person, or leave it on
-          &ldquo;Anyone in that role&rdquo; to show the role instead.
+          Who the ball-in-court badge names at each stage of the flow. Pin one or more people,
+          or leave a stage with nobody pinned to show the role instead.
         </p>
       </div>
       <div className="card card-flush overflow-hidden">
         <ul className="divide-y divide-border">
-          {COURT_ORDER.map((court) => (
+          {FLOW_STEPS.map((s) => (
             <CourtHolderRow
-              key={court}
-              court={court}
-              courtLabel={COURTS[court]}
-              role={courtHolders[court].role ?? "sales"}
-              userId={courtHolders[court].userId ?? ""}
+              key={s.key}
+              step={s.key}
+              stepLabel={s.label}
+              role={stageHolders[s.key].role ?? "sales"}
+              userIds={stageHolders[s.key].userIds}
               users={users}
             />
           ))}
