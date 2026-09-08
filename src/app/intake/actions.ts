@@ -176,6 +176,7 @@ export async function submitIntake(formData: FormData) {
   const orderType = str(formData, "orderType") === "project" ? "project" : "order";
   const needsPricing = formData.get("needsPricing") === "yes";
   const neededByDate = date(formData, "neededByDate");
+  const estDueDate = date(formData, "estDueDate");
   const items = parseItems(formData);
   const payload = JSON.stringify(formSnapshot(formData));
   // Terms only reach the form when the intake becomes an order straight away.
@@ -189,6 +190,13 @@ export async function submitIntake(formData: FormData) {
   // submit with zero real items and create an empty pipeline record).
   if (items.length === 0) {
     redirect("/intake?error=items_required");
+  }
+
+  // Same reasoning: a delivery date is always required, and a quote-due date
+  // is required whenever the deal still needs pricing (it has nothing to mean
+  // on a re-order that's already priced, so it's not asked for there).
+  if (!neededByDate || (goesToPipeline && !estDueDate)) {
+    redirect("/intake?error=dates_required");
   }
 
   // The salesperson dropdown is gone from the form (feedback: one more thing to fill
@@ -408,6 +416,7 @@ export async function submitIntake(formData: FormData) {
           // for it). Item prices typed here still roll up via the RFQ pricing sync.
           value: null,
           neededByDate,
+          estDueDate,
           locationId,
           deliveryAddress,
           locationName,

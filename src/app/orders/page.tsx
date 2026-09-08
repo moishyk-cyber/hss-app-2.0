@@ -12,7 +12,7 @@ import { Avatar } from "@/lib/Avatar";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
-import { getCourtHolders, withHolder } from "@/lib/courtHolders";
+import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
@@ -151,7 +151,7 @@ export default async function OrdersPage({
     ...(orderBy ? { orderBy } : {}),
   });
 
-  const holders = await getCourtHolders();
+  const holders = await getStageHolders();
 
   // Default view (no explicit sort chosen): soonest needed-by first, orders
   // with no due date last - the client asked to filter by due date instead

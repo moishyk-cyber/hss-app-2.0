@@ -87,6 +87,8 @@ type IntakeDraft = {
     deliveryType: "curbside" | "inside";
     installationNeeded: string;
     needsPricing: string;
+    neededByDate: string;
+    quoteDueDate: string;
     items: ItemRow[];
     fieldValues: Record<string, string>;
   };
@@ -119,6 +121,8 @@ const CONTROLLED_FIELDS = new Set([
   "newContactPhone",
   "newContactCellPhone",
   "newContactEmail",
+  "neededByDate",
+  "quoteDueDate",
 ]);
 
 function readDraft(): IntakeDraft | null {
@@ -395,6 +399,8 @@ export function IntakeForm({
   const [deliveryType, setDeliveryType] = useState<"curbside" | "inside">("curbside");
   const [installationNeeded, setInstallationNeeded] = useState("no");
   const [needsPricing, setNeedsPricing] = useState("yes");
+  const [neededByDate, setNeededByDate] = useState("");
+  const [quoteDueDate, setQuoteDueDate] = useState("");
   const [items, setItems] = useState<ItemRow[]>([
     { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
   ]);
@@ -463,6 +469,8 @@ export function IntakeForm({
         deliveryType,
         installationNeeded,
         needsPricing,
+        neededByDate,
+        quoteDueDate,
         items,
         fieldValues,
       },
@@ -511,6 +519,8 @@ export function IntakeForm({
     deliveryType,
     installationNeeded,
     needsPricing,
+    neededByDate,
+    quoteDueDate,
     items,
     fieldValues,
   ]);
@@ -536,6 +546,9 @@ export function IntakeForm({
     setDeliveryType(ui.deliveryType);
     setInstallationNeeded(ui.installationNeeded);
     setNeedsPricing(ui.needsPricing);
+    // Drafts saved before the required dates existed have neither.
+    setNeededByDate(ui.neededByDate ?? "");
+    setQuoteDueDate(ui.quoteDueDate ?? "");
     if (ui.items.length > 0) {
       // Older drafts have no per-item price field.
       setItems(ui.items.map((r) => ({ ...r, unitPrice: r.unitPrice ?? "" })));
@@ -670,9 +683,13 @@ export function IntakeForm({
           ? "A typed price has to be more than $0"
           : !fieldsReady
             ? "Fix the highlighted phone/email fields"
-            : openSection < 3
-              ? "Work through the steps above"
-              : null;
+            : !neededByDate.trim()
+              ? "Add a delivery due date"
+              : goesToPipeline && !quoteDueDate.trim()
+                ? "Add a due date"
+                : openSection < 3
+                  ? "Work through the steps above"
+                  : null;
 
   const clientLabel =
     clientMode === "new"
@@ -752,6 +769,11 @@ export function IntakeForm({
         <FormAlert>
           Nothing was saved - the request needs at least one item with a name and a quantity of 1
           or more.
+        </FormAlert>
+      ) : error === "dates_required" ? (
+        <FormAlert>
+          Nothing was saved - a delivery due date is required, and a due date is required whenever
+          the deal still needs pricing.
         </FormAlert>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
@@ -1153,14 +1175,14 @@ export function IntakeForm({
                   value="yes"
                   checked={needsPricing === "yes"}
                   onChange={setNeedsPricing}
-                  label="Yes - send to pipeline"
+                  label="Yes"
                 />
                 <InlineRadio
                   name="needsPricing"
                   value="no"
                   checked={needsPricing === "no"}
                   onChange={setNeedsPricing}
-                  label="No - priced already"
+                  label="No"
                 />
               </div>
             </div>
@@ -1425,10 +1447,32 @@ export function IntakeForm({
           locked={openSection < 3}
           lockedHint="Answer step 2 first."
         >
-          <label className="block max-w-xs">
-            <span className={labelClass}>When do you need it?</span>
-            <input type="date" name="neededByDate" className={inputClass} />
-          </label>
+          <div className="flex flex-wrap gap-4">
+            <label className="block max-w-xs">
+              <span className={labelClass}>Delivery due date</span>
+              <input
+                type="date"
+                name="neededByDate"
+                required
+                value={neededByDate}
+                onChange={(e) => setNeededByDate(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            {goesToPipeline ? (
+              <label className="block max-w-xs">
+                <span className={labelClass}>Due date</span>
+                <input
+                  type="date"
+                  name="estDueDate"
+                  required
+                  value={quoteDueDate}
+                  onChange={(e) => setQuoteDueDate(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+            ) : null}
+          </div>
 
           {/* Salesperson is the sidebar identity, not a dropdown to fill in mid-call. */}
           <div className="mt-4">

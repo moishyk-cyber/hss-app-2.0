@@ -10,19 +10,28 @@ export const SETTING_KEYS = [
   // mode: every role can do everything. Open by default (Sep 3: "open it up
   // for everyone until I tell you otherwise").
   "permissions.openMode",
-  // Ball-in-court holders (Sep 4: "set the roles = ball in court"). One role
-  // and one optional specific person per court; read via @/lib/courtHolders,
-  // which fills in shipped defaults when these are unset.
+  // Ball-in-court holders (Sep 4: "set the roles = ball in court"; later split
+  // to one row per pipeline stage with a multi-person pin). One role and a
+  // comma-separated list of optionally-pinned people per stage; read via
+  // @/lib/courtHolders, which fills in shipped defaults when these are unset.
   "court.sales.role",
-  "court.sales.userId",
-  "court.office.role",
-  "court.office.userId",
-  "court.billing.role",
-  "court.billing.userId",
-  "court.purchasing.role",
-  "court.purchasing.userId",
+  "court.sales.userIds",
+  "court.pricing.role",
+  "court.pricing.userIds",
+  "court.close.role",
+  "court.close.userIds",
+  "court.quote.role",
+  "court.quote.userIds",
+  "court.terms.role",
+  "court.terms.userIds",
+  "court.deposit.role",
+  "court.deposit.userIds",
+  "court.pos.role",
+  "court.pos.userIds",
+  "court.delivery.role",
+  "court.delivery.userIds",
   "court.service.role",
-  "court.service.userId",
+  "court.service.userIds",
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
