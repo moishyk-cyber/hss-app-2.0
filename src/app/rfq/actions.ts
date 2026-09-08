@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
-import { isValidValue, RFQ_STATUSES } from "@/lib/constants";
+import { isValidValue, RFQ_STATUSES, STOCK_STATUSES } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
 import { requirePermission } from "@/lib/permissionsServer";
@@ -191,6 +191,64 @@ export async function markLineItemRemoved(lineItemId: string): Promise<ActionRes
     await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not remove the line item. Please try again.");
+}
+
+/**
+ * Stock status set at the pricing stage (before an order exists). Clears the
+ * backorder-expected date when moving back to in_stock, so a stale date can't
+ * linger and reappear if the item is marked backordered again later.
+ */
+export async function setLineItemStockStatus(
+  lineItemId: string,
+  stockStatus: string
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  if (!isValidValue(STOCK_STATUSES, stockStatus)) {
+    return { ok: false, message: "Not a valid stock status." };
+  }
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({
+      where: { id: lineItemId },
+      data: {
+        stockStatus,
+        ...(stockStatus !== "backordered" ? { backorderExpected: null } : {}),
+      },
+    });
+    await log(lineItemId, "stock_status_set", `Stock status set to ${stockStatus} on "${before.name}"`);
+    await revalidateLineItem(lineItemId);
+  }, "Could not update stock status. Please try again.");
+}
+
+/** Expected-available date while an item is backordered at the pricing stage. */
+export async function setLineItemBackorderExpected(
+  lineItemId: string,
+  backorderExpected: string
+): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    await prisma.lineItem.update({
+      where: { id: lineItemId },
+      data: { backorderExpected: backorderExpected ? new Date(backorderExpected) : null },
+    });
+    await log(
+      lineItemId,
+      "backorder_expected_set",
+      `Backorder expected date ${backorderExpected ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
+    );
+    await revalidateLineItem(lineItemId);
+  }, "Could not save the expected date. Please try again.");
 }
 
 /**

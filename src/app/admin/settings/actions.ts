@@ -9,7 +9,7 @@ import { requirePermission } from "@/lib/permissionsServer";
 import { setSetting, type SettingKey } from "@/lib/settings";
 import { isRole } from "@/lib/permissions";
 import { labelFor, USER_ROLES } from "@/lib/constants";
-import { COURTS, type Court } from "@/lib/ballInCourt";
+import { FLOW_STEPS, type FlowStepKey } from "@/lib/ballInCourt";
 
 /** Every place a required-field change could change what a form demands. */
 function revalidateAffectedForms() {
@@ -51,41 +51,55 @@ export async function setFieldRequired(
 // ball-in-court holders. Stored in AppSetting via @/lib/settings.
 // ---------------------------------------------------------------------------
 
-const COURT_SETTING_KEYS: Record<Court, { role: SettingKey; userId: SettingKey }> = {
-  sales: { role: "court.sales.role", userId: "court.sales.userId" },
-  office: { role: "court.office.role", userId: "court.office.userId" },
-  billing: { role: "court.billing.role", userId: "court.billing.userId" },
-  purchasing: { role: "court.purchasing.role", userId: "court.purchasing.userId" },
-  service: { role: "court.service.role", userId: "court.service.userId" },
+const STEP_SETTING_KEYS: Record<FlowStepKey, { role: SettingKey; userIds: SettingKey }> = {
+  sales: { role: "court.sales.role", userIds: "court.sales.userIds" },
+  pricing: { role: "court.pricing.role", userIds: "court.pricing.userIds" },
+  close: { role: "court.close.role", userIds: "court.close.userIds" },
+  quote: { role: "court.quote.role", userIds: "court.quote.userIds" },
+  terms: { role: "court.terms.role", userIds: "court.terms.userIds" },
+  deposit: { role: "court.deposit.role", userIds: "court.deposit.userIds" },
+  pos: { role: "court.pos.role", userIds: "court.pos.userIds" },
+  delivery: { role: "court.delivery.role", userIds: "court.delivery.userIds" },
+  service: { role: "court.service.role", userIds: "court.service.userIds" },
 };
 
-/** "Ball in court" card - one row per court, saved on change. */
-export async function setCourtHolder(court: string, role: string, userId: string): Promise<ActionResult> {
+/** "Ball in court" card - one row per pipeline stage, saved on change. */
+export async function setStageHolder(
+  step: string,
+  role: string,
+  userIds: string[]
+): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
 
-  if (!(court in COURT_SETTING_KEYS)) return { ok: false, message: "Not a recognised court." };
-  const c = court as Court;
+  if (!(step in STEP_SETTING_KEYS)) return { ok: false, message: "Not a recognised stage." };
+  const s = step as FlowStepKey;
   if (!isRole(role)) return { ok: false, message: "Not a valid role." };
-  if (userId) {
-    const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, active: true } });
-    if (!exists || !exists.active) return { ok: false, message: "Pick an active teammate." };
+
+  const ids = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length > 0) {
+    const active = await prisma.user.findMany({
+      where: { id: { in: ids }, active: true },
+      select: { id: true },
+    });
+    if (active.length !== ids.length) return { ok: false, message: "Pick active teammates." };
   }
 
   return safeAction(async () => {
-    const keys = COURT_SETTING_KEYS[c];
-    await Promise.all([setSetting(keys.role, role), setSetting(keys.userId, userId)]);
+    const keys = STEP_SETTING_KEYS[s];
+    await Promise.all([setSetting(keys.role, role), setSetting(keys.userIds, ids.join(","))]);
+    const stepLabel = FLOW_STEPS.find((f) => f.key === s)?.label ?? s;
     await logActivity(
       "setting",
-      court,
+      step,
       "court_holder_changed",
-      `${COURTS[c]} ball-in-court holder set to ${labelFor(USER_ROLES, role)}${
-        userId ? ` (pinned to a person)` : ""
+      `${stepLabel} ball-in-court holder set to ${labelFor(USER_ROLES, role)}${
+        ids.length > 0 ? ` (pinned to ${ids.length} ${ids.length === 1 ? "person" : "people"})` : ""
       }`
     );
     revalidatePath("/admin/settings");
     revalidatePath("/", "layout");
-  }, "Could not save that court holder. Please try again.");
+  }, "Could not save that stage holder. Please try again.");
 }
 
 /** "Customer service default assignee" select - the fallback used by /service intake. */

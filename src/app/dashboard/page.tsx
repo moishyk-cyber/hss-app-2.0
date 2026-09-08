@@ -16,7 +16,7 @@ import {
 import { fmtDateUTC, isPastDay } from "@/lib/dates";
 import { currentUserId } from "@/lib/identityServer";
 import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
-import { getCourtHolders, withHolder } from "@/lib/courtHolders";
+import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
@@ -307,7 +307,7 @@ export default async function DashboardPage({
     }),
   ]);
 
-  const holders = await getCourtHolders();
+  const holders = await getStageHolders();
 
   // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
   const myPricingItems = myPricingItemsRaw.filter((i) => !isDeadDealItem(i));

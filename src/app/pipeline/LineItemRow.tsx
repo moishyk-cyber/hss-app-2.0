@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
-import { fmtDateUTC } from "@/lib/dates";
+import { RFQ_STATUSES, RFQ_STATUS_COLORS, STOCK_STATUSES, labelFor } from "@/lib/constants";
 import { BadgeSelect, Spinner } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
+import { fmtDateUTC } from "@/lib/dates";
 import type { ActionResult } from "@/lib/actionResult";
 import {
   updateLineItemAssignee,
@@ -21,6 +21,8 @@ export type EditableLineItem = {
   unitPrice: number | null;
   leadTimeDate: Date | null;
   rfqStatus: string;
+  stockStatus: string;
+  backorderExpected: Date | null;
   assigneeId: string | null;
 };
 
@@ -139,6 +141,15 @@ export function LineItemRow({
           colorMap={RFQ_STATUS_COLORS}
           action={(next) => updateLineItemRfqStatus(item.id, next)}
         />
+      </td>
+
+      <td className="text-xs text-gray-dark">
+        {labelFor(STOCK_STATUSES, item.stockStatus)}
+        {item.stockStatus === "backordered" && (
+          <div className="text-gray">
+            {item.backorderExpected ? `Expected ${fmtDateUTC(item.backorderExpected)}` : "No date set"}
+          </div>
+        )}
       </td>
     </tr>
   );
