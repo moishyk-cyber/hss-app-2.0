@@ -17,6 +17,9 @@ model User {
   email         String        @unique
   role          String        @default("sales") // admin | sales | purchasing | billing | design | viewer
   active        Boolean       @default(true)
+  // Real login (Sep 17). Null until an admin sets one on Admin > Team - a
+  // user with no password can't log in yet.
+  passwordHash  String?
   opportunities Opportunity[] @relation("Salesperson")
   orders        Order[]       @relation("OrderOwner")
   lineItems     LineItem[]    @relation("ItemAssignee")

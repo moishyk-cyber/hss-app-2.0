@@ -5,7 +5,7 @@ import { USER_ROLES, labelFor } from "@/lib/constants";
 import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
 import type { ActionResult } from "@/lib/actionResult";
-import { updateUserField, setUserActive } from "./actions";
+import { updateUserField, setUserActive, setUserPassword } from "./actions";
 
 /* --- glyphs (copied inline per this round's instructions - not imported
    from phonebook/_ui, which is off-limits this round) -------------------- */
@@ -147,6 +147,73 @@ function EmailCell({ id, initial, name }: { id: string; initial: string; name: s
   );
 }
 
+/** Set/reset the teammate's login password - never shows the current one back (there isn't one to show). */
+function PasswordCell({ id, name }: { id: string; name: string }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [justSet, setJustSet] = useState(false);
+
+  if (!editing) {
+    return (
+      <button type="button" className="text-xs text-primary transition-colors hover:underline" onClick={() => setEditing(true)}>
+        {justSet ? "Password set - change again" : "Set password…"}
+      </button>
+    );
+  }
+
+  function save() {
+    if (value.length < 8) {
+      setError("At least 8 characters.");
+      return;
+    }
+    startTransition(async () => {
+      setError(null);
+      const result: ActionResult = await setUserPassword(id, value);
+      if (result.ok) {
+        setEditing(false);
+        setValue("");
+        setJustSet(true);
+      } else {
+        setError(result.message);
+      }
+    });
+  }
+
+  return (
+    <span className="relative inline-flex min-w-0 items-center gap-1.5">
+      <input
+        type="password"
+        className="input-klyne w-36"
+        placeholder="New password"
+        aria-label={`New password for ${name}`}
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+          if (e.key === "Escape") setEditing(false);
+        }}
+      />
+      <button type="button" onClick={save} disabled={pending} className="btn shrink-0 !px-2 !py-1 text-xs">
+        {pending ? <Spinner /> : "Save"}
+      </button>
+      <button type="button" onClick={() => setEditing(false)} className="shrink-0 text-xs text-gray hover:text-ink">
+        Cancel
+      </button>
+      {error && (
+        <span role="alert" className="banner-warn absolute left-0 top-full z-10 mt-1 w-max max-w-64 px-2.5 py-1.5 text-xs">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function UserRow({
   user,
 }: {
@@ -210,6 +277,9 @@ export function UserRow({
                 }
           }
         />
+      </td>
+      <td className="min-w-[160px]">
+        <PasswordCell id={user.id} name={user.name} />
       </td>
     </tr>
   );
