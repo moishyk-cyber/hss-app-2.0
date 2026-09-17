@@ -1,15 +1,15 @@
-// Server-side half of the pre-auth identity: reads the cookie mirrored by
-// identityClient.ts. Both halves must agree on IDENTITY_COOKIE.
+// Server-side identity. Backed by the signed login session (src/lib/session.ts)
+// set at /login - not the old plain "hss_user_id" cookie, which was only ever
+// a display-only mirror anyone could edit in devtools.
 
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-
-const IDENTITY_COOKIE = "hss_user_id";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
 export async function currentUserId(): Promise<string | null> {
   try {
     const store = await cookies();
-    return store.get(IDENTITY_COOKIE)?.value || null;
+    return await verifySessionToken(store.get(SESSION_COOKIE_NAME)?.value);
   } catch {
     return null;
   }
