@@ -523,6 +523,10 @@ export async function markOpportunityWon(formData: FormData) {
   // deposit rule exactly as it did before terms existed.
   const termsNotes = str(formData, "termsNotes");
 
+  // Customer PO # as read off AutoQuotes - typed once here so the order never
+  // has to wait on someone adding it by hand afterward.
+  const poNumber = str(formData, "poNumber");
+
   let order;
   try {
     order = await prisma.$transaction(async (tx) => {
@@ -545,6 +549,7 @@ export async function markOpportunityWon(formData: FormData) {
           termsNotes,
           paymentTerms: null,
           depositRequired: null,
+          clientPoNumber: poNumber,
         },
       });
 
@@ -592,7 +597,7 @@ export async function markOpportunityWon(formData: FormData) {
     "order_created",
     `Order created from opportunity "${opportunity.title}"${
       termsNotes ? ` - terms: ${termsNotes}` : " - no terms written yet"
-    }`
+    }${poNumber ? ` - PO #${poNumber}` : ""}`
   );
 
   // The order was created as "new"; re-derive it so it reads awaiting_payment (or
