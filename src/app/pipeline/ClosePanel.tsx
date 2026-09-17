@@ -31,6 +31,7 @@ type WonSummary = {
   locationName: string;
   address: string;
   neededBy: string;
+  poNumber: string;
 };
 
 /** A prefilled answer: shown as a line of text until "change" reveals the input. */
@@ -104,6 +105,7 @@ export function ClosePanel({
   const [address, setAddress] = useState(defaultDeliveryAddress ?? "");
   const [neededBy, setNeededBy] = useState(defaultNeededBy);
   const [terms, setTerms] = useState("");
+  const [poNumber, setPoNumber] = useState("");
 
   // An answer that is already on the deal opens closed; a missing one opens as
   // an input, because that is the only thing the close is actually waiting for.
@@ -154,6 +156,7 @@ export function ClosePanel({
       locationName: locationName.trim(),
       address: address.trim(),
       neededBy,
+      poNumber: poNumber.trim(),
     });
   }
 
@@ -322,6 +325,18 @@ export function ClosePanel({
           />
         </label>
 
+        <label className="block">
+          <span className="field-label">PO number (from AutoQuotes)</span>
+          <input
+            type="text"
+            name="poNumber"
+            value={poNumber}
+            onChange={(e) => setPoNumber(e.target.value)}
+            placeholder="Customer PO # as typed into AutoQuotes"
+            className="input-klyne w-full"
+          />
+        </label>
+
         {isProject ? null : (
           <p className="text-[13px] text-gray-dark">
             A straight order needs no customer quote - it goes to fulfillment as soon as the terms
@@ -379,6 +394,12 @@ export function ClosePanel({
               <div className="flex justify-between gap-3">
                 <dt className="text-gray-dark">Needed by</dt>
                 <dd className="text-ink">{wonSummary.neededBy}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-gray-dark">PO number</dt>
+                <dd className="text-ink">
+                  {wonSummary.poNumber || <span className="empty-value">not provided</span>}
+                </dd>
               </div>
               <p className="pt-2 text-xs text-gray">
                 This moves the deal to Won and creates a live order in fulfillment with its line

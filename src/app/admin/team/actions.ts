@@ -6,6 +6,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, USER_ROLES } from "@/lib/constants";
 import { requirePermission } from "@/lib/permissionsServer";
+import { hashPassword } from "@/lib/password";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("user", linkedId, action, detail);
@@ -69,4 +70,19 @@ export async function setUserActive(id: string, active: string): Promise<ActionR
     await log(id, "user_status_changed", isActive ? "Reactivated" : "Deactivated");
     refresh();
   }, "Could not update the teammate's status. Please try again.");
+}
+
+/** Sets or resets a teammate's login password. They use it at /login going forward. */
+export async function setUserPassword(id: string, newPassword: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
+  if (newPassword.length < 8) {
+    return { ok: false, message: "Password must be at least 8 characters." };
+  }
+  return safeAction(async () => {
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.user.update({ where: { id }, data: { passwordHash } });
+    await log(id, "user_password_set", "Password set");
+    refresh();
+  }, "Could not set the password. Please try again.");
 }

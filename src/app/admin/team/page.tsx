@@ -27,13 +27,14 @@ export default async function TeamPage() {
         <div className="empty-state">No teammates yet - add the first one above.</div>
       ) : (
         <div className="card card-flush overflow-hidden overflow-x-auto">
-          <table className="table-klyne min-w-[680px]">
+          <table className="table-klyne min-w-[840px]">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
                 <th>Status</th>
+                <th>Login</th>
               </tr>
             </thead>
             <tbody>

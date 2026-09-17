@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Archivo, Inter } from "next/font/google";
 import Link from "next/link";
 import Nav from "./nav";
 import WhoAmI from "./who-am-i";
-import { prisma } from "@/lib/prisma";
-import { currentUserId } from "@/lib/identityServer";
+import { currentUserName } from "@/lib/identityServer";
 import { can } from "@/lib/permissionsServer";
 import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
@@ -29,15 +29,20 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const [users, initialUserId, showAdmin] = await Promise.all([
-    prisma.user.findMany({
-      where: { active: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    currentUserId(),
-    can("admin.manage"),
-  ]);
+  // Set by proxy.ts on every request; the /login route renders without
+  // the signed-in sidebar chrome (there's no identity yet to show there).
+  const pathname = (await headers()).get("x-pathname");
+  const isLoginRoute = pathname === "/login";
+
+  if (isLoginRoute) {
+    return (
+      <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
+        <body className="min-h-full bg-bg text-ink">{children}</body>
+      </html>
+    );
+  }
+
+  const [userName, showAdmin] = await Promise.all([currentUserName(), can("admin.manage")]);
   return (
     <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">
@@ -62,7 +67,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               </Link>
             </div>
             <Nav showAdmin={showAdmin} />
-            <WhoAmI users={users} initialUserId={initialUserId} />
+            <WhoAmI name={userName} />
             <div className="px-6 py-5 text-[11px] text-gray">
               Built by Klyne &amp; Co.
             </div>
