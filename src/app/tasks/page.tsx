@@ -15,6 +15,11 @@ export const dynamic = "force-dynamic";
 
 const TASK_TYPE_OPTIONS = Object.entries(TASK_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
+// Reliability spec: "An unassigned task appears in the Admin-visible
+// Unassigned queue." A magic filter value keeps this on the same Sort by /
+// Filter by control every other list already uses, instead of a one-off UI.
+const UNASSIGNED_FILTER_VALUE = "__unassigned__";
+
 type TasksSearchParams = { status?: string } & Record<string, string | string[] | undefined>;
 
 async function resolveLinkedLabels(pairs: { type: string; id: string }[]): Promise<Map<string, string>> {
@@ -85,7 +90,12 @@ export default async function TasksPage({
   // this field set.
   const FIELDS: ListField[] = [
     { key: "title", label: "Title", type: "text" },
-    { key: "assignee", label: "Assignee", type: "enum", options: users.map((u) => ({ value: u.id, label: u.name })) },
+    {
+      key: "assignee",
+      label: "Assignee",
+      type: "enum",
+      options: [{ value: UNASSIGNED_FILTER_VALUE, label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))],
+    },
     { key: "priority", label: "Priority", type: "enum", options: TASK_PRIORITIES },
     { key: "type", label: "Type", type: "enum", options: TASK_TYPE_OPTIONS },
     { key: "dueDate", label: "Due Date", type: "date" },
@@ -94,7 +104,7 @@ export default async function TasksPage({
 
   const where: Prisma.TaskWhereInput = { parentTaskId: null };
   if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
-  if (filters.assignee) where.assigneeId = filters.assignee;
+  if (filters.assignee) where.assigneeId = filters.assignee === UNASSIGNED_FILTER_VALUE ? null : filters.assignee;
   if (filters.priority) where.priority = filters.priority;
   if (filters.type) where.type = filters.type;
   if (filters.dueDate) {
@@ -163,6 +173,7 @@ export default async function TasksPage({
   for (const t of allTasksFlat) counts[t.status] = (counts[t.status] ?? 0) + 1;
 
   const validStatus = status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
+  const unassignedOpenCount = allTasksFlat.filter((t) => !t.assigneeId && t.status !== "done").length;
 
   return (
     <div className="space-y-8 pb-24">
@@ -187,6 +198,13 @@ export default async function TasksPage({
           );
         })}
       </div>
+
+      {unassignedOpenCount > 0 ? (
+        <Link href={`/tasks?f_assignee=${UNASSIGNED_FILTER_VALUE}`} className="empty-state block transition-colors hover:bg-hover">
+          {unassignedOpenCount} open task{unassignedOpenCount === 1 ? "" : "s"} with no owner. Assign one or they stay
+          invisible to everyone&rsquo;s My Items.
+        </Link>
+      ) : null}
 
       <QuickAddTask />
 

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { USER_ROLES, labelFor } from "@/lib/constants";
 import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
+import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import type { ActionResult } from "@/lib/actionResult";
-import { updateUserField, setUserActive, setUserPassword } from "./actions";
+import { updateUserField, setUserActive, deactivateAndReassign, setUserPassword } from "./actions";
 
 /* --- glyphs (copied inline per this round's instructions - not imported
    from phonebook/_ui, which is off-limits this round) -------------------- */
@@ -147,6 +149,94 @@ function EmailCell({ id, initial, name }: { id: string; initial: string; name: s
   );
 }
 
+/**
+ * Reliability spec P0-4: the atomic path for deactivating someone who still
+ * owns open work. setUserActive on its own now refuses that (see admin/team/
+ * actions.ts), so this is the only way to get from "N open items" to
+ * inactive - pick a named active successor, everything moves to them, then
+ * the teammate goes inactive, all in one transaction.
+ */
+function ReassignAndDeactivate({
+  user,
+  openWorkCount,
+  otherActiveUsers,
+}: {
+  user: { id: string; name: string };
+  openWorkCount: number;
+  otherActiveUsers: { id: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [successorId, setSuccessorId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleConfirm() {
+    if (!successorId) {
+      setError("Pick who takes over their open work.");
+      return;
+    }
+    startTransition(async () => {
+      const result: ActionResult = await deactivateAndReassign(user.id, successorId);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      setOpen(false);
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[11px] text-orange underline decoration-dotted underline-offset-2 transition-colors hover:text-ink"
+      >
+        {openWorkCount} open item{openWorkCount === 1 ? "" : "s"} - reassign &amp; deactivate
+      </button>
+      <ConfirmDialog
+        open={open}
+        title={`Deactivate ${user.name}?`}
+        confirmLabel="Reassign and deactivate"
+        danger
+        pending={pending}
+        onConfirm={handleConfirm}
+        onClose={() => setOpen(false)}
+      >
+        <div className="space-y-3">
+          <p>
+            {user.name} owns {openWorkCount} open item{openWorkCount === 1 ? "" : "s"}. Pick who takes it all over -
+            everything moves to them and {user.name} goes inactive in one step.
+          </p>
+          <label className="block space-y-1">
+            <span className="text-xs font-medium text-gray-dark">Reassign open work to</span>
+            <select
+              className="input-klyne w-full"
+              value={successorId}
+              onChange={(e) => {
+                setSuccessorId(e.target.value);
+                setError(null);
+              }}
+            >
+              <option value="">Pick a teammate…</option>
+              {otherActiveUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {error ? (
+            <p role="alert" className="text-xs text-red">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      </ConfirmDialog>
+    </>
+  );
+}
+
 /** Set/reset the teammate's login password - never shows the current one back (there isn't one to show). */
 function PasswordCell({ id, name }: { id: string; name: string }) {
   const [editing, setEditing] = useState(false);
@@ -216,8 +306,12 @@ function PasswordCell({ id, name }: { id: string; name: string }) {
 
 export function UserRow({
   user,
+  openWorkCount = 0,
+  otherActiveUsers = [],
 }: {
   user: { id: string; name: string; email: string; role: string; active: boolean };
+  openWorkCount?: number;
+  otherActiveUsers?: { id: string; name: string }[];
 }) {
   return (
     <tr>
@@ -232,6 +326,13 @@ export function UserRow({
             ariaLabel={`Full name for ${user.email}`}
             inputClassName="font-semibold text-ink"
           />
+          <Link
+            href={`/admin/audit?f_recordType=user&f_recordId=${user.id}`}
+            className="shrink-0 text-[11px] text-gray transition-colors hover:text-ink"
+            title={`Activity history for ${user.name}`}
+          >
+            History
+          </Link>
         </span>
       </td>
       <td className="min-w-[200px]">
@@ -256,27 +357,37 @@ export function UserRow({
         />
       </td>
       <td>
-        <BadgeSelect
-          value={user.active ? "active" : "inactive"}
-          options={ACTIVE_STATES}
-          colorMap={ACTIVE_COLORS}
-          action={(next) => setUserActive(user.id, next)}
-          ariaLabel={`Status for ${user.name}: ${user.active ? "Active" : "Inactive"}`}
-          confirm={(next) =>
-            next === "inactive"
-              ? {
-                  title: `Deactivate ${user.name}?`,
-                  body: `${user.name} disappears from every assignee and owner picker. Nothing they currently own is reassigned, and they can be reactivated here any time.`,
-                  confirmLabel: "Deactivate",
-                  danger: true,
-                }
-              : {
-                  title: `Reactivate ${user.name}?`,
-                  body: `${user.name} shows up again in every assignee and owner picker.`,
-                  confirmLabel: "Reactivate",
-                }
-          }
-        />
+        <div className="flex flex-col items-start gap-1">
+          <BadgeSelect
+            value={user.active ? "active" : "inactive"}
+            options={ACTIVE_STATES}
+            colorMap={ACTIVE_COLORS}
+            action={(next) => setUserActive(user.id, next)}
+            ariaLabel={`Status for ${user.name}: ${user.active ? "Active" : "Inactive"}`}
+            confirm={(next) =>
+              next === "inactive"
+                ? {
+                    title: `Deactivate ${user.name}?`,
+                    body:
+                      openWorkCount > 0
+                        ? `${user.name} still owns ${openWorkCount} open item${
+                            openWorkCount === 1 ? "" : "s"
+                          } - this will be rejected. Use "reassign & deactivate" below instead.`
+                        : `${user.name} disappears from every assignee and owner picker and can be reactivated here any time.`,
+                    confirmLabel: "Deactivate",
+                    danger: true,
+                  }
+                : {
+                    title: `Reactivate ${user.name}?`,
+                    body: `${user.name} shows up again in every assignee and owner picker.`,
+                    confirmLabel: "Reactivate",
+                  }
+            }
+          />
+          {user.active && openWorkCount > 0 ? (
+            <ReassignAndDeactivate user={user} openWorkCount={openWorkCount} otherActiveUsers={otherActiveUsers} />
+          ) : null}
+        </div>
       </td>
       <td className="min-w-[160px]">
         <PasswordCell id={user.id} name={user.name} />

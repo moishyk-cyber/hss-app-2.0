@@ -31,6 +31,7 @@ export async function setFieldRequired(
   if (!known) return { ok: false, message: "Not a recognised field." };
 
   return safeAction(async () => {
+    const before = await prisma.fieldRequirement.findUnique({ where: { entity_field: { entity, field } } });
     await prisma.fieldRequirement.upsert({
       where: { entity_field: { entity, field } },
       create: { entity, field, required },
@@ -40,7 +41,11 @@ export async function setFieldRequired(
       "field_requirement",
       `${entity}.${field}`,
       "field_requirement_changed",
-      `${entity}.${field} set to ${required ? "required" : "optional"}`
+      `${entity}.${field} set to ${required ? "required" : "optional"}`,
+      {
+        previousValue: before ? (before.required ? "required" : "optional") : "optional (default)",
+        newValue: required ? "required" : "optional",
+      }
     );
     revalidateAffectedForms();
   }, "Could not update that setting. Please try again.");

@@ -415,15 +415,24 @@ model Document {
 }
 
 model ActivityLog {
-  id         String   @id @default(cuid())
-  userName   String?
-  linkedType String
-  linkedId   String
-  action     String
-  detail     String?
-  at         DateTime @default(now())
+  id            String   @id @default(cuid())
+  userName      String?
+  linkedType    String
+  linkedId      String
+  action        String
+  detail        String?
+  // Structured before/after for the mutation classes the reliability spec
+  // singles out (paid/unpaid, PO/delivery status, team role/active, admin
+  // settings, RFQ price). Every other call site leaves these null and stays
+  // readable through `detail` alone - both render fine in the audit view.
+  previousValue String?
+  newValue      String?
+  sourceScreen  String?
+  at            DateTime @default(now())
 
   @@index([linkedType, linkedId])
+  @@index([userName])
+  @@index([action])
   @@index([at])
 }
 

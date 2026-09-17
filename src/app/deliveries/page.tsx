@@ -112,101 +112,125 @@ function isOverdueLeg(leg: DeliveryLeg): boolean {
   return isPastDay(leg.order.neededByDate) && !DELIVERED.includes(leg.status);
 }
 
+/**
+ * Reliability spec P0-3: the old version was a flex row with several columns
+ * (mode, trucker, dates) simply `hidden` below a breakpoint - at a 1280px
+ * desktop viewport with real 20-leg data it collapsed into a near-unreadable
+ * strip. This is a real table instead: every column stays visible at every
+ * desktop width, min-widths keep labels from wrapping character-by-character,
+ * and the identifier column is sticky so a row's identity survives horizontal
+ * scroll on narrower screens rather than columns disappearing.
+ */
 function LegTable({ legs, truckers }: { legs: DeliveryLeg[]; truckers: string[] }) {
   return (
-    <div className="card card-flush overflow-hidden">
-      <ul className="divide-y divide-border">
-        {legs.map((leg) => {
-          const vendor = supplierName(leg);
-          const itemCount = leg._count.lineItems;
-          return (
-            <li
-              key={leg.id}
-              className={`relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-hover ${
-                isOverdueLeg(leg) ? "border-l-4 border-red" : ""
-              }`}
-            >
-              <span className="flex w-40 shrink-0 items-center gap-2 xl:w-56">
-                <Avatar name={vendor ?? "HSS"} kind="business" size="sm" />
-                <span className="hidden min-w-0 truncate text-[12px] text-gray-dark md:block" title={vendor ?? undefined}>
-                  {vendor ?? <span className="empty-value">HSS stock</span>}
-                </span>
-              </span>
+    <div className="card card-flush overflow-x-auto">
+      <table className="table-klyne min-w-[1180px]">
+        <thead>
+          <tr>
+            <th className="sticky left-0 z-20 bg-surface">Order / PO</th>
+            <th>Vendor</th>
+            <th>Mode</th>
+            <th>Trucker</th>
+            <th>Scheduled</th>
+            <th>Expected</th>
+            <th>Status</th>
+            <th>Tracking</th>
+          </tr>
+        </thead>
+        <tbody>
+          {legs.map((leg) => {
+            const vendor = supplierName(leg);
+            const itemCount = leg._count.lineItems;
+            const overdue = isOverdueLeg(leg);
+            const identifier = `${leg.purchaseOrder?.poNumber ?? "HSS stock"} - ${leg.order.title}`;
+            return (
+              <tr key={leg.id} className={`group align-top transition-colors hover:bg-hover ${overdue ? "border-l-4 border-red" : ""}`}>
+                <td className="sticky left-0 z-10 min-w-[260px] max-w-[320px] bg-surface align-top group-hover:bg-hover">
+                  <Link href={`/orders/${leg.orderId}#delivery`} className="block min-w-0">
+                    <div className="truncate text-[13.5px] font-semibold text-ink" title={identifier}>
+                      {identifier}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
+                      {overdue ? (
+                        <span className="badge badge-red">overdue</span>
+                      ) : leg.order.neededByDate ? (
+                        <span>due {fmtDate(leg.order.neededByDate)}</span>
+                      ) : (
+                        <span className="empty-value">no due date</span>
+                      )}
+                      <span>
+                        {itemCount} item{itemCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  </Link>
+                </td>
 
-              <Link
-                href={`/orders/${leg.orderId}#delivery`}
-                className="min-w-0 flex-[3] after:absolute after:inset-0 after:content-['']"
-              >
-                <div
-                  className="truncate text-[13.5px] font-semibold text-ink xl:whitespace-normal"
-                  title={`${leg.purchaseOrder?.poNumber ?? "HSS stock"} - ${leg.order.title}`}
-                >
-                  {leg.purchaseOrder?.poNumber ?? "HSS stock"} - {leg.order.title}
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
-                  {isOverdueLeg(leg) ? (
-                    <span className="badge badge-red">overdue</span>
-                  ) : leg.order.neededByDate ? (
-                    <span>due {fmtDate(leg.order.neededByDate)}</span>
-                  ) : null}
-                  <span>
-                    {itemCount} item{itemCount === 1 ? "" : "s"}
+                <td className="min-w-[160px] align-top">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Avatar name={vendor ?? "HSS"} kind="business" size="sm" />
+                    <span className="min-w-0 truncate text-[12px] text-gray-dark" title={vendor ?? undefined}>
+                      {vendor ?? <span className="empty-value">HSS stock</span>}
+                    </span>
                   </span>
-                </div>
-              </Link>
+                </td>
 
-              <span className="hidden w-52 shrink-0 lg:block">
-                <span className={`badge ${DELIVERY_MODE_COLORS[leg.mode] ?? "badge-gray"}`}>
-                  {labelFor(DELIVERY_MODES, leg.mode)}
-                </span>
-              </span>
-
-              <span className="relative z-10 hidden w-44 shrink-0 lg:block">
-                {hasTruckerLeg(leg.mode) ? (
-                  <TruckerSelect deliveryId={leg.id} value={leg.trucker} truckers={truckers} />
-                ) : (
-                  <span className="empty-value text-[12px]">carrier delivery</span>
-                )}
-              </span>
-
-              <span className="hidden w-28 shrink-0 whitespace-nowrap text-[12px] text-gray-dark sm:block">
-                {leg.scheduledDeliveryDate ? (
-                  fmtDate(leg.scheduledDeliveryDate)
-                ) : (
-                  <span className="empty-value">not scheduled</span>
-                )}
-              </span>
-
-              <span className="hidden w-20 shrink-0 whitespace-nowrap text-[12px] text-gray-dark md:block">
-                {fmtDate(leg.expectedDelivery)}
-              </span>
-
-              <span className="relative z-10 w-40 shrink-0">
-                <DeliveryStatusPill deliveryId={leg.id} value={leg.status} />
-              </span>
-
-              <span className="relative z-10 block w-20 shrink-0 truncate text-[12px]">
-                {leg.trackingUrl && isLikelyTrackingUrl(leg.trackingUrl) ? (
-                  <a
-                    href={leg.trackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue transition-colors hover:underline"
-                    title={leg.trackingCarrier ?? undefined}
-                  >
-                    Track
-                  </a>
-                ) : (
-                  // Junk on file (not a carrier link) reads as missing, per Sep 2 QA.
-                  <span className="empty-value" title={leg.trackingUrl ?? undefined}>
-                    no link
+                <td className="min-w-[150px] align-top">
+                  <span className={`badge ${DELIVERY_MODE_COLORS[leg.mode] ?? "badge-gray"}`}>
+                    {labelFor(DELIVERY_MODES, leg.mode)}
                   </span>
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+                </td>
+
+                <td className="min-w-[170px] align-top">
+                  {hasTruckerLeg(leg.mode) ? (
+                    <TruckerSelect deliveryId={leg.id} value={leg.trucker} truckers={truckers} />
+                  ) : (
+                    <span className="empty-value text-[12px]">carrier delivery</span>
+                  )}
+                </td>
+
+                <td className="min-w-[120px] whitespace-nowrap align-top text-[12px] text-gray-dark">
+                  {leg.scheduledDeliveryDate ? (
+                    fmtDate(leg.scheduledDeliveryDate)
+                  ) : (
+                    <span className="empty-value">not scheduled</span>
+                  )}
+                </td>
+
+                <td className="min-w-[110px] whitespace-nowrap align-top text-[12px] text-gray-dark">
+                  {leg.expectedDelivery ? (
+                    fmtDate(leg.expectedDelivery)
+                  ) : (
+                    <span className="empty-value">not set</span>
+                  )}
+                </td>
+
+                <td className="min-w-[150px] align-top">
+                  <DeliveryStatusPill deliveryId={leg.id} value={leg.status} />
+                </td>
+
+                <td className="min-w-[90px] max-w-[140px] truncate align-top text-[12px]">
+                  {leg.trackingUrl && isLikelyTrackingUrl(leg.trackingUrl) ? (
+                    <a
+                      href={leg.trackingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue transition-colors hover:underline"
+                      title={leg.trackingCarrier ?? undefined}
+                    >
+                      Track
+                    </a>
+                  ) : (
+                    // Junk on file (not a carrier link) reads as missing, per Sep 2 QA.
+                    <span className="empty-value" title={leg.trackingUrl ?? undefined}>
+                      no link
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

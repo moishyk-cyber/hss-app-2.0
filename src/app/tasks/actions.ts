@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, TASK_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
+import { requireActiveAssignee } from "@/lib/ownership";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("task", linkedId, action, detail);
@@ -20,6 +21,8 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
   const linkedType = String(formData.get("linkedType") ?? "") || null;
   const linkedId = String(formData.get("linkedId") ?? "") || null;
   if (!isValidValue(TASK_PRIORITIES, priority)) return { ok: false, message: "Not a valid priority." };
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
 
   return safeAction(async () => {
     const task = await prisma.task.create({
@@ -51,6 +54,8 @@ export async function quickAddTask(
 ): Promise<{ ok: true; id: string; assigneeName: string | null } | { ok: false; message: string }> {
   const trimmed = title.trim();
   if (!trimmed) return { ok: false, message: "Enter a title for the task." };
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
   try {
     const task = await prisma.task.create({
       data: { title: trimmed, assigneeId: assigneeId || null },
@@ -92,6 +97,8 @@ export async function setTaskStatus(taskId: string, status: string): Promise<Act
 }
 
 export async function setTaskAssignee(taskId: string, assigneeId: string): Promise<ActionResult> {
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
   return safeAction(async () => {
     await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeId || null } });
     await log(taskId, "task_assignee_set", `Assignee set to ${assigneeId || "unassigned"}`);
