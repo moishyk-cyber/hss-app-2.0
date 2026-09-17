@@ -16,6 +16,7 @@ import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
+import { requireActiveAssignee } from "@/lib/ownership";
 import {
   CLOSED_STAGES,
   DELIVERY_TYPES,
@@ -95,6 +96,8 @@ export async function updateLineItemAssignee(
 ): Promise<ActionResult> {
   const denied = await requirePermission("deals.edit");
   if (denied) return denied;
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
   return safeAction(async () => {
     const nextId = assigneeId || null;
     const assignee = nextId

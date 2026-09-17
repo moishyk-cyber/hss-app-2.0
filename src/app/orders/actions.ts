@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
-import { logActivity } from "@/lib/log";
+import { logActivity, type ActivityLogMeta } from "@/lib/log";
 import {
   evaluatePaymentGate,
   recomputeOrderStatus,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
+import { requireActiveAssignee } from "@/lib/ownership";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import {
@@ -31,8 +32,8 @@ import {
   modeForShipTo,
 } from "../deliveries/_ui";
 
-async function log(linkedId: string, action: string, detail: string) {
-  await logActivity("order", linkedId, action, detail);
+async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
+  await logActivity("order", linkedId, action, detail, meta);
 }
 
 function revalidateOrder(orderId: string) {
@@ -72,6 +73,8 @@ export async function addOrderLineItem(
 }
 
 export async function setOrderOwner(orderId: string, ownerId: string): Promise<ActionResult> {
+  const inactive = await requireActiveAssignee(ownerId);
+  if (inactive) return inactive;
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { ownerId: ownerId || null } });
     await log(orderId, "order_owner_set", `Owner set to ${ownerId || "unassigned"}`);
@@ -80,6 +83,8 @@ export async function setOrderOwner(orderId: string, ownerId: string): Promise<A
 }
 
 export async function setLineItemAssignee(lineItemId: string, assigneeId: string): Promise<ActionResult> {
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
   return safeAction(async () => {
     const item = await prisma.lineItem.update({
       where: { id: lineItemId },
@@ -262,7 +267,8 @@ export async function markPaymentPaid(
       "payment_paid",
       `Payment (${payment.type}) of $${payment.amount} marked paid${
         methodLabel ? ` via ${methodLabel}` : ""
-      }`
+      }`,
+      { previousValue: "invoiced", newValue: "paid" }
     );
     await recomputeOrderStatus(payment.orderId);
     revalidateOrder(payment.orderId);
@@ -284,7 +290,8 @@ export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResu
     await log(
       payment.orderId,
       "payment_unpaid",
-      `Payment (${payment.type}) of $${payment.amount} reverted to invoiced (paid was undone)`
+      `Payment (${payment.type}) of $${payment.amount} reverted to invoiced (paid was undone)`,
+      { previousValue: "paid", newValue: "invoiced" }
     );
     await recomputeOrderStatus(payment.orderId);
     revalidateOrder(payment.orderId);
@@ -523,7 +530,10 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
     }
 
     await prisma.purchaseOrder.update({ where: { id: poId }, data });
-    await log(po.orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to ${next}`);
+    await log(po.orderId, "po_status_advanced", `PO ${po.poNumber ?? po.id} advanced to ${next}`, {
+      previousValue: po.status,
+      newValue: next,
+    });
     await recomputeOrderStatus(po.orderId);
     revalidateOrder(po.orderId);
     return { ok: true };
@@ -839,7 +849,7 @@ export async function setDeliveryStatus(deliveryId: string, status: string): Pro
   return safeAction(async () => {
     const existing = await prisma.delivery.findUnique({
       where: { id: deliveryId },
-      select: { orderId: true, deliveredAt: true, purchaseOrder: { select: { poNumber: true } } },
+      select: { orderId: true, status: true, deliveredAt: true, purchaseOrder: { select: { poNumber: true } } },
     });
     if (!existing) throw new Error("Delivery not found");
 
@@ -864,7 +874,8 @@ export async function setDeliveryStatus(deliveryId: string, status: string): Pro
     await log(
       existing.orderId,
       "delivery_status_set",
-      `Delivery ${deliveryLabel(existing)} set to ${labelFor(DELIVERY_LEG_STATUSES, status)}`
+      `Delivery ${deliveryLabel(existing)} set to ${labelFor(DELIVERY_LEG_STATUSES, status)}`,
+      { previousValue: existing.status, newValue: status }
     );
     await recomputeOrderStatus(existing.orderId);
     revalidateOrder(existing.orderId);

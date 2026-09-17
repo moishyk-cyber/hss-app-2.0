@@ -3,16 +3,28 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
-import { logActivity } from "@/lib/log";
+import { logActivity, type ActivityLogMeta } from "@/lib/log";
 import { isValidValue, USER_ROLES } from "@/lib/constants";
 import { requirePermission } from "@/lib/permissionsServer";
+import { openWorkForUser, reassignAllOpenWork } from "@/lib/ownership";
 
-async function log(linkedId: string, action: string, detail: string) {
-  await logActivity("user", linkedId, action, detail);
+async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
+  await logActivity("user", linkedId, action, detail, meta);
 }
 
 function refresh() {
   revalidatePath("/admin/team");
+}
+
+/** Reassignment moves records that show up on every one of these lists/queues. */
+function revalidateReassignedSurfaces() {
+  revalidatePath("/admin/team");
+  revalidatePath("/dashboard");
+  revalidatePath("/pipeline");
+  revalidatePath("/orders");
+  revalidatePath("/rfq");
+  revalidatePath("/tasks");
+  revalidatePath("/service");
 }
 
 export async function createUser(formData: FormData): Promise<ActionResult> {
@@ -54,19 +66,76 @@ export async function updateUserField(
   }
 
   return safeAction(async () => {
+    const before = await prisma.user.findUnique({ where: { id }, select: { name: true, email: true, role: true } });
     await prisma.user.update({ where: { id }, data: { [field]: trimmed || "sales" } });
-    await log(id, "user_updated", `Updated ${field}`);
+    await log(id, "user_updated", `Updated ${field}`, {
+      previousValue: before ? before[field] : null,
+      newValue: trimmed,
+    });
     refresh();
   }, "Could not update the teammate. Please try again.");
 }
 
+/**
+ * Reliability spec P0-4: deactivation can no longer silently strand open work
+ * on someone nobody can see anymore. Going inactive with open work attached is
+ * rejected outright - the caller has to go through deactivateAndReassign
+ * instead, which moves the work and flips the flag in one transaction.
+ */
 export async function setUserActive(id: string, active: string): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
   const isActive = active === "active";
+  if (!isActive) {
+    const user = await prisma.user.findUnique({ where: { id }, select: { name: true } });
+    if (!user) return { ok: false, message: "Teammate not found." };
+    const openWork = await openWorkForUser(id);
+    if (openWork.total > 0) {
+      return {
+        ok: false,
+        message: `${user.name} still owns ${openWork.total} open item${
+          openWork.total === 1 ? "" : "s"
+        }. Use "Deactivate and reassign" to move it first.`,
+      };
+    }
+  }
   return safeAction(async () => {
     await prisma.user.update({ where: { id }, data: { active: isActive } });
-    await log(id, "user_status_changed", isActive ? "Reactivated" : "Deactivated");
+    await log(id, "user_status_changed", isActive ? "Reactivated" : "Deactivated", {
+      previousValue: isActive ? "inactive" : "active",
+      newValue: isActive ? "active" : "inactive",
+    });
     refresh();
   }, "Could not update the teammate's status. Please try again.");
+}
+
+/**
+ * The atomic path when a departing teammate DOES own open work: every open
+ * opportunity/order/task/RFQ item/service issue they hold moves to an active
+ * successor, then they go inactive - in one transaction, so there is no
+ * in-between state where the work is visible to nobody.
+ */
+export async function deactivateAndReassign(id: string, successorId: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
+  if (!successorId) return { ok: false, message: "Pick who takes over their open work." };
+  if (successorId === id) return { ok: false, message: "Pick someone other than the teammate being deactivated." };
+  return safeAction(async () => {
+    const [user, successor] = await Promise.all([
+      prisma.user.findUnique({ where: { id }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: successorId }, select: { name: true, active: true } }),
+    ]);
+    if (!user) throw new Error("Teammate not found");
+    if (!successor || !successor.active) throw new Error("Pick an active teammate to take over the work");
+
+    const moved = await reassignAllOpenWork(id, successorId);
+    await prisma.user.update({ where: { id }, data: { active: false } });
+    await log(
+      id,
+      "user_deactivated_with_reassignment",
+      `${user.name} deactivated - ${moved.total} open item(s) (${moved.opportunities} deal(s), ${moved.orders} order(s), ${moved.tasks} task(s), ${moved.lineItems} RFQ item(s), ${moved.serviceIssues} service issue(s)) reassigned to ${successor.name}`,
+      { previousValue: "active", newValue: "inactive" }
+    );
+    revalidateReassignedSurfaces();
+  }, "Could not deactivate and reassign. Please try again.");
 }

@@ -3,14 +3,15 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
-import { logActivity } from "@/lib/log";
+import { logActivity, type ActivityLogMeta } from "@/lib/log";
 import { isValidValue, RFQ_STATUSES, STOCK_STATUSES } from "@/lib/constants";
 import { roundCents } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
 import { requirePermission } from "@/lib/permissionsServer";
+import { requireActiveAssignee } from "@/lib/ownership";
 
-async function log(linkedId: string, action: string, detail: string) {
-  await logActivity("line_item", linkedId, action, detail);
+async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
+  await logActivity("line_item", linkedId, action, detail, meta);
 }
 
 /**
@@ -37,6 +38,11 @@ async function revalidateLineItem(lineItemId: string) {
  *   1234.56 as 1234.56005859375);
  * - saving a real price on a needs_pricing item advances it to quote_received,
  *   so the queue and the deal reflect that a quote now exists.
+ *
+ * Reliability spec P1 fix: this no longer accepts a blank price as "clear the
+ * price" (that was one stray Save away from deleting trusted pricing data).
+ * A blank/null price is now always a validation error - clearing goes through
+ * the separate, confirmed clearLineItemPrice action below.
  */
 export async function updateLineItemPricing(
   lineItemId: string,
@@ -45,21 +51,21 @@ export async function updateLineItemPricing(
 ): Promise<ActionResult> {
   const denied = await requirePermission("pricing.edit");
   if (denied) return denied;
-  if (unitPrice != null && (!Number.isFinite(unitPrice) || unitPrice <= 0)) {
+  if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) {
     return { ok: false, message: "Enter a price greater than $0." };
   }
   if (unitCost != null && !Number.isFinite(unitCost)) {
     return { ok: false, message: "Enter a valid cost." };
   }
-  const price = unitPrice == null ? null : roundCents(unitPrice);
+  const price = roundCents(unitPrice);
   const cost = unitCost == null ? null : roundCents(unitCost);
   return safeAction(async () => {
     const before = await prisma.lineItem.findUnique({
       where: { id: lineItemId },
-      select: { rfqStatus: true, name: true },
+      select: { rfqStatus: true, name: true, unitPrice: true },
     });
     if (!before) throw new Error("Line item not found");
-    const advance = price != null && before.rfqStatus === "needs_pricing";
+    const advance = before.rfqStatus === "needs_pricing";
     await prisma.lineItem.update({
       where: { id: lineItemId },
       data: {
@@ -71,14 +77,41 @@ export async function updateLineItemPricing(
     await log(
       lineItemId,
       "rfq_pricing_updated",
-      `Price ${price != null ? `set to $${price}` : "cleared"} on "${before.name}"${
-        advance ? " - status advanced to quote_received" : ""
-      }`
+      `Price set to $${price} on "${before.name}"${advance ? " - status advanced to quote_received" : ""}`,
+      { previousValue: before.unitPrice != null ? `$${before.unitPrice}` : "(none)", newValue: `$${price}` }
     );
     await syncOpportunityPricing(lineItemId);
     await syncOrderPricing(lineItemId);
     await revalidateLineItem(lineItemId);
   }, "Could not update pricing. Please try again.");
+}
+
+/**
+ * The deliberate counterpart to updateLineItemPricing's now-mandatory price:
+ * the only way left to null out a stored price. The UI only shows this button
+ * when a price exists and confirms it first (naming the item and the current
+ * price) before calling this - a stored price can no longer disappear from a
+ * blank Save.
+ */
+export async function clearLineItemPrice(lineItemId: string): Promise<ActionResult> {
+  const denied = await requirePermission("pricing.edit");
+  if (denied) return denied;
+  return safeAction(async () => {
+    const before = await prisma.lineItem.findUnique({
+      where: { id: lineItemId },
+      select: { name: true, unitPrice: true },
+    });
+    if (!before) throw new Error("Line item not found");
+    if (before.unitPrice == null) return; // already clear - nothing to do, no audit noise
+    await prisma.lineItem.update({ where: { id: lineItemId }, data: { unitPrice: null } });
+    await log(lineItemId, "rfq_price_cleared", `Price cleared on "${before.name}" (was $${before.unitPrice})`, {
+      previousValue: `$${before.unitPrice}`,
+      newValue: "(none)",
+    });
+    await syncOpportunityPricing(lineItemId);
+    await syncOrderPricing(lineItemId);
+    await revalidateLineItem(lineItemId);
+  }, "Could not clear the price. Please try again.");
 }
 
 /**
@@ -174,6 +207,8 @@ export async function setLineItemRfqStatus(lineItemId: string, rfqStatus: string
 export async function setLineItemAssignee(lineItemId: string, assigneeId: string): Promise<ActionResult> {
   const denied = await requirePermission("pricing.edit");
   if (denied) return denied;
+  const inactive = await requireActiveAssignee(assigneeId);
+  if (inactive) return inactive;
   return safeAction(async () => {
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { assigneeId: assigneeId || null } });
     await log(lineItemId, "rfq_assignee_set", `Assignee set to ${assigneeId || "unassigned"}`);

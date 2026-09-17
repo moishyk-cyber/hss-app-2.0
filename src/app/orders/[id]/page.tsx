@@ -18,6 +18,7 @@ import { BackLink } from "@/lib/BackLink";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
+import { ActivityHistory } from "@/lib/ActivityHistory";
 import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
 import { uploadsConfigured } from "@/lib/storage";
 import { ActionButton, InlineEditField } from "@/lib/ui";
@@ -567,6 +568,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           }
         />
       </div>
+
+      <ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" />
     </div>
   );
 }

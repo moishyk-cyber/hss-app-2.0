@@ -8,7 +8,9 @@ import { parseMoney, fmtUSD } from "@/lib/money";
 import { fmtDateUTC } from "@/lib/dates";
 import { Avatar } from "@/lib/Avatar";
 import { UserSelect } from "@/lib/UserSelect";
+import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import {
+  clearLineItemPrice,
   markLineItemRemoved,
   setLineItemAssignee,
   setLineItemBackorderExpected,
@@ -45,24 +47,39 @@ type RfqItem = {
  *   queue's own next stage), so the price is immediately visible on the row in
  *   its new group instead of the field appearing to wipe itself.
  * - every outcome is announced: inline error on failure, toast on success.
+ *
+ * Reliability spec P1 fix: a blank Save no longer clears the price (that was
+ * one stray click from deleting trusted pricing data - see the "123 Test" /
+ * "Order" incident). Blank now fails validation and the stored price is left
+ * alone. Clearing a price is its own explicit, confirmed action below.
  */
 function PriceCell({ item }: { item: RfqItem }) {
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, startClear] = useTransition();
 
   async function handleSavePricing(formData: FormData) {
     const raw = String(formData.get("price") ?? "").trim();
+    if (raw === "") {
+      setError(
+        item.unitPrice != null
+          ? "Enter a price, or use \"Clear price\" below to remove it."
+          : "Enter a price greater than $0."
+      );
+      return;
+    }
     const price = parseMoney(raw);
-    if (price != null && Number.isNaN(price)) {
+    if (price == null || Number.isNaN(price)) {
       setError("Enter a number, e.g. 1234.56");
       return;
     }
-    if (price != null && price <= 0) {
+    if (price <= 0) {
       setError("The price has to be more than $0.");
       return;
     }
     setError(null);
-    const willAdvance = price != null && item.rfqStatus === "needs_pricing";
+    const willAdvance = item.rfqStatus === "needs_pricing";
     // One money field per item (Moishy, Aug 31): price only. unitCost passes
     // through unchanged so existing data is preserved without being shown.
     const result = await updateLineItemPricing(item.id, item.unitCost, price);
@@ -70,20 +87,28 @@ function PriceCell({ item }: { item: RfqItem }) {
       setError(result.message);
       return;
     }
-    if (price != null) {
-      toast({
-        kind: "success",
-        message: `${fmtUSD(price, { cents: true })} saved on "${item.name}"${
-          willAdvance ? " - moved to Quote Received" : ""
-        }`,
-      });
-    } else {
+    toast({
+      kind: "success",
+      message: `${fmtUSD(price, { cents: true })} saved on "${item.name}"${
+        willAdvance ? " - moved to Quote Received" : ""
+      }`,
+    });
+  }
+
+  function handleConfirmClear() {
+    startClear(async () => {
+      const result = await clearLineItemPrice(item.id);
+      setConfirmingClear(false);
+      if (!result.ok) {
+        toast({ kind: "error", message: result.message });
+        return;
+      }
       toast({ kind: "info", message: `Price cleared on "${item.name}"` });
-    }
+    });
   }
 
   return (
-    <div className="relative">
+    <div className="relative space-y-1">
       <form action={handleSavePricing} className="flex items-center gap-1">
         <input
           type="text"
@@ -116,11 +141,40 @@ function PriceCell({ item }: { item: RfqItem }) {
           Save
         </PendingButton>
       </form>
+      <div className="flex items-center gap-2">
+        {item.unitPrice != null ? (
+          <button
+            type="button"
+            onClick={() => setConfirmingClear(true)}
+            className="text-[11px] text-gray transition-colors hover:text-red"
+          >
+            Clear price
+          </button>
+        ) : null}
+        <a
+          href={`/admin/audit?f_recordType=line_item&f_recordId=${item.id}`}
+          className="text-[11px] text-gray transition-colors hover:text-ink"
+        >
+          History
+        </a>
+      </div>
       {error ? (
         <span role="alert" className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
           {error}
         </span>
       ) : null}
+      <ConfirmDialog
+        open={confirmingClear}
+        title={`Clear price on "${item.name}"?`}
+        confirmLabel="Clear price"
+        danger
+        pending={clearing}
+        onConfirm={handleConfirmClear}
+        onClose={() => setConfirmingClear(false)}
+      >
+        Current price: {item.unitPrice != null ? fmtUSD(item.unitPrice, { cents: true }) : "none"}. This removes it -
+        the item goes back to needing a price.
+      </ConfirmDialog>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { UserRow } from "./UserRow";
 import { NewUserForm } from "./NewUserForm";
+import { openWorkForUsers } from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,12 @@ export default async function TeamPage() {
     select: { id: true, name: true, email: true, role: true, active: true },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
+
+  // Reliability spec P0-4: every active row needs its open-work count so
+  // deactivating shows the real stakes instead of a generic warning, and can
+  // require reassignment before it silently strands anything.
+  const openWork = await openWorkForUsers(users.filter((u) => u.active).map((u) => u.id));
+  const activeUsers = users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }));
 
   return (
     <div className="space-y-8">
@@ -38,7 +45,12 @@ export default async function TeamPage() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <UserRow key={u.id} user={u} />
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  openWorkCount={openWork.get(u.id)?.total ?? 0}
+                  otherActiveUsers={activeUsers.filter((a) => a.id !== u.id)}
+                />
               ))}
             </tbody>
           </table>
