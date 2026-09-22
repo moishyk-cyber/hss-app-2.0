@@ -99,10 +99,15 @@ export default async function EditOpportunityPage({
         ) : error === "save_failed" ? (
           <div className="banner-alert">Something went wrong while saving. Please try again.</div>
         ) : error === "not_allowed" ? (
-          <div className="banner-alert">
-            That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
-            admin.
-          </div>
+          <div className="banner-alert">Your role can&rsquo;t edit deals. Ask an admin if you need it.</div>
+        ) : error === "invalid_date" ? (
+          <div className="banner-alert">One of the dates isn&rsquo;t valid. Nothing was saved - please re-pick it and save again.</div>
+        ) : error === "invalid_amount" ? (
+          <div className="banner-alert">Value and budget must be zero or more. Nothing was saved - please fix the amount and save again.</div>
+        ) : error === "inactive_assignee" ? (
+          <div className="banner-alert">That salesperson is inactive and can&rsquo;t be assigned. Nothing was saved - pick an active teammate.</div>
+        ) : error === "contact_mismatch" ? (
+          <div className="banner-alert">That contact belongs to a different business. Nothing was saved - pick a contact from this business.</div>
         ) : null}
         <input type="hidden" name="id" value={opportunity.id} />
 

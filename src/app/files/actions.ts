@@ -18,6 +18,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { requirePermission } from "@/lib/permissionsServer";
 import { currentUserName } from "@/lib/identityServer";
+import { cleanText, TEXT_LIMITS } from "@/lib/input";
 import { DOCUMENT_KINDS, isValidValue, labelFor } from "@/lib/constants";
 import {
   MAX_UPLOAD_BYTES,
@@ -46,6 +47,21 @@ function isAllowedMime(mimeType: string): boolean {
 
 function isLinkedType(value: string): value is FileLinkedType {
   return value === "order" || value === "opportunity" || value === "purchase_order";
+}
+
+/**
+ * A file's linkedId is client-supplied - never trust it points at something
+ * real. Checked against the record's own table so a stale or tampered id
+ * can't attach a document to (or mint an upload URL under) nothing.
+ */
+async function linkedRecordExists(linkedType: FileLinkedType, linkedId: string): Promise<boolean> {
+  if (linkedType === "order") {
+    return (await prisma.order.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
+  }
+  if (linkedType === "opportunity") {
+    return (await prisma.opportunity.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
+  }
+  return (await prisma.purchaseOrder.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
 }
 
 /** Google Drive share links get their own source so the list can label them. */
@@ -101,12 +117,15 @@ export async function createLinkDocument(
   if (denied) return denied;
 
   if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
+  if (!(await linkedRecordExists(linkedType, linkedId))) {
+    return { ok: false, message: "That record no longer exists." };
+  }
   const url = parseHttpUrl(input.url ?? "");
   if (!url) return { ok: false, message: "Paste a full link starting with http:// or https://" };
   if (!isValidValue(DOCUMENT_KINDS, input.kind)) return { ok: false, message: "Not a valid file kind." };
 
-  const fileName = (input.fileName ?? "").trim() || null;
-  const note = (input.note ?? "").trim() || null;
+  const fileName = cleanText(input.fileName, TEXT_LIMITS.short) || null;
+  const note = cleanText(input.note, TEXT_LIMITS.medium) || null;
 
   return safeAction(async () => {
     const uploadedBy = await currentUserName();
@@ -156,6 +175,9 @@ export async function createSignedUpload(
 
   if (!uploadsConfigured()) return { ok: false, message: NOT_CONFIGURED };
   if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
+  if (!(await linkedRecordExists(linkedType, linkedId))) {
+    return { ok: false, message: "That record no longer exists." };
+  }
   if (!fileName.trim()) return { ok: false, message: "That file has no name." };
   if (!isAllowedMime(mimeType)) return { ok: false, message: "Only PDFs and images can be uploaded." };
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return { ok: false, message: "That file looks empty." };
@@ -188,6 +210,9 @@ export async function finalizeUpload(
 
   if (!uploadsConfigured()) return { ok: false, message: NOT_CONFIGURED };
   if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
+  if (!(await linkedRecordExists(linkedType, linkedId))) {
+    return { ok: false, message: "That record no longer exists." };
+  }
   if (!isValidValue(DOCUMENT_KINDS, input.kind)) return { ok: false, message: "Not a valid file kind." };
   // The path must sit under this record's own prefix - never trust a client path.
   if (!input.storagePath || !input.storagePath.startsWith(`${linkedType}/${linkedId}/`)) {
@@ -195,8 +220,8 @@ export async function finalizeUpload(
   }
   if (input.sizeBytes > MAX_UPLOAD_BYTES) return { ok: false, message: "That file is over the 25 MB limit." };
 
-  const fileName = input.fileName.trim() || "Uploaded file";
-  const note = (input.note ?? "").trim() || null;
+  const fileName = cleanText(input.fileName, TEXT_LIMITS.short) || "Uploaded file";
+  const note = cleanText(input.note, TEXT_LIMITS.medium) || null;
 
   return safeAction(async () => {
     const uploadedBy = await currentUserName();

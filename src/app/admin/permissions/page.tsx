@@ -1,5 +1,6 @@
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { currentUser, getRolePermissions, permissionsOpenMode } from "@/lib/permissionsServer";
+import { currentUser, getRolePermissions, permissionsOpenMode, can } from "@/lib/permissionsServer";
 import { USER_ROLES, labelFor } from "@/lib/constants";
 import { BadgeSelect } from "@/lib/ui";
 import { PermissionMatrixTable } from "./PermissionMatrix";
@@ -14,6 +15,7 @@ const OPEN_MODE_OPTIONS = [
 const OPEN_MODE_COLORS: Record<string, string> = { on: "badge-green", off: "badge-blue" };
 
 export default async function AdminPermissionsPage() {
+  if (!(await can("admin.manage"))) notFound();
   const [matrix, user, openMode] = await Promise.all([
     getRolePermissions(),
     currentUser(),

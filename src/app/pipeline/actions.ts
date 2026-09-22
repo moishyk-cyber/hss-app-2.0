@@ -17,6 +17,7 @@ import { currentUserId } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
+import { cleanText, parseDateOnly, parseNonNegativeNumber, TEXT_LIMITS } from "@/lib/input";
 import {
   CLOSED_STAGES,
   DELIVERY_TYPES,
@@ -35,11 +36,13 @@ function str(formData: FormData, key: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-function num(formData: FormData, key: string): number | null {
-  const raw = str(formData, key);
-  if (raw == null) return null;
-  const parsed = Number(raw.replace(/[^0-9.\-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : null;
+/**
+ * Money fields only - qty and the (unused) generic caller both treat null and
+ * undefined the same way (falling back to a default), so folding negative/NaN
+ * into `undefined` here is safe everywhere this is already called.
+ */
+function num(formData: FormData, key: string): number | null | undefined {
+  return parseNonNegativeNumber(str(formData, key));
 }
 
 function date(formData: FormData, key: string): Date | null {
@@ -47,6 +50,12 @@ function date(formData: FormData, key: string): Date | null {
   if (!raw) return null;
   const parsed = new Date(`${raw}T00:00:00.000Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Same shape as str(), but capped so nothing unbounded reaches the database. */
+function text(formData: FormData, key: string, max: number): string | null {
+  const value = cleanText(formData.get(key), max);
+  return value === "" ? null : value;
 }
 
 function bool(formData: FormData, key: string): boolean {
@@ -315,13 +324,48 @@ export async function updateOpportunity(formData: FormData) {
   // Server-side backstop for whatever the Settings tab currently requires
   // (native `required` on the form is client-only).
   const companyId = str(formData, "companyId");
-  const neededByDate = date(formData, "neededByDate");
+
+  // Dates: reject anything unparseable outright instead of letting a bare
+  // `new Date(raw)` silently become Invalid Date and get swallowed as "no date".
+  const neededByDate = parseDateOnly(formData.get("neededByDate"));
+  const estDueDate = parseDateOnly(formData.get("estDueDate"));
+  const nextFollowUp = parseDateOnly(formData.get("nextFollowUp"));
+  if (neededByDate === undefined || estDueDate === undefined || nextFollowUp === undefined) {
+    redirect(`/pipeline/${id}/edit?error=invalid_date`);
+  }
+
+  // Money: a negative or non-numeric amount is rejected instead of written as-is.
+  const value = num(formData, "value");
+  const budget = num(formData, "budget");
+  if (value === undefined || budget === undefined) {
+    redirect(`/pipeline/${id}/edit?error=invalid_amount`);
+  }
+
   const req = await getFieldRequirements();
   if (
     (req["opportunity.companyId"] && !companyId) ||
     (req["opportunity.neededByDate"] && !neededByDate)
   ) {
     redirect(`/pipeline/${id}/edit?error=missing_required`);
+  }
+
+  // Salesperson: an inactive teammate can't be handed new open work.
+  const salespersonId = str(formData, "salespersonId");
+  const inactiveAssignee = await requireActiveAssignee(salespersonId);
+  if (inactiveAssignee) redirect(`/pipeline/${id}/edit?error=inactive_assignee`);
+
+  // Primary contact: same rule as the location check below - a contact from a
+  // different business than the deal's is a tampered payload (or a stale pick
+  // left over from switching the company dropdown), not a real choice.
+  const primaryContactId = str(formData, "primaryContactId");
+  if (primaryContactId && companyId) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: primaryContactId },
+      select: { companyId: true },
+    });
+    if (contact && contact.companyId !== companyId) {
+      redirect(`/pipeline/${id}/edit?error=contact_mismatch`);
+    }
   }
 
   // Location: only a site on this deal's business can be picked. Moving to a
@@ -347,33 +391,34 @@ export async function updateOpportunity(formData: FormData) {
     const updated = await prisma.opportunity.update({
       where: { id },
       data: {
-        title: str(formData, "title") ?? "Untitled opportunity",
+        title: text(formData, "title", TEXT_LIMITS.short) ?? "Untitled opportunity",
         stage,
         companyId,
-        primaryContactId: str(formData, "primaryContactId"),
-        salespersonId: str(formData, "salespersonId"),
+        primaryContactId,
+        salespersonId,
         orderType,
         needsPricing: bool(formData, "needsPricing"),
-        value: num(formData, "value"),
+        value,
         neededByDate,
-        estDueDate: date(formData, "estDueDate"),
-        nextFollowUp: date(formData, "nextFollowUp"),
-        lostReason: str(formData, "lostReason"),
-        facilityType: str(formData, "facilityType"),
-        menu: str(formData, "menu"),
-        roomDimensions: str(formData, "roomDimensions"),
-        wallMeasurements: str(formData, "wallMeasurements"),
-        plumbingElectricalNotes: str(formData, "plumbingElectricalNotes"),
-        budget: num(formData, "budget"),
-        clientVisionNotes: str(formData, "clientVisionNotes"),
+        estDueDate,
+        nextFollowUp,
+        lostReason: text(formData, "lostReason", TEXT_LIMITS.medium),
+        facilityType: text(formData, "facilityType", TEXT_LIMITS.short),
+        menu: text(formData, "menu", TEXT_LIMITS.medium),
+        roomDimensions: text(formData, "roomDimensions", TEXT_LIMITS.short),
+        wallMeasurements: text(formData, "wallMeasurements", TEXT_LIMITS.short),
+        plumbingElectricalNotes: text(formData, "plumbingElectricalNotes", TEXT_LIMITS.long),
+        budget,
+        clientVisionNotes: text(formData, "clientVisionNotes", TEXT_LIMITS.long),
         deliveryType,
-        openingSize: str(formData, "openingSize"),
+        openingSize: text(formData, "openingSize", TEXT_LIMITS.short),
         installationNeeded: bool(formData, "installationNeeded"),
         designStatus,
         locationId,
-        locationName: copiedFromLocation?.locationName ?? str(formData, "locationName"),
-        deliveryAddress: copiedFromLocation?.deliveryAddress ?? str(formData, "deliveryAddress"),
-        notes: str(formData, "notes"),
+        locationName: copiedFromLocation?.locationName ?? text(formData, "locationName", TEXT_LIMITS.short),
+        deliveryAddress:
+          copiedFromLocation?.deliveryAddress ?? text(formData, "deliveryAddress", TEXT_LIMITS.medium),
+        notes: text(formData, "notes", TEXT_LIMITS.long),
       },
     });
     await logActivity("opportunity", id, "opportunity_updated", `"${updated.title}" updated`);

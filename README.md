@@ -33,6 +33,22 @@ The Supabase pair is optional. Without it the app runs normally and the file
 upload panels report that uploads are not configured; link-only documents still
 work.
 
+## Login protection
+
+`src/lib/loginThrottle.ts` throttles login attempts in-memory, keyed by
+lowercase email and by client IP. After 5 failed attempts for a key within 15
+minutes, further attempts for that key are refused with a friendly message
+until the block cools down; each additional failure doubles the wait, capped
+at 1 hour. A successful login clears the counters, and `src/app/login/actions.ts`
+also compares against a fixed dummy password hash for unknown emails so a
+guesser can't tell a missing account from a wrong password by timing.
+
+This state is per-instance and best-effort - on Vercel (or any multi-instance
+deployment) it does not survive a cold start and is not shared across
+instances. The robust complement is a Vercel Firewall rate-limit rule on
+`POST /login`, enforced at the edge regardless of which instance handles a
+given request.
+
 ## Commands
 
 | Command | What it does |

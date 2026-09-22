@@ -1,3 +1,5 @@
+import { can } from "@/lib/permissionsServer";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { UserRow } from "./UserRow";
 import { NewUserForm } from "./NewUserForm";
@@ -6,6 +8,7 @@ import { openWorkForUsers } from "@/lib/ownership";
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
+  if (!(await can("admin.manage"))) notFound();
   const users = await prisma.user.findMany({
     select: { id: true, name: true, email: true, role: true, active: true },
     orderBy: [{ active: "desc" }, { name: "asc" }],

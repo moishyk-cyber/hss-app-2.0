@@ -9,6 +9,8 @@ import { currentUserId, currentUserName } from "@/lib/identityServer";
 import { roundCents } from "@/lib/money";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
+import { requireActiveAssignee } from "@/lib/ownership";
+import { cleanText, TEXT_LIMITS } from "@/lib/input";
 import { MAX_UPLOAD_BYTES, storagePathFor, uploadObject, uploadsConfigured } from "@/lib/storage";
 
 function str(formData: FormData, key: string): string | null {
@@ -16,6 +18,12 @@ function str(formData: FormData, key: string): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+/** Same shape as str(), but capped so nothing unbounded reaches the database. */
+function text(formData: FormData, key: string, max: number): string | null {
+  const value = cleanText(formData.get(key), max);
+  return value === "" ? null : value;
 }
 
 function date(formData: FormData, key: string): Date | null {
@@ -178,11 +186,13 @@ export async function submitIntake(formData: FormData) {
   const neededByDate = date(formData, "neededByDate");
   const estDueDate = date(formData, "estDueDate");
   const items = parseItems(formData);
-  const payload = JSON.stringify(formSnapshot(formData));
+  // Audited but not parsed back - capped so a runaway/garbage submission can't
+  // write an unbounded blob.
+  const payload = cleanText(JSON.stringify(formSnapshot(formData)), 20000);
   // Terms only reach the form when the intake becomes an order straight away.
   // Free text since Sep 4 (client) - nothing is derived from it and no invoice
   // is created; those are added by hand on the order's Invoice tab.
-  const termsNotes = str(formData, "termsNotes");
+  const termsNotes = text(formData, "termsNotes", TEXT_LIMITS.long);
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
@@ -207,11 +217,17 @@ export async function submitIntake(formData: FormData) {
   // The salesperson dropdown is gone from the form (feedback: one more thing to fill
   // in mid-call, and it always meant "me"). Fall back to the sidebar identity - and
   // if there isn't one either, save it unassigned rather than blocking a live call.
+  const pickedSalespersonId = str(formData, "salespersonId");
+  // Only a form-supplied pick is gated on being active - an id typed/selected on the
+  // form is a real choice; the cookie fallback below stays best-effort as before.
+  if (pickedSalespersonId) {
+    const inactiveAssignee = await requireActiveAssignee(pickedSalespersonId);
+    if (inactiveAssignee) redirect("/intake?error=inactive_salesperson");
+  }
   const salespersonId = await resolveSalesperson();
 
   async function resolveSalesperson(): Promise<string | null> {
-    const picked = str(formData, "salespersonId");
-    if (picked) return picked;
+    if (pickedSalespersonId) return pickedSalespersonId;
     const cookieId = await currentUserId();
     if (!cookieId) return null;
     // A cookie can outlive the user it names - an unknown id would break the insert.
@@ -226,7 +242,8 @@ export async function submitIntake(formData: FormData) {
   // inside runIntakeTransaction would be caught below and reported as save_failed.
   // Matching is on the normalized name across ALL company types - the duplicate is as
   // likely to be filed as a lost_lead or a supplier as it is a customer.
-  const proposedCompanyName = clientMode === "new" ? str(formData, "newCompanyName") : null;
+  const proposedCompanyName =
+    clientMode === "new" ? text(formData, "newCompanyName", TEXT_LIMITS.short) : null;
   if (proposedCompanyName) {
     const existing = await findCompanyByNormalizedName(proposedCompanyName);
     if (existing) {
@@ -307,15 +324,15 @@ export async function submitIntake(formData: FormData) {
     if (clientMode === "new") {
       const company = await tx.company.create({
         data: {
-          name: str(formData, "newCompanyName") ?? "New client",
+          name: text(formData, "newCompanyName", TEXT_LIMITS.short) ?? "New client",
           type: "customer",
-          billingAddress: str(formData, "newCompanyAddress"),
-          phone: str(formData, "newCompanyPhone"),
-          phoneExt: str(formData, "newCompanyPhoneExt"),
-          cellPhone: str(formData, "newCompanyCellPhone"),
-          email: str(formData, "newCompanyEmail"),
-          deliveryAddress: str(formData, "newCompanyDeliveryAddress"),
-          locationName: str(formData, "newCompanyLocationName"),
+          billingAddress: text(formData, "newCompanyAddress", TEXT_LIMITS.medium),
+          phone: text(formData, "newCompanyPhone", TEXT_LIMITS.short),
+          phoneExt: text(formData, "newCompanyPhoneExt", TEXT_LIMITS.short),
+          cellPhone: text(formData, "newCompanyCellPhone", TEXT_LIMITS.short),
+          email: text(formData, "newCompanyEmail", TEXT_LIMITS.short),
+          deliveryAddress: text(formData, "newCompanyDeliveryAddress", TEXT_LIMITS.medium),
+          locationName: text(formData, "newCompanyLocationName", TEXT_LIMITS.short),
         },
       });
       companyId = company.id;
@@ -347,17 +364,17 @@ export async function submitIntake(formData: FormData) {
     const contactMode = str(formData, "contactMode") ?? "existing";
 
     if (clientMode === "new" || contactMode === "new") {
-      const firstName = str(formData, "newContactFirstName");
+      const firstName = text(formData, "newContactFirstName", TEXT_LIMITS.short);
       if (firstName) {
         const contact = await tx.contact.create({
           data: {
             firstName,
-            lastName: str(formData, "newContactLastName"),
-            title: str(formData, "newContactTitle"),
-            email: str(formData, "newContactEmail"),
-            phone: str(formData, "newContactPhone"),
-            phoneExt: str(formData, "newContactPhoneExt"),
-            cellPhone: str(formData, "newContactCellPhone"),
+            lastName: text(formData, "newContactLastName", TEXT_LIMITS.short),
+            title: text(formData, "newContactTitle", TEXT_LIMITS.short),
+            email: text(formData, "newContactEmail", TEXT_LIMITS.short),
+            phone: text(formData, "newContactPhone", TEXT_LIMITS.short),
+            phoneExt: text(formData, "newContactPhoneExt", TEXT_LIMITS.short),
+            cellPhone: text(formData, "newContactCellPhone", TEXT_LIMITS.short),
             companyId,
           },
         });
@@ -375,11 +392,13 @@ export async function submitIntake(formData: FormData) {
     // link, the copies are the snapshot). A location typed on the call is saved
     // onto the business when the "save it" box is left ticked.
     let locationId: string | null = createdLocationId;
-    let locationName = str(formData, "locationName") ?? str(formData, "newCompanyLocationName");
+    let locationName =
+      text(formData, "locationName", TEXT_LIMITS.short) ??
+      text(formData, "newCompanyLocationName", TEXT_LIMITS.short);
     let deliveryAddress =
-      str(formData, "deliveryAddress") ??
+      text(formData, "deliveryAddress", TEXT_LIMITS.medium) ??
       companyDeliveryAddress ??
-      str(formData, "newCompanyDeliveryAddress");
+      text(formData, "newCompanyDeliveryAddress", TEXT_LIMITS.medium);
 
     const pickedLocationId = str(formData, "locationId");
     if (pickedLocationId && companyId) {
@@ -426,18 +445,20 @@ export async function submitIntake(formData: FormData) {
           deliveryAddress,
           locationName,
           submittedVia: "form",
-          facilityType: orderType === "project" ? str(formData, "facilityType") : null,
-          menu: orderType === "project" ? str(formData, "menu") : null,
-          roomDimensions: orderType === "project" ? str(formData, "roomDimensions") : null,
-          wallMeasurements: orderType === "project" ? str(formData, "wallMeasurements") : null,
+          facilityType: orderType === "project" ? text(formData, "facilityType", TEXT_LIMITS.short) : null,
+          menu: orderType === "project" ? text(formData, "menu", TEXT_LIMITS.medium) : null,
+          roomDimensions:
+            orderType === "project" ? text(formData, "roomDimensions", TEXT_LIMITS.short) : null,
+          wallMeasurements:
+            orderType === "project" ? text(formData, "wallMeasurements", TEXT_LIMITS.short) : null,
           deliveryType: orderType === "project" ? str(formData, "deliveryType") : null,
           openingSize:
             orderType === "project" && str(formData, "deliveryType") === "inside"
-              ? str(formData, "openingSize")
+              ? text(formData, "openingSize", TEXT_LIMITS.short)
               : null,
           installationNeeded:
             orderType === "project" && formData.get("installationNeeded") === "yes",
-          notes: str(formData, "notes"),
+          notes: text(formData, "notes", TEXT_LIMITS.long),
           lineItems: {
             create: items.map((item) => ({
               name: item.name,
@@ -482,7 +503,7 @@ export async function submitIntake(formData: FormData) {
         neededByDate,
         locationId,
         deliveryAddress,
-        notes: str(formData, "notes"),
+        notes: text(formData, "notes", TEXT_LIMITS.long),
         termsNotes,
         lineItems: {
           create: items.map((item) => ({

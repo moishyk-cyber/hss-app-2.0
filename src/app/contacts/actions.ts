@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { isValidValue } from "@/lib/constants";
+import { cleanText, TEXT_LIMITS } from "@/lib/input";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { CONTACT_STATUSES } from "./_ui";
 import { requirePermission } from "@/lib/permissionsServer";
@@ -16,18 +17,37 @@ function str(formData: FormData, key: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/** Same shape as str(), but capped so nothing unbounded reaches the database. */
+function text(formData: FormData, key: string, max: number): string | null {
+  const value = cleanText(formData.get(key), max);
+  return value === "" ? null : value;
+}
+
+/**
+ * `returnTo` is form input, not a trusted redirect target - only accept a
+ * same-site path. A value that doesn't start with "/", or that starts with
+ * "//" or "/\\", is browser-parsed as a protocol-relative absolute URL (an
+ * open redirect), not a path, so it falls back to the phonebook instead.
+ */
+function safeReturnTo(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return "/phonebook";
+  }
+  return raw;
+}
+
 function readContactFields(formData: FormData) {
   return {
-    firstName: str(formData, "firstName") ?? "Unnamed",
-    lastName: str(formData, "lastName"),
+    firstName: text(formData, "firstName", TEXT_LIMITS.short) ?? "Unnamed",
+    lastName: text(formData, "lastName", TEXT_LIMITS.short),
     companyId: str(formData, "companyId"),
-    title: str(formData, "title"),
-    email: str(formData, "email"),
-    phone: str(formData, "phone"),
-    phoneExt: str(formData, "phoneExt"),
-    cellPhone: str(formData, "cellPhone"),
+    title: text(formData, "title", TEXT_LIMITS.short),
+    email: text(formData, "email", TEXT_LIMITS.short),
+    phone: text(formData, "phone", TEXT_LIMITS.short),
+    phoneExt: text(formData, "phoneExt", TEXT_LIMITS.short),
+    cellPhone: text(formData, "cellPhone", TEXT_LIMITS.short),
     status: str(formData, "status") ?? "active",
-    notes: str(formData, "notes"),
+    notes: text(formData, "notes", TEXT_LIMITS.long),
   };
 }
 
@@ -66,7 +86,7 @@ export async function createContact(formData: FormData) {
   const denied = await requirePermission("phonebook.edit");
   if (denied) redirect("/contacts/new?error=not_allowed");
   const data = readContactFields(formData);
-  const back = str(formData, "returnTo");
+  const back = safeReturnTo(str(formData, "returnTo"));
 
   // Title stays free text on purpose (a fixed list hid people's real jobs); status
   // is a real enum and must not be persisted as something the badges can't render.
@@ -99,7 +119,7 @@ export async function createContact(formData: FormData) {
 
   revalidatePath("/contacts");
   revalidatePath("/phonebook");
-  redirect(back ?? "/phonebook");
+  redirect(back);
 }
 
 export async function updateContact(formData: FormData) {

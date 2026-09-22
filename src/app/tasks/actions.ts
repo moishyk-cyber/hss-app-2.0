@@ -6,30 +6,64 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, TASK_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
 import { requireActiveAssignee } from "@/lib/ownership";
+import { requirePermission } from "@/lib/permissionsServer";
+import { currentUserId } from "@/lib/identityServer";
+import { cleanText, parseDateOnly, TEXT_LIMITS } from "@/lib/input";
+import { TASK_TYPE_LABELS, TYPE_LABELS } from "./lib";
 
 async function log(linkedId: string, action: string, detail: string) {
   await logActivity("task", linkedId, action, detail);
 }
 
+/** Existence/ownership check for a task's linked record, by the same type keys as TYPE_LABELS. */
+async function linkedRecordExists(type: string, id: string): Promise<boolean> {
+  switch (type) {
+    case "opportunity":
+      return !!(await prisma.opportunity.findUnique({ where: { id }, select: { id: true } }));
+    case "order":
+      return !!(await prisma.order.findUnique({ where: { id }, select: { id: true } }));
+    case "line_item":
+      return !!(await prisma.lineItem.findUnique({ where: { id }, select: { id: true } }));
+    case "company":
+      return !!(await prisma.company.findUnique({ where: { id }, select: { id: true } }));
+    case "contact":
+      return !!(await prisma.contact.findUnique({ where: { id }, select: { id: true } }));
+    default:
+      return false;
+  }
+}
+
 export async function createTask(formData: FormData): Promise<ActionResult> {
-  const title = String(formData.get("title") ?? "").trim();
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
+
+  const title = cleanText(formData.get("title"), TEXT_LIMITS.short);
   if (!title) return { ok: false, message: "Enter a title for the task." };
   const assigneeId = String(formData.get("assigneeId") ?? "") || null;
-  const dueDateRaw = String(formData.get("dueDate") ?? "");
+  const dueDate = parseDateOnly(formData.get("dueDate"));
+  if (dueDate === undefined) return { ok: false, message: "Enter a valid date." };
   const priority = String(formData.get("priority") ?? "medium");
   const type = String(formData.get("type") ?? "internal");
   const linkedType = String(formData.get("linkedType") ?? "") || null;
   const linkedId = String(formData.get("linkedId") ?? "") || null;
   if (!isValidValue(TASK_PRIORITIES, priority)) return { ok: false, message: "Not a valid priority." };
+  if (!(type in TASK_TYPE_LABELS)) return { ok: false, message: "Not a valid task type." };
+  if (linkedType && !(linkedType in TYPE_LABELS)) {
+    return { ok: false, message: "Not a valid linked record type." };
+  }
   const inactive = await requireActiveAssignee(assigneeId);
   if (inactive) return inactive;
+  if (linkedType && linkedId) {
+    const exists = await linkedRecordExists(linkedType, linkedId);
+    if (!exists) return { ok: false, message: "That linked record could not be found." };
+  }
 
   return safeAction(async () => {
     const task = await prisma.task.create({
       data: {
         title,
         assigneeId,
-        dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+        dueDate,
         priority,
         type,
         linkedType,
@@ -49,11 +83,13 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
  * available for anything more detailed (due date, priority, type, linking).
  */
 export async function quickAddTask(
-  title: string,
-  assigneeId: string | null
+  title: string
 ): Promise<{ ok: true; id: string; assigneeName: string | null } | { ok: false; message: string }> {
-  const trimmed = title.trim();
+  const denied = await requirePermission("tasks.edit");
+  if (denied && !denied.ok) return { ok: false, message: denied.message };
+  const trimmed = cleanText(title, TEXT_LIMITS.short);
   if (!trimmed) return { ok: false, message: "Enter a title for the task." };
+  const assigneeId = await currentUserId();
   const inactive = await requireActiveAssignee(assigneeId);
   if (inactive) return inactive;
   try {
@@ -73,6 +109,8 @@ export async function quickAddTask(
 
 /** Hard-deletes a task (used by quick-add's Undo). Comments cascade with it. */
 export async function deleteTask(taskId: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     // Subtasks would orphan on a hard delete - only leaf/new tasks qualify.
     const subtaskCount = await prisma.task.count({ where: { parentTaskId: taskId } });
@@ -85,6 +123,8 @@ export async function deleteTask(taskId: string): Promise<ActionResult> {
 }
 
 export async function setTaskStatus(taskId: string, status: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
   if (!isValidValue(TASK_STATUSES, status)) {
     return { ok: false, message: "Not a valid status." };
   }
@@ -97,6 +137,8 @@ export async function setTaskStatus(taskId: string, status: string): Promise<Act
 }
 
 export async function setTaskAssignee(taskId: string, assigneeId: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
   const inactive = await requireActiveAssignee(assigneeId);
   if (inactive) return inactive;
   return safeAction(async () => {
@@ -107,6 +149,8 @@ export async function setTaskAssignee(taskId: string, assigneeId: string): Promi
 }
 
 export async function setTaskPriority(taskId: string, priority: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
   if (!isValidValue(TASK_PRIORITIES, priority)) {
     return { ok: false, message: "Not a valid priority." };
   }
@@ -118,6 +162,13 @@ export async function setTaskPriority(taskId: string, priority: string): Promise
 }
 
 export async function setTaskLink(taskId: string, linkedType: string, linkedId: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
+  if (!(linkedType in TYPE_LABELS)) {
+    return { ok: false, message: "Not a valid linked record type." };
+  }
+  const exists = await linkedRecordExists(linkedType, linkedId);
+  if (!exists) return { ok: false, message: "That linked record could not be found." };
   return safeAction(async () => {
     await prisma.task.update({ where: { id: taskId }, data: { linkedType, linkedId } });
     await log(taskId, "task_linked", `Task linked to ${linkedType}:${linkedId}`);
@@ -125,25 +176,22 @@ export async function setTaskLink(taskId: string, linkedType: string, linkedId: 
   }, "Could not link the task. Please try again.");
 }
 
-/** Resolves the poster's real name server-side from authorId - the client no longer supplies it. */
-export async function addTaskComment(
-  taskId: string,
-  body: string,
-  authorId: string | null
-): Promise<ActionResult> {
-  const text = body.trim();
+/** Resolves the poster's identity server-side from the session - the client never supplies it. */
+export async function addTaskComment(taskId: string, body: string): Promise<ActionResult> {
+  const denied = await requirePermission("tasks.edit");
+  if (denied) return denied;
+  const text = cleanText(body, TEXT_LIMITS.long);
   if (!text) return { ok: false, message: "Comment can't be empty." };
+  const authorId = await currentUserId();
+  if (!authorId) return { ok: false, message: "Pick who you're working as before commenting." };
   return safeAction(async () => {
-    let resolvedName = "Team";
-    if (authorId) {
-      const user = await prisma.user.findUnique({ where: { id: authorId }, select: { name: true } });
-      resolvedName = user?.name ?? "Team";
-    }
+    const user = await prisma.user.findUnique({ where: { id: authorId }, select: { name: true } });
+    const resolvedName = user?.name ?? "Team";
     await prisma.taskComment.create({
       data: {
         taskId,
         body: text,
-        authorId: authorId || null,
+        authorId,
         authorName: resolvedName,
       },
     });

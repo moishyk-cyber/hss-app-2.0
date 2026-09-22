@@ -9,6 +9,7 @@ import { roundCents } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
+import { parseDateOnly } from "@/lib/input";
 
 async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
   await logActivity("line_item", linkedId, action, detail, meta);
@@ -267,6 +268,10 @@ export async function setLineItemBackorderExpected(
 ): Promise<ActionResult> {
   const denied = await requirePermission("pricing.edit");
   if (denied) return denied;
+  const parsedDate = parseDateOnly(backorderExpected);
+  if (parsedDate === undefined) {
+    return { ok: false, message: "Enter a valid date." };
+  }
   return safeAction(async () => {
     const before = await prisma.lineItem.findUnique({
       where: { id: lineItemId },
@@ -275,12 +280,12 @@ export async function setLineItemBackorderExpected(
     if (!before) throw new Error("Line item not found");
     await prisma.lineItem.update({
       where: { id: lineItemId },
-      data: { backorderExpected: backorderExpected ? new Date(backorderExpected) : null },
+      data: { backorderExpected: parsedDate },
     });
     await log(
       lineItemId,
       "backorder_expected_set",
-      `Backorder expected date ${backorderExpected ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
+      `Backorder expected date ${parsedDate ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
     );
     await revalidateLineItem(lineItemId);
   }, "Could not save the expected date. Please try again.");

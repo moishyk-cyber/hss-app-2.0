@@ -10,7 +10,6 @@
 // browser until it's submitted or cleared.
 
 import { useState, useSyncExternalStore, useTransition } from "react";
-import { readStoredUserId } from "@/lib/identityClient";
 import { Spinner } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { deleteTask, quickAddTask } from "./actions";
@@ -60,7 +59,7 @@ export default function QuickAddTask() {
     if (!trimmed) return;
     setError(null);
     startTransition(async () => {
-      const result = await quickAddTask(trimmed, readStoredUserId());
+      const result = await quickAddTask(trimmed);
       if (result.ok === false) {
         setError(result.message);
       } else {

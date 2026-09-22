@@ -791,9 +791,11 @@ export function IntakeForm({
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : error === "not_allowed" ? (
+        <FormAlert>Your role can&rsquo;t create intake. Ask an admin if you need it.</FormAlert>
+      ) : error === "inactive_salesperson" ? (
         <FormAlert>
-          That role can&rsquo;t do this. Switch &quot;Working as&quot; in the sidebar or ask an
-          admin.
+          Nothing was saved - that salesperson is inactive and can&rsquo;t be assigned. Pick an
+          active teammate and submit again.
         </FormAlert>
       ) : null}
 

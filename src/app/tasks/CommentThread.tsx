@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { readStoredUserId } from "@/lib/identityClient";
 import { PendingButton, Spinner } from "@/lib/ui";
+import { useToast } from "@/lib/toast";
 import { Avatar } from "@/lib/Avatar";
 import { addTaskComment, getTaskComments } from "./actions";
 import type { TaskCommentData } from "./actions";
@@ -19,6 +20,7 @@ export default function CommentThread({ taskId }: { taskId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const myId = typeof window !== "undefined" ? readStoredUserId() : null;
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +41,11 @@ export default function CommentThread({ taskId }: { taskId: string }) {
   async function handleAdd(formData: FormData) {
     const body = String(formData.get("body") ?? "");
     if (!body.trim()) return;
-    await addTaskComment(taskId, body, readStoredUserId());
+    const result = await addTaskComment(taskId, body);
+    if (!result.ok) {
+      toast({ kind: "error", message: result.message });
+      return;
+    }
     formRef.current?.reset();
     setComments(await getTaskComments(taskId));
   }
