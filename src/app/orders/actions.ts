@@ -20,7 +20,7 @@ import {
   DELIVERY_LEG_STATUSES,
   QUOTE_STATUSES,
 } from "@/lib/constants";
-import { roundCents } from "@/lib/money";
+import { plainMoney, roundCents, toMoney } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, parseDateOnly, TEXT_LIMITS } from "@/lib/input";
@@ -114,7 +114,9 @@ export async function unstickOrder(orderId: string): Promise<ActionResult> {
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) throw new Error("Order not found");
     const derived = deriveOrderStatus(order);
     await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
@@ -128,7 +130,9 @@ export async function markOrderComplete(orderId: string): Promise<ActionResult> 
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
   try {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) return { ok: false, message: "Order not found" };
 
     if (!canCompleteOrder(order)) {
@@ -172,7 +176,9 @@ export async function reopenOrder(orderId: string): Promise<ActionResult> {
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) throw new Error("Order not found");
     if (order.status !== "complete") return;
     const derived = deriveOrderStatus(order);
@@ -278,7 +284,7 @@ export async function markPaymentPaid(
     await log(
       payment.orderId,
       "payment_paid",
-      `Payment (${payment.type}) of $${payment.amount} marked paid${
+      `Payment (${payment.type}) of $${toMoney(payment.amount)} marked paid${
         methodLabel ? ` via ${methodLabel}` : ""
       }`,
       { previousValue: "invoiced", newValue: "paid" }
@@ -303,7 +309,7 @@ export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResu
     await log(
       payment.orderId,
       "payment_unpaid",
-      `Payment (${payment.type}) of $${payment.amount} reverted to invoiced (paid was undone)`,
+      `Payment (${payment.type}) of $${toMoney(payment.amount)} reverted to invoiced (paid was undone)`,
       { previousValue: "paid", newValue: "invoiced" }
     );
     await recomputeOrderStatus(payment.orderId);
@@ -399,10 +405,14 @@ function shipToForMode(mode: string): string {
  * goods travel is decided later, when the vendor acknowledges the PO - see
  * acknowledgePo, which is what actually creates the delivery leg.
  *
- * PO numbers are allocated by counting existing POs on the order and retrying
- * on a collision (two people creating a PO on the same order at once), guarded
- * by the @@unique([orderId, poNumber]) constraint in the schema. `supplierId`
- * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
+ * PO numbers are PO-<jobId or last 6 of the order id>-<n>, where n comes from
+ * atomically incrementing Order.poSequence (the UPDATE row-locks the order, so
+ * two people creating a PO on the same order at once get different numbers).
+ * poNumber is globally unique in the schema; a legacy number can still collide
+ * when two orders share a jobId, so a taken number is skipped (the sequence
+ * moves on again) and a race that only surfaces at insert time (P2002) retries
+ * the whole allocation a bounded number of times. `supplierId` picks an
+ * existing vendor; `newVendorName` creates (or links to a normalized-name
  * match for) one instead - exactly one of the two should be set.
  */
 export async function createPurchaseOrder(
@@ -422,7 +432,7 @@ export async function createPurchaseOrder(
     return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
   }
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
     if (!order) throw new Error("Order not found");
 
     const vendor = await resolveVendor(supplierId, newVendorName);
@@ -431,27 +441,51 @@ export async function createPurchaseOrder(
       await log(orderId, "vendor_created", `Vendor "${vendor.name}" created while creating a PO`);
     }
 
-    const base = order.jobId || order.id.slice(-6).toUpperCase();
-
     let po = null;
     const MAX_ATTEMPTS = 5;
+    const MAX_SKIPS = 20;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      const existing = await prisma.purchaseOrder.count({ where: { orderId } });
-      const poNumber = `PO-${base}-${existing + 1}`;
       try {
-        po = await prisma.purchaseOrder.create({
-          data: {
-            orderId,
-            supplierId: vendor.id,
-            poNumber,
-            status: "draft",
-            autoQuotesPoNumber: aqNumber || null,
-            // Provisional until the delivery mode is picked at acknowledgment.
-            shipTo: "hss",
-          },
+        po = await prisma.$transaction(async (tx) => {
+          for (let skip = 0; skip < MAX_SKIPS; skip += 1) {
+            // Atomic allocation: each call hands out the next number, and a
+            // number already taken (a legacy PO on another order with the same
+            // jobId) is skipped by incrementing again, never recomputed.
+            const seq = await tx.order.update({
+              where: { id: orderId },
+              data: { poSequence: { increment: 1 } },
+              select: { poSequence: true, jobId: true, id: true },
+            });
+            const base = seq.jobId || seq.id.slice(-6).toUpperCase();
+            const poNumber = `PO-${base}-${seq.poSequence}`;
+            const taken = await tx.purchaseOrder.findUnique({ where: { poNumber }, select: { id: true } });
+            if (taken) continue;
+            const created = await tx.purchaseOrder.create({
+              data: {
+                orderId,
+                supplierId: vendor.id,
+                poNumber,
+                status: "draft",
+                autoQuotesPoNumber: aqNumber || null,
+                // Provisional until the delivery mode is picked at acknowledgment.
+                shipTo: "hss",
+              },
+            });
+            // No delivery leg yet on purpose: the PO has to come back acknowledged
+            // before anyone knows how it is travelling. acknowledgePo creates it.
+            await tx.lineItem.updateMany({
+              where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
+              data: { purchaseOrderId: created.id },
+            });
+            return created;
+          }
+          throw new Error("Could not allocate a PO number");
         });
         break;
       } catch (err) {
+        // Another order sharing this jobId inserted the same number between our
+        // check and our insert: the transaction rolled back, so allocate again
+        // (the other PO now exists and is skipped).
         const isNumberCollision =
           err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
         if (!isNumberCollision || attempt === MAX_ATTEMPTS - 1) throw err;
@@ -459,12 +493,6 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
-    // No delivery leg yet on purpose: the PO has to come back acknowledged
-    // before anyone knows how it is travelling. acknowledgePo creates it.
-    await prisma.lineItem.updateMany({
-      where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-      data: { purchaseOrderId: po.id },
-    });
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
@@ -486,18 +514,20 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
   try {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: poId },
-      include: {
-        order: {
-          include: {
-            payments: true,
-            company: { select: { requiresDeposit: true, depositPercent: true } },
+    const po = plainMoney(
+      await prisma.purchaseOrder.findUnique({
+        where: { id: poId },
+        include: {
+          order: {
+            include: {
+              payments: true,
+              company: { select: { requiresDeposit: true, depositPercent: true } },
+            },
           },
+          deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
         },
-        deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
-      },
-    });
+      })
+    );
     if (!po) return { ok: false, message: "PO not found" };
     const idx = PO_ORDER.indexOf(po.status);
     if (idx < 0 || idx >= PO_ORDER.length - 1) return { ok: false, message: "Already at final status" };

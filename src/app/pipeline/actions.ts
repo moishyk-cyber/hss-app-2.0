@@ -14,7 +14,7 @@ import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus, syncOrderValueFromLineItems } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
-import { roundCents } from "@/lib/money";
+import { roundCents, toMoney } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, parseDateOnly, parseNonNegativeNumber, TEXT_LIMITS } from "@/lib/input";
@@ -522,7 +522,7 @@ export async function markOpportunityWon(formData: FormData) {
   const rawValue =
     fromClosePanel && submittedValue != null && submittedValue > 0
       ? submittedValue
-      : opportunity.value;
+      : toMoney(opportunity.value);
   if (!rawValue || rawValue <= 0) {
     redirect(`/pipeline/${opportunity.id}?error=value_required`);
   }

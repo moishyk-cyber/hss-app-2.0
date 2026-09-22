@@ -15,6 +15,7 @@ import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { plainMoney, type PlainMoney } from "@/lib/money";
 import { OrdersKanbanBoard, type OrderCard } from "./OrdersKanbanBoard";
 import { DueCell, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
@@ -45,7 +46,7 @@ const ORDER_BALL_SELECT = {
   },
 } satisfies Prisma.OrderSelect;
 
-type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+type OrderBallRow = PlainMoney<Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>>;
 
 function toOrderBallInput(order: OrderBallRow): OrderBallInput {
   const { _count, ...rest } = order;
@@ -152,19 +153,23 @@ export default async function OrdersPage({
   };
   const orderBy = isList && sortKey ? ORDER_BY[sortKey] : undefined;
 
-  const orders = await prisma.order.findMany({
-    where,
-    include: {
-      company: { select: { id: true, name: true, requiresDeposit: true, depositPercent: true } },
-      owner: { select: { id: true, name: true } },
-      payments: ORDER_BALL_SELECT.payments,
-      lineItems: ORDER_BALL_SELECT.lineItems,
-      purchaseOrders: ORDER_BALL_SELECT.purchaseOrders,
-      deliveries: ORDER_BALL_SELECT.deliveries,
-      _count: ORDER_BALL_SELECT._count,
-    },
-    ...(orderBy ? { orderBy } : {}),
-  });
+  // Money columns come back as Decimal; plain numbers from here on (the board
+  // cards below go to a client component).
+  const orders = plainMoney(
+    await prisma.order.findMany({
+      where,
+      include: {
+        company: { select: { id: true, name: true, requiresDeposit: true, depositPercent: true } },
+        owner: { select: { id: true, name: true } },
+        payments: ORDER_BALL_SELECT.payments,
+        lineItems: ORDER_BALL_SELECT.lineItems,
+        purchaseOrders: ORDER_BALL_SELECT.purchaseOrders,
+        deliveries: ORDER_BALL_SELECT.deliveries,
+        _count: ORDER_BALL_SELECT._count,
+      },
+      ...(orderBy ? { orderBy } : {}),
+    })
+  );
 
   const holders = await getStageHolders();
 

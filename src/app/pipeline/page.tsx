@@ -7,6 +7,7 @@ import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { opportunityBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
+import { plainMoney, type PlainMoney } from "@/lib/money";
 import { KanbanBoard, type KanbanCard } from "./KanbanBoard";
 import { PipelineList } from "./PipelineList";
 import {
@@ -64,7 +65,7 @@ const ORDER_BALL_SELECT = {
   },
 } satisfies Prisma.OrderSelect;
 
-type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+type OrderBallRow = PlainMoney<Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>>;
 
 function toOrderBallInput(order: OrderBallRow): OrderBallInput {
   const { _count, ...rest } = order;
@@ -136,21 +137,25 @@ export default async function PipelinePage({
   const listOrder = isList && sortKey ? PIPELINE_ORDER[sortKey] : undefined;
   const listSorted = !!listOrder;
 
-  const opportunities = await prisma.opportunity.findMany({
-    where: listWhere,
-    orderBy: listOrder ? listOrder(sortDir) : DEFAULT_ORDER,
-    select: {
-      id: true,
-      title: true,
-      stage: true,
-      value: true,
-      createdAt: true,
-      nextFollowUp: true,
-      company: { select: { id: true, name: true } },
-      lineItems: { select: { rfqStatus: true } },
-      orders: { select: ORDER_BALL_SELECT, take: 1 },
-    },
-  });
+  // Money columns come back as Decimal; plain numbers from here on (the cards
+  // below go to client components).
+  const opportunities = plainMoney(
+    await prisma.opportunity.findMany({
+      where: listWhere,
+      orderBy: listOrder ? listOrder(sortDir) : DEFAULT_ORDER,
+      select: {
+        id: true,
+        title: true,
+        stage: true,
+        value: true,
+        createdAt: true,
+        nextFollowUp: true,
+        company: { select: { id: true, name: true } },
+        lineItems: { select: { rfqStatus: true } },
+        orders: { select: ORDER_BALL_SELECT, take: 1 },
+      },
+    })
+  );
 
   // Scoped to the deals actually on screen. Unscoped, this loaded every stage_changed
   // row ever written - a table that only grows, for a number shown on a handful of cards.

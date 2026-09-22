@@ -9,6 +9,7 @@ import { PendingButton } from "@/lib/ui";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { plainMoney, type PlainMoney } from "@/lib/money";
 import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
 import { addLineItem, moveStageFromStepper } from "../actions";
@@ -52,7 +53,9 @@ const ORDER_BALL_SELECT = {
   },
 } satisfies Prisma.OrderSelect;
 
-type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT & { id: true; title: true } }>;
+type OrderBallRow = PlainMoney<
+  Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT & { id: true; title: true } }>
+>;
 
 function toOrderBallInput(order: OrderBallRow): OrderBallInput {
   const { _count, ...rest } = order;
@@ -70,7 +73,7 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const [opportunity, users] = await Promise.all([
+  const [opportunityRow, users] = await Promise.all([
     prisma.opportunity.findUnique({
       where: { id },
       include: {
@@ -91,6 +94,9 @@ export default async function OpportunityDetailPage({
       orderBy: { name: "asc" },
     }),
   ]);
+  // Money columns are Decimal; plain numbers from here on (line items and the
+  // deal value go to client components below).
+  const opportunity = plainMoney(opportunityRow);
   if (!opportunity) notFound();
 
   const stage = opportunity.stage;

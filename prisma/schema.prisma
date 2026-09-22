@@ -130,7 +130,7 @@ model Opportunity {
   stage            String    @default("new") // new | info_missing | estimating | proposal_sent | revisions_needed | negotiation | won | lost
   orderType        String    @default("order") // project | order
   needsPricing     Boolean   @default(true)
-  value            Float?
+  value            Decimal?  @db.Decimal(12, 2)
   neededByDate     DateTime?
   estDueDate       DateTime?
   nextFollowUp     DateTime?
@@ -141,7 +141,7 @@ model Opportunity {
   roomDimensions   String?
   wallMeasurements String?
   plumbingElectricalNotes String?
-  budget           Float?
+  budget           Decimal?  @db.Decimal(12, 2)
   clientVisionNotes String?
   deliveryType     String? // curbside | inside
   openingSize      String?
@@ -187,8 +187,8 @@ model LineItem {
   sku            String?
   supplier       Company?     @relation("ItemSupplier", fields: [supplierId], references: [id])
   supplierId     String?
-  unitCost       Float?
-  unitPrice      Float?
+  unitCost       Decimal?     @db.Decimal(12, 2)
+  unitPrice      Decimal?     @db.Decimal(12, 2)
   // The date the item is called for (what the supplier quotes), not a day
   // count: the old `leadTimeDays` column stays in the database (no destructive
   // DDL this pass) but Prisma no longer maps it.
@@ -239,8 +239,8 @@ model Order {
   clientPoNumber String?
   jobId          String?
   quickbooksInvoiceNo String?
-  orderValue     Float?
-  depositRequired Float? // agreed gate amount from the close dialog; null = derive from company depositPercent
+  orderValue     Decimal?     @db.Decimal(12, 2)
+  depositRequired Decimal?    @db.Decimal(12, 2) // agreed gate amount from the close dialog; null = derive from company depositPercent
   location       Location?    @relation(fields: [locationId], references: [id])
   locationId     String?
   deliveryAddress String?
@@ -254,6 +254,9 @@ model Order {
   quoteStatus    String       @default("not_needed") // not_needed | needed | sent | accepted
   quoteUrl       String?
   quoteSentAt    DateTime?
+  // Last PO sequence number handed out for this order; createPurchaseOrder
+  // increments it atomically to build the next poNumber.
+  poSequence     Int          @default(0)
   notes          String?
   mondayId       String?      @unique
   lineItems      LineItem[]
@@ -280,7 +283,9 @@ model PurchaseOrder {
   orderId          String
   supplier         Company?   @relation("PoSupplier", fields: [supplierId], references: [id])
   supplierId       String?
-  poNumber         String?
+  // Allocated from Order.poSequence (PO-<jobId or order id tail>-<n>); globally
+  // unique so two orders sharing a jobId can never mint the same number.
+  poNumber         String     @unique
   autoQuotesPoNumber String? // the PO number typed into AutoQuotes for this vendor order
   status           String     @default("draft") // draft | sent | acknowledged | shipped | received
   shipTo           String     @default("hss") // hss | client_direct
@@ -300,7 +305,6 @@ model PurchaseOrder {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @default(now()) @updatedAt
 
-  @@unique([orderId, poNumber])
   @@index([orderId])
   @@index([supplierId])
   @@index([status])
@@ -331,7 +335,7 @@ model Delivery {
   trucker               String?   // carrier or named driver, e.g. "ANDY", "UBER", "UPS DROPSHIP"
   pickupAddress         String?   // defaults from the supplier's address, overridable per leg
   scheduledDeliveryDate DateTime? // the "Schedule Delivery & Trucker" step
-  shipCost              Float?    // trucking/delivery cost
+  shipCost              Decimal?  @db.Decimal(12, 2) // trucking/delivery cost
   chargedToCustomer     Boolean   @default(false) // was shipCost billed back to the client?
   deliveryContactPhone  String?   // day-of-delivery contact number
   deliveredAt     DateTime?
@@ -350,7 +354,7 @@ model Payment {
   order         Order    @relation(fields: [orderId], references: [id])
   orderId       String
   type          String // deposit | final | full
-  amount        Float
+  amount        Decimal  @db.Decimal(12, 2)
   status        String   @default("pending") // pending | invoiced | paid
   quickbooksRef String?
   date          DateTime?

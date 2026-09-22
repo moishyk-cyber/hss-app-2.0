@@ -18,6 +18,7 @@ import { currentUserId } from "@/lib/identityServer";
 import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { plainMoney, type PlainMoney } from "@/lib/money";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "../rfq/queue-statuses";
 import { ChartCard } from "./charts/ChartCard";
 import { HorizontalBarChart } from "./charts/HorizontalBarChart";
@@ -64,7 +65,7 @@ const ORDER_BALL_SELECT = {
   },
 } satisfies Prisma.OrderSelect;
 
-type OrderBallRow = Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>;
+type OrderBallRow = PlainMoney<Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT }>>;
 
 function toOrderBallInput(order: OrderBallRow): OrderBallInput {
   const { _count, ...rest } = order;
@@ -140,172 +141,176 @@ export default async function DashboardPage({
     orphanedAssigneeCount,
     openServiceIssueCount,
     openServiceIssues,
-  ] = await Promise.all([
-    // ---- Overdue & due this week: replaces the old manual-urgency queue -
-    // the client's call was "just filter it by due date". ----
-    prisma.order.findMany({
-      where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
-      select: { id: true, title: true, neededByDate: true },
-      orderBy: { neededByDate: "asc" },
-    }),
-    prisma.opportunity.groupBy({
-      by: ["stage"],
-      where: { stage: { notIn: ["won", "lost"] } },
-      _count: { _all: true },
-      _sum: { value: true },
-    }),
-    prisma.opportunity.findMany({
-      where: { stage: "won" },
-      select: {
-        value: true,
-        createdAt: true,
-        orders: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 },
-      },
-    }),
-    prisma.order.groupBy({
-      by: ["status"],
-      _count: { _all: true },
-      _sum: { orderValue: true },
-    }),
-    prisma.lineItem.findMany({
-      where: { rfqStatus: "needs_pricing" },
-      select: { id: true, name: true, createdAt: true, orderId: true, opportunity: { select: { stage: true } } },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.lineItem.groupBy({
-      by: ["rfqStatus"],
-      where: { rfqStatus: { in: RFQ_QUEUE_VALUES } },
-      _count: { _all: true },
-    }),
-    prisma.opportunity.findMany({
-      where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
-      select: { createdAt: true },
-    }),
-    prisma.order.findMany({
-      where: { createdAt: { gte: rangeStart, lte: rangeEnd }, opportunityId: null },
-      select: { createdAt: true },
-    }),
-    prisma.order.findMany({
-      where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
-      select: { orderType: true, createdAt: true },
-    }),
-    // ---- Team queue: orders awaiting payment (also feeds the stat tile) ----
-    prisma.order.findMany({
-      where: {
-        OR: [{ status: "awaiting_payment" }, { status: "new", payments: { some: { status: { not: "paid" } } } }],
-      },
-      select: {
-        id: true,
-        title: true,
-        orderType: true,
-        orderValue: true,
-        createdAt: true,
-        payments: { select: { amount: true, status: true, type: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    // ---- Team queue: POs awaiting acknowledgment / in transit ----
-    prisma.purchaseOrder.findMany({
-      where: { status: { in: ["sent", "shipped"] } },
-      select: {
-        id: true,
-        poNumber: true,
-        status: true,
-        sentDate: true,
-        orderId: true,
-        order: { select: { title: true } },
-        supplier: { select: { name: true } },
-      },
-      orderBy: { sentDate: "asc" },
-    }),
-    // ---- Team queue: deliveries this week (delivery legs) ----
-    prisma.delivery.findMany({
-      where: {
-        status: { notIn: ["delivered_partial", "delivered_full"] },
-        OR: [
-          { scheduledDeliveryDate: { gte: now, lte: in7Days } },
-          { expectedDelivery: { gte: now, lte: in7Days } },
-        ],
-      },
-      select: {
-        id: true,
-        orderId: true,
-        scheduledDeliveryDate: true,
-        expectedDelivery: true,
-        order: { select: { title: true } },
-        purchaseOrder: { select: { poNumber: true } },
-      },
-    }),
-    // ---- Team queue: deliveries this week (orders by neededByDate) ----
-    prisma.order.findMany({
-      where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
-      select: { id: true, title: true, neededByDate: true },
-    }),
-    // ---- My Items: everything OPEN with my name on it. With no identity
-    // picked, `mineId` matches nothing, so these come back empty and the tab
-    // shows its "pick your name" empty state instead. ----
-    prisma.opportunity.findMany({
-      where: { salespersonId: mineId, stage: { notIn: ["won", "lost"] } },
-      select: {
-        id: true,
-        title: true,
-        stage: true,
-        nextFollowUp: true,
-        lineItems: { select: { rfqStatus: true } },
-      },
-      orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
-    }),
-    prisma.order.findMany({
-      where: { ownerId: mineId, status: { not: "complete" } },
-      select: { id: true, title: true, neededByDate: true, ...ORDER_BALL_SELECT },
-      orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }],
-    }),
-    prisma.task.findMany({
-      where: { assigneeId: mineId, status: { not: "done" } },
-      select: { id: true, title: true, status: true, dueDate: true },
-      orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
-    }),
-    prisma.lineItem.findMany({
-      where: { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES } },
-      select: {
-        id: true,
-        name: true,
-        rfqStatus: true,
-        createdAt: true,
-        orderId: true,
-        opportunity: { select: { stage: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    // Open work assigned to a deactivated teammate never shows up in anyone's
-    // "My Items" (the picker only lists active users) - QA #2b traced "My
-    // Items looks the same for everyone" to two deactivated User rows
-    // (a legacy salesperson, plus the migration's placeholder "HSS Kitchens"
-    // row) that still own real open opportunities/orders/tasks/items. Surface
-    // the count so this stops being silently invisible while it's reconciled.
-    prisma.$transaction([
-      prisma.opportunity.count({
-        where: { stage: { notIn: ["won", "lost"] }, salespersonId: { not: null }, salesperson: { active: false } },
+    // Money columns (sums included) come back as Decimal; plainMoney turns the
+    // whole batch into plain numbers for the tiles, charts and queues below.
+  ] = plainMoney(
+    await Promise.all([
+      // ---- Overdue & due this week: replaces the old manual-urgency queue -
+      // the client's call was "just filter it by due date". ----
+      prisma.order.findMany({
+        where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+        select: { id: true, title: true, neededByDate: true },
+        orderBy: { neededByDate: "asc" },
       }),
-      prisma.order.count({
-        where: { status: { not: "complete" }, ownerId: { not: null }, owner: { active: false } },
+      prisma.opportunity.groupBy({
+        by: ["stage"],
+        where: { stage: { notIn: ["won", "lost"] } },
+        _count: { _all: true },
+        _sum: { value: true },
       }),
-      prisma.task.count({
-        where: { status: { not: "done" }, assigneeId: { not: null }, assignee: { active: false } },
+      prisma.opportunity.findMany({
+        where: { stage: "won" },
+        select: {
+          value: true,
+          createdAt: true,
+          orders: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 },
+        },
       }),
-      prisma.lineItem.count({
-        where: { rfqStatus: { in: RFQ_QUEUE_VALUES }, assigneeId: { not: null }, assignee: { active: false } },
+      prisma.order.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+        _sum: { orderValue: true },
       }),
-    ]).then(([opps, orders, tasks, items]) => opps + orders + tasks + items),
-    // ---- Team queue: open customer-service issues ----
-    prisma.serviceIssue.count({ where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } }),
-    prisma.serviceIssue.findMany({
-      where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } },
-      select: { id: true, title: true, reportedAt: true, company: { select: { name: true } } },
-      orderBy: { reportedAt: "desc" },
-      take: 5,
-    }),
-  ]);
+      prisma.lineItem.findMany({
+        where: { rfqStatus: "needs_pricing" },
+        select: { id: true, name: true, createdAt: true, orderId: true, opportunity: { select: { stage: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.lineItem.groupBy({
+        by: ["rfqStatus"],
+        where: { rfqStatus: { in: RFQ_QUEUE_VALUES } },
+        _count: { _all: true },
+      }),
+      prisma.opportunity.findMany({
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+        select: { createdAt: true },
+      }),
+      prisma.order.findMany({
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd }, opportunityId: null },
+        select: { createdAt: true },
+      }),
+      prisma.order.findMany({
+        where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+        select: { orderType: true, createdAt: true },
+      }),
+      // ---- Team queue: orders awaiting payment (also feeds the stat tile) ----
+      prisma.order.findMany({
+        where: {
+          OR: [{ status: "awaiting_payment" }, { status: "new", payments: { some: { status: { not: "paid" } } } }],
+        },
+        select: {
+          id: true,
+          title: true,
+          orderType: true,
+          orderValue: true,
+          createdAt: true,
+          payments: { select: { amount: true, status: true, type: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      // ---- Team queue: POs awaiting acknowledgment / in transit ----
+      prisma.purchaseOrder.findMany({
+        where: { status: { in: ["sent", "shipped"] } },
+        select: {
+          id: true,
+          poNumber: true,
+          status: true,
+          sentDate: true,
+          orderId: true,
+          order: { select: { title: true } },
+          supplier: { select: { name: true } },
+        },
+        orderBy: { sentDate: "asc" },
+      }),
+      // ---- Team queue: deliveries this week (delivery legs) ----
+      prisma.delivery.findMany({
+        where: {
+          status: { notIn: ["delivered_partial", "delivered_full"] },
+          OR: [
+            { scheduledDeliveryDate: { gte: now, lte: in7Days } },
+            { expectedDelivery: { gte: now, lte: in7Days } },
+          ],
+        },
+        select: {
+          id: true,
+          orderId: true,
+          scheduledDeliveryDate: true,
+          expectedDelivery: true,
+          order: { select: { title: true } },
+          purchaseOrder: { select: { poNumber: true } },
+        },
+      }),
+      // ---- Team queue: deliveries this week (orders by neededByDate) ----
+      prisma.order.findMany({
+        where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+        select: { id: true, title: true, neededByDate: true },
+      }),
+      // ---- My Items: everything OPEN with my name on it. With no identity
+      // picked, `mineId` matches nothing, so these come back empty and the tab
+      // shows its "pick your name" empty state instead. ----
+      prisma.opportunity.findMany({
+        where: { salespersonId: mineId, stage: { notIn: ["won", "lost"] } },
+        select: {
+          id: true,
+          title: true,
+          stage: true,
+          nextFollowUp: true,
+          lineItems: { select: { rfqStatus: true } },
+        },
+        orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
+      }),
+      prisma.order.findMany({
+        where: { ownerId: mineId, status: { not: "complete" } },
+        select: { id: true, title: true, neededByDate: true, ...ORDER_BALL_SELECT },
+        orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }],
+      }),
+      prisma.task.findMany({
+        where: { assigneeId: mineId, status: { not: "done" } },
+        select: { id: true, title: true, status: true, dueDate: true },
+        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+      }),
+      prisma.lineItem.findMany({
+        where: { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES } },
+        select: {
+          id: true,
+          name: true,
+          rfqStatus: true,
+          createdAt: true,
+          orderId: true,
+          opportunity: { select: { stage: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      // Open work assigned to a deactivated teammate never shows up in anyone's
+      // "My Items" (the picker only lists active users) - QA #2b traced "My
+      // Items looks the same for everyone" to two deactivated User rows
+      // (a legacy salesperson, plus the migration's placeholder "HSS Kitchens"
+      // row) that still own real open opportunities/orders/tasks/items. Surface
+      // the count so this stops being silently invisible while it's reconciled.
+      prisma.$transaction([
+        prisma.opportunity.count({
+          where: { stage: { notIn: ["won", "lost"] }, salespersonId: { not: null }, salesperson: { active: false } },
+        }),
+        prisma.order.count({
+          where: { status: { not: "complete" }, ownerId: { not: null }, owner: { active: false } },
+        }),
+        prisma.task.count({
+          where: { status: { not: "done" }, assigneeId: { not: null }, assignee: { active: false } },
+        }),
+        prisma.lineItem.count({
+          where: { rfqStatus: { in: RFQ_QUEUE_VALUES }, assigneeId: { not: null }, assignee: { active: false } },
+        }),
+      ]).then(([opps, orders, tasks, items]) => opps + orders + tasks + items),
+      // ---- Team queue: open customer-service issues ----
+      prisma.serviceIssue.count({ where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } }),
+      prisma.serviceIssue.findMany({
+        where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } },
+        select: { id: true, title: true, reportedAt: true, company: { select: { name: true } } },
+        orderBy: { reportedAt: "desc" },
+        take: 5,
+      }),
+    ])
+  );
 
   const holders = await getStageHolders();
 

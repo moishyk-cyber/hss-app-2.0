@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { BackLink } from "@/lib/BackLink";
 import { PendingButton } from "@/lib/ui";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
+import { plainMoney } from "@/lib/money";
 import { updateOpportunity } from "../../actions";
 import {
   Checkbox,
@@ -30,7 +31,7 @@ export default async function EditOpportunityPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
-  const [opportunity, companies, contacts, users, req] = await Promise.all([
+  const [opportunityRow, companies, contacts, users, req] = await Promise.all([
     prisma.opportunity.findUnique({ where: { id } }),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.contact.findMany({
@@ -40,6 +41,8 @@ export default async function EditOpportunityPage({
     prisma.user.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     getFieldRequirements(),
   ]);
+  // value/budget come back as Decimal; plain numbers for the form defaults.
+  const opportunity = plainMoney(opportunityRow);
   if (!opportunity) notFound();
 
   // The deal's business supplies the location options (a site on another
