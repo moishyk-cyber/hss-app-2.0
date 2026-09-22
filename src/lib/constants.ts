@@ -73,6 +73,13 @@ export const PO_STATUSES = [
   { value: "received", label: "Received" },
 ] as const;
 
+/** Payment.status vocabulary (also enforced by the Payment_status_check constraint). */
+export const PAYMENT_STATUSES = [
+  { value: "pending", label: "Pending" },
+  { value: "invoiced", label: "Invoiced" },
+  { value: "paid", label: "Paid" },
+] as const;
+
 export const TASK_STATUSES = [
   { value: "not_started", label: "Not Started" },
   { value: "in_progress", label: "In Progress" },

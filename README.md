@@ -78,6 +78,27 @@ rules end to end. It writes `ZZ-KLYNE-FLOW-TEST` records to whichever database
 `DATABASE_URL` points at and deletes them afterwards, so point it at a
 development database, not production.
 
+## Schema changes
+
+`prisma/sql/` is the schema's migration history, applied by hand to Supabase
+by the orchestrator (there is no CI/CD pipeline that runs these). The numbered,
+dated files (`00000000_baseline_schema_2026-09-22.sql`, `20260903_...`, and so
+on) are that history - each one is idempotent (`IF NOT EXISTS` / `DO $$`
+constraint-name guards) and safe to re-run, but only ever applied in order, by
+hand, against the real database.
+
+**Never run `prisma db push` or `prisma migrate dev` / `migrate deploy` against
+production.** Both compare the live database to `prisma/schema.prisma` and
+"fix" the difference - and the live database intentionally still carries
+columns the schema no longer maps (`LineItem.leadTimeDays` and ten deprecated
+`PurchaseOrder` logistics columns; see the model comments in
+`prisma/schema.prisma`). Either command would drop them.
+
+`prisma/sql/OPTIONAL_drop_deprecated_columns.sql` is not part of the numbered
+history - it is an optional, destructive script that finally drops those
+deprecated columns, meant to be run by hand, once, only after confirming
+nobody needs the old values anymore.
+
 ## Layout
 
 | Path | Contents |

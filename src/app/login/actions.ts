@@ -60,7 +60,7 @@ export async function login(formData: FormData): Promise<LoginResult> {
   // cookie we just set, which a fresh `cookies()` call in this same request
   // may not see yet. The signed-in user's name is right here regardless.
   await prisma.activityLog.create({
-    data: { userName: user.name, linkedType: "user", linkedId: user.id, action: "user_logged_in", detail: "Signed in" },
+    data: { userName: user.name, userId: user.id, linkedType: "user", linkedId: user.id, action: "user_logged_in", detail: "Signed in" },
   });
   return { ok: true, userId: user.id };
 }
