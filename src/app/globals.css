@@ -244,7 +244,13 @@ h3,
   padding: 4px 10px 4px 8px;
   min-height: 24px; /* WCAG 2.5.8 minimum pointer target for interactive pills */
   border-radius: 999px;
-  white-space: nowrap;
+  /* A pill never runs past its card or column: short ones stay on one line,
+     a long one ("Ball: Sam Freund, Herman Freund · Sales") wraps inside it. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+  text-align: left;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--ink);
