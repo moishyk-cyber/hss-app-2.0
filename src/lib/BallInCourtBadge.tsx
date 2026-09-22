@@ -12,7 +12,9 @@ export function BallInCourtBadge({ ball, className = "" }: { ball: Ball; classNa
   const holder = ball.holder ?? COURTS[ball.court];
   return (
     <span className={`badge ${COURT_COLORS[ball.court]} ${className}`.trim()} title={ball.hint}>
-      Ball: {holder} · {label}
+      <span className="min-w-0 truncate">
+        Ball: {holder} · {label}
+      </span>
     </span>
   );
 }

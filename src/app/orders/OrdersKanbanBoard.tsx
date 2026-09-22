@@ -3,7 +3,7 @@ import { ORDER_PHASES, ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/l
 import { Avatar } from "@/lib/Avatar";
 import type { Ball } from "@/lib/ballInCourt";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { DueCell, dueState, fmtMoney } from "./utils";
+import { DueCell, fmtMoney } from "./utils";
 
 /**
  * One order on the board. Everything is resolved server-side - the board is
@@ -76,17 +76,10 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
 
             <div className="flex-1 space-y-3">
               {columnCards.map((card) => {
-                const due = dueState(card.neededByDate, card.status);
-                const accent =
-                  due === "overdue"
-                    ? "border-l-4 border-red"
-                    : due === "soon"
-                      ? "border-l-4 border-orange"
-                      : "";
                 return (
                   <article
                     key={card.id}
-                    className={`card-sunken card-interactive relative ${accent}`}
+                    className="card-sunken card-interactive relative"
                   >
                     {/*
                       Stretched link (same pattern as the pipeline cards and the

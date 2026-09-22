@@ -16,7 +16,7 @@ import { orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { OrdersKanbanBoard, type OrderCard } from "./OrdersKanbanBoard";
-import { DueCell, dueState, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
+import { DueCell, fmtMoney, paymentState, PAYMENT_STATE_COLORS } from "./utils";
 
 /**
  * Just enough of an Order to compute orderBall() - a narrower stand-in for
@@ -271,31 +271,28 @@ export default async function OrdersPage({
             <div className="card card-flush overflow-hidden">
               <ul className="divide-y divide-border">
                 {orders.map((order) => {
-                  const due = dueState(order.neededByDate, order.status);
-                  const accent =
-                    due === "overdue" ? "border-l-4 border-red" : due === "soon" ? "border-l-4 border-orange" : "";
                   const ps = paymentState(order.payments);
                   const summary = itemSummary(order.lineItems);
                   const ball = withHolder(orderBall(toOrderBallInput(order)), holders);
                   return (
                     <li
                       key={order.id}
-                      className={`relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover ${accent}`}
+                      className="relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover"
                     >
                       <Avatar name={order.company?.name ?? "?"} kind="business" size="sm" />
 
                       <Link
                         href={`/orders/${order.id}`}
-                        className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
+                        className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                       >
                         {order.title}
                       </Link>
 
-                      {summary ? (
-                        <span className="hidden shrink-0 text-[12px] text-gray-dark xl:block">
-                          {summary}
-                        </span>
-                      ) : null}
+                      {/* Every column below has a fixed width and always renders (empty
+                          when there is nothing to show), so the columns line up row to row. */}
+                      <span className="hidden w-44 shrink-0 truncate text-[12px] text-gray-dark xl:block">
+                        {summary}
+                      </span>
 
                       <span className="hidden w-20 shrink-0 text-right text-[12.5px] font-medium tabular-nums text-gray-dark sm:block">
                         {fmtMoney(order.orderValue)}
@@ -303,29 +300,28 @@ export default async function OrdersPage({
 
                       {/* Quiet by default (Moishy: "too many details") - badges only
                           when they say something: payment only while money is
-                          still owed. Due-date urgency reads from the left accent
-                          and the Due column instead of its own badge. */}
-                      <span className="shrink-0">
+                          still owed. Due-date urgency reads from the Due column. */}
+                      <span className="w-36 shrink-0">
                         <span className={`badge ${ORDER_STATUS_COLORS[order.status] ?? "badge-gray"}`}>
                           {labelFor(ORDER_STATUSES, order.status)}
                         </span>
                       </span>
 
-                      {ps !== "paid" ? (
-                        <span className="hidden shrink-0 md:block">
+                      <span className="hidden w-20 shrink-0 md:block">
+                        {ps !== "paid" ? (
                           <span className={`badge ${PAYMENT_STATE_COLORS[ps]}`}>{ps}</span>
-                        </span>
-                      ) : null}
-
-                      <span className="hidden shrink-0 xl:block">
-                        <BallInCourtBadge ball={ball} />
+                        ) : null}
                       </span>
 
-                      <span className="hidden shrink-0 text-[12px] text-gray-dark lg:block">
+                      <span className="hidden w-56 shrink-0 xl:block">
+                        <BallInCourtBadge ball={ball} className="max-w-full" />
+                      </span>
+
+                      <span className="hidden w-40 shrink-0 text-[12px] text-gray-dark lg:block">
                         <DueCell neededByDate={order.neededByDate} status={order.status} />
                       </span>
 
-                      <span className="relative z-10 shrink-0">
+                      <span className="relative z-10 w-7 shrink-0">
                         {order.owner ? (
                           <span title={order.owner.name}>
                             <Avatar name={order.owner.name} kind="person" size="sm" />
