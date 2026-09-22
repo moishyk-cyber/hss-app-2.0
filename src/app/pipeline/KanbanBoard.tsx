@@ -185,7 +185,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   ) : null}
 
                   {/* Keyboard/no-drag alternative - moves the card optimistically too. */}
-                  <div className="relative z-10 mt-3 w-max">
+                  <div className="relative z-10 mt-3 w-fit max-w-full">
                     <BadgeSelect
                       value={card.stage}
                       options={stageOptions(card.stage)}
