@@ -50,18 +50,23 @@ function isAllowedDrawingMime(mimeType: string): boolean {
 }
 
 /**
- * Save the optional drawing/attachment (a pasted link, an uploaded PDF/image,
- * or both) as Document row(s) on the record the intake just created. Runs
- * AFTER the record is committed - a storage hiccup here must never roll back
- * or block an otherwise-successful intake, so every failure is swallowed and
- * logged rather than thrown.
+ * Save the optional attachment (a pasted link, an uploaded PDF/image, or both)
+ * as Document row(s) on the record the intake just created. Both order types
+ * offer it: a project's attachment is almost always a drawing, so it is filed
+ * as one; a straight order's is more often the client's PO or a quote, so it
+ * is filed as "other" and can be re-labeled on the Files tab. Runs AFTER the
+ * record is committed - a storage hiccup here must never roll back or block an
+ * otherwise-successful intake, so every failure is swallowed and logged rather
+ * than thrown.
  */
 async function saveDrawingAttachment(
   formData: FormData,
   linkedType: "order" | "opportunity",
-  linkedId: string
+  linkedId: string,
+  orderType: "project" | "order"
 ): Promise<void> {
   const uploadedBy = await currentUserName();
+  const kind = orderType === "project" ? "drawing" : "other";
 
   const link = str(formData, "drawingLink");
   if (link) {
@@ -72,7 +77,7 @@ async function saveDrawingAttachment(
           data: {
             linkedType,
             linkedId,
-            kind: "drawing",
+            kind,
             fileUrl: url.toString(),
             source: sourceForUrl(url),
             uploadedBy,
@@ -100,7 +105,7 @@ async function saveDrawingAttachment(
           data: {
             linkedType,
             linkedId,
-            kind: "drawing",
+            kind,
             fileUrl: storagePath,
             fileName: file.name,
             source: "upload",
@@ -264,9 +269,9 @@ export async function submitIntake(formData: FormData) {
     redirect("/intake?error=save_failed");
   }
 
-  // After the commit too, same reasoning: a drawing attachment is a nice-to-have
+  // After the commit too, same reasoning: an attachment is a nice-to-have
   // add-on, not something that should ever undo an otherwise-successful intake.
-  await saveDrawingAttachment(formData, result.type, result.id);
+  await saveDrawingAttachment(formData, result.type, result.id, orderType);
 
   // Logged after the commit: logActivity uses the global prisma client (so it can
   // attribute to the signed-in identity) and never throws, so it cannot roll the

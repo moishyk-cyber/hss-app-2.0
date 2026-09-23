@@ -1336,6 +1336,47 @@ export function IntakeForm({
               <span className={labelClass}>Notes for the team</span>
               <textarea name="notes" rows={2} className={inputClass} />
             </label>
+
+            {/*
+              Attachments are for BOTH types. A project usually has a drawing; a
+              straight order has the client's PO, a quote, or a photo of the old
+              unit. Either lands on the new record's Files tab (kind "drawing"
+              for projects, "other" for orders - see saveDrawingAttachment).
+            */}
+            <div className="mt-4">
+              <span className={labelClass}>
+                {orderType === "project" ? "Drawing or attachment" : "Attachment"}
+              </span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="sr-only">
+                    {orderType === "project" ? "Link to the drawing" : "Link to the attachment"}
+                  </span>
+                  <input
+                    name="drawingLink"
+                    type="url"
+                    placeholder="Paste a link (Google Drive, Dropbox, etc.)"
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <span className="sr-only">
+                    {orderType === "project" ? "Upload the drawing" : "Upload a file"}
+                  </span>
+                  <input
+                    name="drawingFile"
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-hover file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-ink`}
+                  />
+                </label>
+              </div>
+              <span className="mt-1 block text-xs text-gray">
+                {orderType === "project"
+                  ? "A PDF or a link both work - leave blank if there’s no drawing yet."
+                  : "A PDF or image (the client’s PO, a quote, a photo) or a link - leave blank if there’s nothing to attach."}
+              </span>
+            </div>
           </div>
 
           {orderType === "project" ? (
@@ -1387,32 +1428,6 @@ export function IntakeForm({
                     front.
                   </div>
                 ) : null}
-                <div className="sm:col-span-2">
-                  <span className={labelClass}>Drawing or attachment</span>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="sr-only">Link to the drawing</span>
-                      <input
-                        name="drawingLink"
-                        type="url"
-                        placeholder="Paste a link (Google Drive, Dropbox, etc.)"
-                        className={inputClass}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="sr-only">Upload the drawing</span>
-                      <input
-                        name="drawingFile"
-                        type="file"
-                        accept="application/pdf,image/*"
-                        className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-hover file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-ink`}
-                      />
-                    </label>
-                  </div>
-                  <span className="mt-1 block text-xs text-gray">
-                    A PDF or a link both work - leave blank if there&rsquo;s no drawing yet.
-                  </span>
-                </div>
                 <div className="sm:col-span-2">
                   <span className={labelClass}>Installation needed?</span>
                   <div className="flex gap-2">
