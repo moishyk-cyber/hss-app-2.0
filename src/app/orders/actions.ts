@@ -20,9 +20,10 @@ import {
   DELIVERY_LEG_STATUSES,
   QUOTE_STATUSES,
 } from "@/lib/constants";
-import { roundCents } from "@/lib/money";
+import { plainMoney, roundCents, toMoney } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
+import { cleanText, parseDateOnly, TEXT_LIMITS } from "@/lib/input";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import {
@@ -51,6 +52,8 @@ export async function addOrderLineItem(
   qty: number,
   description: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   const trimmed = name.trim();
   if (!trimmed) return { ok: false, message: "Give the item a name." };
   const safeQty = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
@@ -73,6 +76,8 @@ export async function addOrderLineItem(
 }
 
 export async function setOrderOwner(orderId: string, ownerId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   const inactive = await requireActiveAssignee(ownerId);
   if (inactive) return inactive;
   return safeAction(async () => {
@@ -83,6 +88,8 @@ export async function setOrderOwner(orderId: string, ownerId: string): Promise<A
 }
 
 export async function setLineItemAssignee(lineItemId: string, assigneeId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   const inactive = await requireActiveAssignee(assigneeId);
   if (inactive) return inactive;
   return safeAction(async () => {
@@ -104,8 +111,12 @@ export async function setLineItemAssignee(lineItemId: string, assigneeId: string
  * This action IS that explicit override, so it re-derives directly instead.
  */
 export async function unstickOrder(orderId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) throw new Error("Order not found");
     const derived = deriveOrderStatus(order);
     await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
@@ -116,8 +127,12 @@ export async function unstickOrder(orderId: string): Promise<ActionResult> {
 
 /** Header primary action once the payment gate is open and everything has landed. */
 export async function markOrderComplete(orderId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   try {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) return { ok: false, message: "Order not found" };
 
     if (!canCompleteOrder(order)) {
@@ -158,8 +173,12 @@ export async function markOrderComplete(orderId: string): Promise<ActionResult> 
 
 /** From "complete", re-derives the true in-flight status (payments/POs/items may have moved on since). */
 export async function reopenOrder(orderId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE });
+    const order = plainMoney(
+      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+    );
     if (!order) throw new Error("Order not found");
     if (order.status !== "complete") return;
     const derived = deriveOrderStatus(order);
@@ -265,7 +284,7 @@ export async function markPaymentPaid(
     await log(
       payment.orderId,
       "payment_paid",
-      `Payment (${payment.type}) of $${payment.amount} marked paid${
+      `Payment (${payment.type}) of $${toMoney(payment.amount)} marked paid${
         methodLabel ? ` via ${methodLabel}` : ""
       }`,
       { previousValue: "invoiced", newValue: "paid" }
@@ -290,7 +309,7 @@ export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResu
     await log(
       payment.orderId,
       "payment_unpaid",
-      `Payment (${payment.type}) of $${payment.amount} reverted to invoiced (paid was undone)`,
+      `Payment (${payment.type}) of $${toMoney(payment.amount)} reverted to invoiced (paid was undone)`,
       { previousValue: "paid", newValue: "invoiced" }
     );
     await recomputeOrderStatus(payment.orderId);
@@ -302,6 +321,8 @@ export async function setLineItemDeliveryStatus(
   lineItemId: string,
   deliveryStatus: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   if (!isValidValue(DELIVERY_STATUSES, deliveryStatus)) {
     return { ok: false, message: "Not a valid delivery status." };
   }
@@ -325,10 +346,14 @@ export async function setLineItemBackorderExpected(
   lineItemId: string,
   backorderExpected: string
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
+  const parsed = parseDateOnly(backorderExpected);
+  if (parsed === undefined) return { ok: false, message: "Enter a valid date." };
   return safeAction(async () => {
     const item = await prisma.lineItem.update({
       where: { id: lineItemId },
-      data: { backorderExpected: backorderExpected ? new Date(backorderExpected) : null },
+      data: { backorderExpected: parsed },
     });
     if (item.orderId) {
       await log(
@@ -380,10 +405,14 @@ function shipToForMode(mode: string): string {
  * goods travel is decided later, when the vendor acknowledges the PO - see
  * acknowledgePo, which is what actually creates the delivery leg.
  *
- * PO numbers are allocated by counting existing POs on the order and retrying
- * on a collision (two people creating a PO on the same order at once), guarded
- * by the @@unique([orderId, poNumber]) constraint in the schema. `supplierId`
- * picks an existing vendor; `newVendorName` creates (or links to a normalized-name
+ * PO numbers are PO-<jobId or last 6 of the order id>-<n>, where n comes from
+ * atomically incrementing Order.poSequence (the UPDATE row-locks the order, so
+ * two people creating a PO on the same order at once get different numbers).
+ * poNumber is globally unique in the schema; a legacy number can still collide
+ * when two orders share a jobId, so a taken number is skipped (the sequence
+ * moves on again) and a race that only surfaces at insert time (P2002) retries
+ * the whole allocation a bounded number of times. `supplierId` picks an
+ * existing vendor; `newVendorName` creates (or links to a normalized-name
  * match for) one instead - exactly one of the two should be set.
  */
 export async function createPurchaseOrder(
@@ -403,7 +432,7 @@ export async function createPurchaseOrder(
     return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
   }
   return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
     if (!order) throw new Error("Order not found");
 
     const vendor = await resolveVendor(supplierId, newVendorName);
@@ -412,27 +441,51 @@ export async function createPurchaseOrder(
       await log(orderId, "vendor_created", `Vendor "${vendor.name}" created while creating a PO`);
     }
 
-    const base = order.jobId || order.id.slice(-6).toUpperCase();
-
     let po = null;
     const MAX_ATTEMPTS = 5;
+    const MAX_SKIPS = 20;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      const existing = await prisma.purchaseOrder.count({ where: { orderId } });
-      const poNumber = `PO-${base}-${existing + 1}`;
       try {
-        po = await prisma.purchaseOrder.create({
-          data: {
-            orderId,
-            supplierId: vendor.id,
-            poNumber,
-            status: "draft",
-            autoQuotesPoNumber: aqNumber || null,
-            // Provisional until the delivery mode is picked at acknowledgment.
-            shipTo: "hss",
-          },
+        po = await prisma.$transaction(async (tx) => {
+          for (let skip = 0; skip < MAX_SKIPS; skip += 1) {
+            // Atomic allocation: each call hands out the next number, and a
+            // number already taken (a legacy PO on another order with the same
+            // jobId) is skipped by incrementing again, never recomputed.
+            const seq = await tx.order.update({
+              where: { id: orderId },
+              data: { poSequence: { increment: 1 } },
+              select: { poSequence: true, jobId: true, id: true },
+            });
+            const base = seq.jobId || seq.id.slice(-6).toUpperCase();
+            const poNumber = `PO-${base}-${seq.poSequence}`;
+            const taken = await tx.purchaseOrder.findUnique({ where: { poNumber }, select: { id: true } });
+            if (taken) continue;
+            const created = await tx.purchaseOrder.create({
+              data: {
+                orderId,
+                supplierId: vendor.id,
+                poNumber,
+                status: "draft",
+                autoQuotesPoNumber: aqNumber || null,
+                // Provisional until the delivery mode is picked at acknowledgment.
+                shipTo: "hss",
+              },
+            });
+            // No delivery leg yet on purpose: the PO has to come back acknowledged
+            // before anyone knows how it is travelling. acknowledgePo creates it.
+            await tx.lineItem.updateMany({
+              where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
+              data: { purchaseOrderId: created.id },
+            });
+            return created;
+          }
+          throw new Error("Could not allocate a PO number");
         });
         break;
       } catch (err) {
+        // Another order sharing this jobId inserted the same number between our
+        // check and our insert: the transaction rolled back, so allocate again
+        // (the other PO now exists and is skipped).
         const isNumberCollision =
           err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
         if (!isNumberCollision || attempt === MAX_ATTEMPTS - 1) throw err;
@@ -440,12 +493,6 @@ export async function createPurchaseOrder(
     }
     if (!po) throw new Error("Could not allocate a PO number");
 
-    // No delivery leg yet on purpose: the PO has to come back acknowledged
-    // before anyone knows how it is travelling. acknowledgePo creates it.
-    await prisma.lineItem.updateMany({
-      where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-      data: { purchaseOrderId: po.id },
-    });
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
@@ -467,18 +514,20 @@ export async function advancePoStatus(poId: string): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
   try {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: poId },
-      include: {
-        order: {
-          include: {
-            payments: true,
-            company: { select: { requiresDeposit: true, depositPercent: true } },
+    const po = plainMoney(
+      await prisma.purchaseOrder.findUnique({
+        where: { id: poId },
+        include: {
+          order: {
+            include: {
+              payments: true,
+              company: { select: { requiresDeposit: true, depositPercent: true } },
+            },
           },
+          deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
         },
-        deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },
-      },
-    });
+      })
+    );
     if (!po) return { ok: false, message: "PO not found" };
     const idx = PO_ORDER.indexOf(po.status);
     if (idx < 0 || idx >= PO_ORDER.length - 1) return { ok: false, message: "Already at final status" };
@@ -593,6 +642,10 @@ export async function acknowledgePo(
     if ("error" in parsed) return { ok: false, message: parsed.error };
     shipCost = parsed.value;
   }
+  const expectedDelivery = parseDateOnly(details.expectedDelivery);
+  if (expectedDelivery === undefined) return { ok: false, message: "Enter a valid date." };
+  const scheduledDeliveryDate = parseDateOnly(details.scheduledDeliveryDate);
+  if (scheduledDeliveryDate === undefined) return { ok: false, message: "Enter a valid date." };
 
   return safeAction(async () => {
     const po = await prisma.purchaseOrder.findUnique({
@@ -612,25 +665,25 @@ export async function acknowledgePo(
 
     const legFields = {
       mode,
-      notes: (details.notes ?? "").trim() || null,
+      notes: cleanText(details.notes, TEXT_LIMITS.long) || null,
       ...(carrierLeg
         ? {
-            trackingCarrier: (details.trackingCarrier ?? "").trim() || null,
-            trackingUrl: (details.trackingUrl ?? "").trim() || null,
-            expectedDelivery: parseDate(details.expectedDelivery),
+            trackingCarrier: cleanText(details.trackingCarrier, TEXT_LIMITS.short) || null,
+            trackingUrl: cleanText(details.trackingUrl, TEXT_LIMITS.medium) || null,
+            expectedDelivery,
           }
         : {}),
       ...(truckerLeg
         ? {
-            trucker: (details.trucker ?? "").trim() || null,
+            trucker: cleanText(details.trucker, TEXT_LIMITS.short) || null,
             // The vendor's own address is the pickup point unless someone says
             // otherwise - it is the one HSS's driver actually goes to.
             pickupAddress:
-              (details.pickupAddress ?? "").trim() || po.supplier?.deliveryAddress || null,
-            scheduledDeliveryDate: parseDate(details.scheduledDeliveryDate),
+              cleanText(details.pickupAddress, TEXT_LIMITS.medium) || po.supplier?.deliveryAddress || null,
+            scheduledDeliveryDate,
             shipCost,
             chargedToCustomer: details.chargedToCustomer === true,
-            deliveryContactPhone: (details.deliveryContactPhone ?? "").trim() || null,
+            deliveryContactPhone: cleanText(details.deliveryContactPhone, TEXT_LIMITS.short) || null,
           }
         : {}),
     };
@@ -701,13 +754,6 @@ function parseShipCost(raw: string | undefined): { value: number | null } | { er
   return { value: roundCents(n) };
 }
 
-function parseDate(raw: string | undefined): Date | null {
-  const trimmed = (raw ?? "").trim();
-  if (!trimmed) return null;
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 /** How a delivery reads in the activity log: "PO-123-1" or "HSS stock delivery". */
 function deliveryLabel(d: { purchaseOrder: { poNumber: string | null } | null }): string {
   return d.purchaseOrder ? d.purchaseOrder.poNumber ?? "(no PO#)" : "HSS stock delivery";
@@ -723,8 +769,19 @@ export async function createDelivery(
   lineItemIds: string[],
   purchaseOrderId: string = ""
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   if (!isValidValue(DELIVERY_MODES, mode)) {
     return { ok: false, message: "Pick a delivery mode." };
+  }
+  if (purchaseOrderId) {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: purchaseOrderId },
+      select: { orderId: true },
+    });
+    if (!po || po.orderId !== orderId) {
+      return { ok: false, message: "That purchase order belongs to a different order." };
+    }
   }
   return safeAction(async () => {
     const delivery = await prisma.delivery.create({
@@ -767,6 +824,8 @@ export async function updateDelivery(
     notes?: string;
   }
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   const mode = details.mode;
   if (!isValidValue(DELIVERY_MODES, mode)) {
     return { ok: false, message: "Pick a delivery mode." };
@@ -784,6 +843,10 @@ export async function updateDelivery(
     if ("error" in parsed) return { ok: false, message: parsed.error };
     shipCost = parsed.value;
   }
+  const expectedDelivery = parseDateOnly(details.expectedDelivery);
+  if (expectedDelivery === undefined) return { ok: false, message: "Enter a valid date." };
+  const scheduledDeliveryDate = parseDateOnly(details.scheduledDeliveryDate);
+  if (scheduledDeliveryDate === undefined) return { ok: false, message: "Enter a valid date." };
 
   return safeAction(async () => {
     const existing = await prisma.delivery.findUnique({
@@ -796,22 +859,22 @@ export async function updateDelivery(
       where: { id: deliveryId },
       data: {
         mode,
-        notes: (details.notes ?? "").trim() || null,
+        notes: cleanText(details.notes, TEXT_LIMITS.long) || null,
         ...(carrierLeg
           ? {
-              trackingCarrier: (details.trackingCarrier ?? "").trim() || null,
-              trackingUrl: (details.trackingUrl ?? "").trim() || null,
-              expectedDelivery: parseDate(details.expectedDelivery),
+              trackingCarrier: cleanText(details.trackingCarrier, TEXT_LIMITS.short) || null,
+              trackingUrl: cleanText(details.trackingUrl, TEXT_LIMITS.medium) || null,
+              expectedDelivery,
             }
           : {}),
         ...(truckerLeg
           ? {
-              trucker: (details.trucker ?? "").trim() || null,
-              pickupAddress: (details.pickupAddress ?? "").trim() || null,
-              scheduledDeliveryDate: parseDate(details.scheduledDeliveryDate),
+              trucker: cleanText(details.trucker, TEXT_LIMITS.short) || null,
+              pickupAddress: cleanText(details.pickupAddress, TEXT_LIMITS.medium) || null,
+              scheduledDeliveryDate,
               shipCost,
               chargedToCustomer: details.chargedToCustomer === true,
-              deliveryContactPhone: (details.deliveryContactPhone ?? "").trim() || null,
+              deliveryContactPhone: cleanText(details.deliveryContactPhone, TEXT_LIMITS.short) || null,
             }
           : {}),
       },
@@ -843,6 +906,8 @@ export async function updateDelivery(
  * delivered_partial is item-by-item by definition, so it leaves them alone.
  */
 export async function setDeliveryStatus(deliveryId: string, status: string): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   if (!isValidValue(DELIVERY_LEG_STATUSES, status)) {
     return { ok: false, message: "Not a valid delivery status." };
   }
@@ -884,6 +949,9 @@ export async function setDeliveryStatus(deliveryId: string, status: string): Pro
 
 /** Inline trucker pick from the /deliveries list (the full form lives in the delivery modal). */
 export async function setDeliveryTrucker(deliveryId: string, trucker: string): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
+  const trimmed = cleanText(trucker, TEXT_LIMITS.short);
   return safeAction(async () => {
     const existing = await prisma.delivery.findUnique({
       where: { id: deliveryId },
@@ -892,12 +960,12 @@ export async function setDeliveryTrucker(deliveryId: string, trucker: string): P
     if (!existing) throw new Error("Delivery not found");
     await prisma.delivery.update({
       where: { id: deliveryId },
-      data: { trucker: trucker.trim() || null },
+      data: { trucker: trimmed || null },
     });
     await log(
       existing.orderId,
       "delivery_trucker_set",
-      `Delivery ${deliveryLabel(existing)} trucker set to ${trucker.trim() || "none"}`
+      `Delivery ${deliveryLabel(existing)} trucker set to ${trimmed || "none"}`
     );
     await recomputeOrderStatus(existing.orderId);
     revalidateOrder(existing.orderId);
@@ -910,6 +978,8 @@ export async function setDeliveryTrucker(deliveryId: string, trucker: string): P
  * original has to keep at least one item, otherwise this is just a no-op.
  */
 export async function splitDelivery(deliveryId: string, lineItemIds: string[]): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   if (lineItemIds.length === 0) {
     return { ok: false, message: "Pick at least one item to split off." };
   }
@@ -960,6 +1030,8 @@ export async function moveItemsToDelivery(
   targetDeliveryId: string,
   lineItemIds: string[]
 ): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   if (lineItemIds.length === 0) {
     return { ok: false, message: "Pick at least one item to move." };
   }
@@ -986,6 +1058,8 @@ export async function moveItemsToDelivery(
 
 /** Removes a leg that has nothing left on it (the second half of a merge). */
 export async function deleteEmptyDelivery(deliveryId: string): Promise<ActionResult> {
+  const denied = await requirePermission("deliveries.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const existing = await prisma.delivery.findUnique({
       where: { id: deliveryId },
@@ -1018,21 +1092,26 @@ export async function setOrderCompany(
   companyId: string,
   newCompanyName: string = ""
 ): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   const trimmedName = newCompanyName.trim();
   if (!companyId && !trimmedName) {
     return { ok: false, message: "Pick or type a business name." };
   }
-  return safeAction(async () => {
+  try {
     let company: { id: string; name: string } | null = null;
     let created = false;
     if (companyId) {
       company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true, name: true } });
-      if (!company) throw new Error("Business not found");
+      if (!company) return { ok: false, message: "That business could not be found." };
     } else {
       const match = await findCompanyByNormalizedName(trimmedName);
       if (match) {
         company = match;
       } else {
+        // Creating a new business is phonebook territory too, on top of order edit rights.
+        const phonebookDenied = await requirePermission("phonebook.edit");
+        if (phonebookDenied) return phonebookDenied;
         company = await prisma.company.create({ data: { name: trimmedName, type: "customer" } });
         created = true;
       }
@@ -1047,7 +1126,11 @@ export async function setOrderCompany(
       `Business set to "${company.name}"${created ? " (newly created)" : ""} - contact, location and delivery address were cleared`
     );
     revalidateOrder(orderId);
-  }, "Could not update the business. Please try again.");
+    return { ok: true };
+  } catch (err) {
+    console.error(err);
+    return { ok: false, message: "Could not update the business. Please try again." };
+  }
 }
 
 /**
@@ -1062,6 +1145,8 @@ export async function setOrderContact(
   contactId: string,
   newContactFirstName: string = ""
 ): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const order = await prisma.order.findUnique({ where: { id: orderId }, select: { companyId: true } });
     if (!order) throw new Error("Order not found");
@@ -1114,8 +1199,10 @@ export async function createLocationForOrder(
   _companyId: string,
   input: { name: string; address: string }
 ): Promise<ActionResult> {
-  const name = input.name.trim();
-  const address = input.address.trim();
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const name = cleanText(input.name, TEXT_LIMITS.short);
+  const address = cleanText(input.address, TEXT_LIMITS.medium);
   if (!name || !address) {
     return { ok: false, message: "A location needs a name and an address." };
   }
@@ -1138,7 +1225,9 @@ export async function createLocationForOrder(
 }
 
 export async function setOrderJobId(orderId: string, jobId: string): Promise<ActionResult> {
-  const trimmed = jobId.trim();
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const trimmed = cleanText(jobId, TEXT_LIMITS.short);
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { jobId: trimmed || null } });
     await log(orderId, "order_job_id_set", `Job ID set to ${trimmed || "none"}`);
@@ -1147,7 +1236,9 @@ export async function setOrderJobId(orderId: string, jobId: string): Promise<Act
 }
 
 export async function setOrderClientPoNumber(orderId: string, value: string): Promise<ActionResult> {
-  const trimmed = value.trim();
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const trimmed = cleanText(value, TEXT_LIMITS.short);
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { clientPoNumber: trimmed || null } });
     await log(orderId, "order_client_po_set", `Client PO # set to ${trimmed || "none"}`);
@@ -1157,17 +1248,13 @@ export async function setOrderClientPoNumber(orderId: string, value: string): Pr
 
 /** `value` is a plain "YYYY-MM-DD" from a date input, or "" to clear it. */
 export async function setOrderNeededByDate(orderId: string, value: string): Promise<ActionResult> {
-  const trimmed = value.trim();
-  let neededByDate: Date | null = null;
-  if (trimmed) {
-    neededByDate = new Date(`${trimmed}T00:00:00.000Z`);
-    if (Number.isNaN(neededByDate.getTime())) {
-      return { ok: false, message: "Enter a valid date." };
-    }
-  }
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const neededByDate = parseDateOnly(value);
+  if (neededByDate === undefined) return { ok: false, message: "Enter a valid date." };
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { neededByDate } });
-    await log(orderId, "order_needed_by_set", `Needed-by date set to ${trimmed || "none"}`);
+    await log(orderId, "order_needed_by_set", `Needed-by date set to ${value.trim() || "none"}`);
     revalidateOrder(orderId);
   }, "Could not save the needed-by date. Please try again.");
 }
@@ -1178,7 +1265,9 @@ export async function setOrderNeededByDate(orderId: string, value: string): Prom
  * loading-dock note) without switching to a different saved location.
  */
 export async function setOrderDeliveryAddress(orderId: string, value: string): Promise<ActionResult> {
-  const trimmed = value.trim();
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const trimmed = cleanText(value, TEXT_LIMITS.medium);
   return safeAction(async () => {
     await prisma.order.update({ where: { id: orderId }, data: { deliveryAddress: trimmed || null } });
     await log(orderId, "order_delivery_address_set", `Delivery address set to ${trimmed || "none"}`);
@@ -1193,6 +1282,8 @@ export async function setOrderDeliveryAddress(orderId: string, value: string): P
  * An empty id unlinks the order without touching the address it already has.
  */
 export async function setOrderLocation(orderId: string, locationId: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const order = await prisma.order.findUnique({
       where: { id: orderId },

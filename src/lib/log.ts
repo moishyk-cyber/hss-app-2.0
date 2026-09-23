@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { currentUserName } from "@/lib/identityServer";
+import { currentUserId, currentUserName } from "@/lib/identityServer";
 
 export type ActivityLogMeta = {
   /** Structured before/after for the audit view - optional, most call sites skip it and rely on `detail`. */
@@ -21,10 +21,11 @@ export async function logActivity(
   meta?: ActivityLogMeta
 ): Promise<void> {
   try {
-    const userName = await currentUserName();
+    const [userName, userId] = await Promise.all([currentUserName(), currentUserId()]);
     await prisma.activityLog.create({
       data: {
         userName,
+        userId,
         linkedType,
         linkedId,
         action,

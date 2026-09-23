@@ -26,3 +26,20 @@ export async function currentUserName(): Promise<string> {
     return "Team";
   }
 }
+
+/**
+ * True when the session cookie verifies but the user it names is deleted or
+ * inactive, i.e. the session should be thrown away. False when there is no
+ * session (proxy.ts already sends those to /login) and when the database
+ * can't be reached, so a blip doesn't sign everyone out.
+ */
+export async function sessionUserIsGone(): Promise<boolean> {
+  const id = await currentUserId();
+  if (!id) return false;
+  try {
+    const user = await prisma.user.findUnique({ where: { id }, select: { active: true } });
+    return !user || !user.active;
+  } catch {
+    return false;
+  }
+}

@@ -6,6 +6,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity, type ActivityLogMeta } from "@/lib/log";
 import { isValidValue, USER_ROLES } from "@/lib/constants";
 import { requirePermission } from "@/lib/permissionsServer";
+import { currentUserId } from "@/lib/identityServer";
 import { openWorkForUser, reassignAllOpenWork } from "@/lib/ownership";
 import { hashPassword } from "@/lib/password";
 
@@ -15,6 +16,50 @@ async function log(linkedId: string, action: string, detail: string, meta?: Acti
 
 function refresh() {
   revalidatePath("/admin/team");
+}
+
+const EDITABLE_FIELDS = ["name", "email", "role"] as const;
+type EditableField = (typeof EDITABLE_FIELDS)[number];
+
+function isEditableField(value: unknown): value is EditableField {
+  return typeof value === "string" && (EDITABLE_FIELDS as readonly string[]).includes(value);
+}
+
+/** Emails are stored trimmed and lowercased, matching how /login looks them up. */
+function normalizeEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+/** Basic shape only: something@something.something, no spaces. */
+function looksLikeEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/** Case-insensitive, so rows saved before emails were normalized still count as taken. */
+async function emailTaken(email: string, exceptId?: string) {
+  return prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" }, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+    select: { id: true },
+  });
+}
+
+/** True when this user is an active admin and nobody else is. */
+async function isLastActiveAdmin(id: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id }, select: { role: true, active: true } });
+  if (!user || !user.active || user.role !== "admin") return false;
+  const otherAdmins = await prisma.user.count({ where: { role: "admin", active: true, NOT: { id } } });
+  return otherAdmins === 0;
+}
+
+const LAST_ADMIN_MESSAGE = "This is the last active admin. Make someone else an admin first.";
+
+/** Friendly refusal when a deactivation would lock the team out, or null when it's fine. */
+async function deactivationBlocked(id: string): Promise<ActionResult | null> {
+  if (id === (await currentUserId())) {
+    return { ok: false, message: "You can't deactivate yourself. Ask another admin to do it." };
+  }
+  if (await isLastActiveAdmin(id)) return { ok: false, message: LAST_ADMIN_MESSAGE };
+  return null;
 }
 
 /** Reassignment moves records that show up on every one of these lists/queues. */
@@ -32,12 +77,13 @@ export async function createUser(formData: FormData): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
   const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
   const role = String(formData.get("role") ?? "").trim() || "sales";
   if (!name || !email) return { ok: false, message: "Name and email are required." };
+  if (!looksLikeEmail(email)) return { ok: false, message: "That doesn't look like an email address." };
   if (!isValidValue(USER_ROLES, role)) return { ok: false, message: "Not a valid role." };
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await emailTaken(email);
   if (existing) return { ok: false, message: "Someone with that email already exists." };
 
   return safeAction(async () => {
@@ -54,21 +100,32 @@ export async function updateUserField(
 ): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
-  const trimmed = value.trim();
+  // The TS type isn't enforced over the wire: a client can send any string, and
+  // anything else (passwordHash, active, ...) must never reach the update below.
+  if (!isEditableField(field)) return { ok: false, message: "That field can't be edited here." };
+  if (typeof value !== "string") return { ok: false, message: "Not a valid value." };
+  const trimmed = field === "email" ? normalizeEmail(value) : value.trim();
   if ((field === "name" || field === "email") && !trimmed) {
     return { ok: false, message: `${field === "name" ? "Name" : "Email"} can't be empty.` };
+  }
+  if (field === "email" && !looksLikeEmail(trimmed)) {
+    return { ok: false, message: "That doesn't look like an email address." };
   }
   if (field === "role" && !isValidValue(USER_ROLES, trimmed)) {
     return { ok: false, message: "Not a valid role." };
   }
+  if (field === "role" && trimmed !== "admin" && (await isLastActiveAdmin(id))) {
+    return { ok: false, message: LAST_ADMIN_MESSAGE };
+  }
   if (field === "email") {
-    const existing = await prisma.user.findFirst({ where: { email: trimmed, NOT: { id } } });
+    const existing = await emailTaken(trimmed, id);
     if (existing) return { ok: false, message: "Someone else already uses that email." };
   }
 
   return safeAction(async () => {
     const before = await prisma.user.findUnique({ where: { id }, select: { name: true, email: true, role: true } });
-    await prisma.user.update({ where: { id }, data: { [field]: trimmed || "sales" } });
+    const data = field === "name" ? { name: trimmed } : field === "email" ? { email: trimmed } : { role: trimmed };
+    await prisma.user.update({ where: { id }, data });
     await log(id, "user_updated", `Updated ${field}`, {
       previousValue: before ? before[field] : null,
       newValue: trimmed,
@@ -88,6 +145,8 @@ export async function setUserActive(id: string, active: string): Promise<ActionR
   if (denied) return denied;
   const isActive = active === "active";
   if (!isActive) {
+    const blocked = await deactivationBlocked(id);
+    if (blocked) return blocked;
     const user = await prisma.user.findUnique({ where: { id }, select: { name: true } });
     if (!user) return { ok: false, message: "Teammate not found." };
     const openWork = await openWorkForUser(id);
@@ -121,6 +180,8 @@ export async function deactivateAndReassign(id: string, successorId: string): Pr
   if (denied) return denied;
   if (!successorId) return { ok: false, message: "Pick who takes over their open work." };
   if (successorId === id) return { ok: false, message: "Pick someone other than the teammate being deactivated." };
+  const blocked = await deactivationBlocked(id);
+  if (blocked) return blocked;
   return safeAction(async () => {
     const [user, successor] = await Promise.all([
       prisma.user.findUnique({ where: { id }, select: { name: true } }),

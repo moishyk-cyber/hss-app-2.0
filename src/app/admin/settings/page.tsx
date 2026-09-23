@@ -1,3 +1,5 @@
+import { can } from "@/lib/permissionsServer";
+import { notFound } from "next/navigation";
 import { BadgeSelect } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
 import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements";
@@ -22,6 +24,7 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 export default async function AdminSettingsPage() {
+  if (!(await can("admin.manage"))) notFound();
   const [requirements, settings, users, stageHolders] = await Promise.all([
     getFieldRequirements(),
     getSettings(["service.defaultAssigneeId"]),

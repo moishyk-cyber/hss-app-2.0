@@ -44,6 +44,21 @@ function Cell({
     );
   }
 
+  // Admin access comes from the Admin role only (can() ignores the matrix for
+  // it), so this cell is never grantable for another role.
+  if (permission === "admin.manage") {
+    return (
+      <input
+        type="checkbox"
+        checked={false}
+        disabled
+        aria-label={`${permissionLabel(permission)} for ${labelFor(USER_ROLES, role)}: only the Admin role`}
+        title="Admin access comes from the Admin role. Change the teammate's role on Admin > Team."
+        className="h-4 w-4 cursor-not-allowed accent-[var(--primary)] opacity-40"
+      />
+    );
+  }
+
   function toggle() {
     const next = !optimistic;
     setOptimistic(next);

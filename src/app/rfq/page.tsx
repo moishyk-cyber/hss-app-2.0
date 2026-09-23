@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { labelFor, RFQ_STATUS_COLORS, STOCK_STATUSES } from "@/lib/constants";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
+import { plainMoney, type PlainMoney } from "@/lib/money";
 import { RFQ_QUEUE_STATUSES, isDeadDealItem } from "./queue-statuses";
 import RfqRow from "./RfqRow";
 
@@ -13,13 +14,15 @@ export const dynamic = "force-dynamic";
 const NEEDS_PRICING_EMPTY =
   "Nothing needs pricing. Items land here from Intake when they need a price.";
 
-type RfqLineItem = Prisma.LineItemGetPayload<{
-  include: {
-    opportunity: { select: { id: true; title: true; stage: true; company: { select: { name: true } } } };
-    order: { select: { id: true; title: true; company: { select: { name: true } } } };
-    assignee: { select: { name: true } };
-  };
-}>;
+type RfqLineItem = PlainMoney<
+  Prisma.LineItemGetPayload<{
+    include: {
+      opportunity: { select: { id: true; title: true; stage: true; company: { select: { name: true } } } };
+      order: { select: { id: true; title: true; company: { select: { name: true } } } };
+      assignee: { select: { name: true } };
+    };
+  }>
+>;
 
 type RfqSearchParams = Record<string, string | string[] | undefined>;
 
@@ -77,15 +80,19 @@ export default async function RfqPage({
   };
   const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
 
-  const rawItems: RfqLineItem[] = await prisma.lineItem.findMany({
-    where: { AND: whereAnd },
-    include: {
-      opportunity: { select: { id: true, title: true, stage: true, company: { select: { name: true } } } },
-      order: { select: { id: true, title: true, company: { select: { name: true } } } },
-      assignee: { select: { name: true } },
-    },
-    orderBy: orderBy ?? { createdAt: "asc" },
-  });
+  // unitCost/unitPrice come back as Decimal; RfqRow is a client component, so
+  // the rows go over as plain numbers.
+  const rawItems: RfqLineItem[] = plainMoney(
+    await prisma.lineItem.findMany({
+      where: { AND: whereAnd },
+      include: {
+        opportunity: { select: { id: true, title: true, stage: true, company: { select: { name: true } } } },
+        order: { select: { id: true, title: true, company: { select: { name: true } } } },
+        assignee: { select: { name: true } },
+      },
+      orderBy: orderBy ?? { createdAt: "asc" },
+    })
+  );
 
   const items = rawItems.filter((i) => !isDeadDealItem(i));
 

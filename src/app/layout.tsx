@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { Archivo, Inter } from "next/font/google";
 import Link from "next/link";
 import Nav from "./nav";
 import WhoAmI from "./who-am-i";
-import { currentUserName } from "@/lib/identityServer";
+import { currentUserName, sessionUserIsGone } from "@/lib/identityServer";
 import { can } from "@/lib/permissionsServer";
 import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
@@ -42,7 +43,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     );
   }
 
-  const [userName, showAdmin] = await Promise.all([currentUserName(), can("admin.manage")]);
+  const [userName, showAdmin, sessionGone] = await Promise.all([
+    currentUserName(),
+    can("admin.manage"),
+    sessionUserIsGone(),
+  ]);
+  // Valid cookie, but the user was deleted or deactivated: clear the cookie
+  // via /logout (see src/app/logout/route.ts) rather than going to /login.
+  if (sessionGone) redirect("/logout");
   return (
     <html lang="en" className={`${archivo.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg text-ink">

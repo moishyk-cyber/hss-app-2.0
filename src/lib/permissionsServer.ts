@@ -1,9 +1,10 @@
-// Server half of permissions: who is the current identity, and can they do X?
+// Server half of permissions: who is signed in, and can they do X?
 //
-// Identity is the sidebar "Working as" cookie (see identityServer.ts), which
-// anyone can switch - so these checks are workflow guidance (a friendly "that's
-// billing's job" instead of a silent write), NOT hard security. Real auth is
-// out of scope for this pass.
+// Identity is the signed login session set at /login (see identityServer.ts
+// and session.ts), so these checks are real authorization. They fail closed:
+// no session, or a session for a deleted/inactive user, passes nothing (bar
+// the zero-users bootstrap below). admin.manage always means role "admin",
+// even in open mode; open mode only relaxes the everyday permissions.
 
 import { prisma } from "@/lib/prisma";
 import { currentUserId } from "@/lib/identityServer";
@@ -34,7 +35,7 @@ export async function getRolePermissions(): Promise<PermissionMatrix> {
   }
 }
 
-/** The "Working as" identity, or null when none is picked (or the user is gone/inactive). */
+/** The signed-in user, or null when there is no valid session (or the user is gone/inactive). */
 export async function currentUser(): Promise<CurrentUser | null> {
   const id = await currentUserId();
   if (!id) return null;
@@ -52,7 +53,8 @@ export async function currentUser(): Promise<CurrentUser | null> {
 }
 
 /**
- * Open mode: every role can do everything. This is the shipped default (the
+ * Open mode: every role can do everything except Admin (admin.manage is
+ * always role "admin" only - see can()). This is the shipped default (the
  * team asked for everything open while the app beds in); an admin flips it
  * to "off" on Admin > Permissions to start enforcing the matrix.
  */
@@ -61,23 +63,28 @@ export async function permissionsOpenMode(): Promise<boolean> {
 }
 
 /**
- * Can the current identity do this? No identity = viewer, EXCEPT that with
- * zero users the app is unusable (nobody can be picked to create the first
- * user), so an empty identity still passes admin.manage as a bootstrap.
+ * Can the signed-in user do this?
+ * - No user (no session, or deleted/inactive): false, EXCEPT that with zero
+ *   users the app is unusable (nobody can create the first user), so
+ *   admin.manage still passes as a bootstrap.
+ * - admin.manage: only role "admin", regardless of open mode.
+ * - Everything else: open mode says yes; otherwise the role matrix decides.
  */
 export async function can(permission: Permission): Promise<boolean> {
-  if (await permissionsOpenMode()) return true;
   const user = await currentUser();
   if (!user) {
     if (permission === "admin.manage") {
       try {
-        if ((await prisma.user.count()) === 0) return true;
+        return (await prisma.user.count()) === 0;
       } catch {
-        // Unreachable database - fall through to the viewer answer.
+        // Unreachable database - fail closed.
+        return false;
       }
     }
-    return roleCan(await getRolePermissions(), "viewer", permission);
+    return false;
   }
+  if (permission === "admin.manage") return user.role === "admin";
+  if (await permissionsOpenMode()) return true;
   return roleCan(await getRolePermissions(), user.role, permission);
 }
 
@@ -89,9 +96,14 @@ export async function can(permission: Permission): Promise<boolean> {
 export async function requirePermission(permission: Permission): Promise<ActionResult | null> {
   if (await can(permission)) return null;
   const user = await currentUser();
-  const who = user ? `${user.name} (${labelFor(USER_ROLES, user.role)})` : "Nobody is picked in \"Working as\"";
+  if (!user) {
+    return {
+      ok: false,
+      message: "You're not signed in, or your account is no longer active. Sign in again or ask an admin.",
+    };
+  }
   return {
     ok: false,
-    message: `${who} can't do this: "${permissionLabel(permission)}" is not allowed for that role. Switch "Working as" in the sidebar or ask an admin.`,
+    message: `You're signed in as ${user.name} (${labelFor(USER_ROLES, user.role)}), and "${permissionLabel(permission)}" is not allowed for that role. Ask an admin if you need it.`,
   };
 }

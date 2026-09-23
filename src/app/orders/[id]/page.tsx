@@ -20,6 +20,7 @@ import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { ActivityHistory } from "@/lib/ActivityHistory";
 import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
+import { plainMoney } from "@/lib/money";
 import { uploadsConfigured } from "@/lib/storage";
 import { ActionButton, InlineEditField } from "@/lib/ui";
 import {
@@ -36,7 +37,7 @@ export const dynamic = "force-dynamic";
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [order, vendors, users, companies, contacts] = await Promise.all([
+  const [orderRow, vendors, users, companies, contacts] = await Promise.all([
     prisma.order.findUnique({
       where: { id },
       include: {
@@ -136,6 +137,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     }),
   ]);
 
+  // Money columns are Decimal; this row (and slices of it) is handed to the
+  // client sections below, which only take plain numbers.
+  const order = plainMoney(orderRow);
   if (!order) notFound();
 
   // Document is polymorphic (no Prisma relation to PurchaseOrder), so its POs'

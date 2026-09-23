@@ -45,3 +45,6 @@ prisma/dev.db
 
 # Claude Code agent worktrees (local scratch space, not project content)
 /.claude/worktrees/
+
+# Generated client deliverables (contain customer data - keep out of version control)
+*.xlsx

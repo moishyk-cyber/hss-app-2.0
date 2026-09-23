@@ -12,6 +12,7 @@ import {
 } from "@/lib/constants";
 import { formatPhone } from "@/lib/ContactLinks";
 import { fmtDateUTC } from "@/lib/dates";
+import { plainMoney } from "@/lib/money";
 import { LocationsCard } from "../LocationsCard";
 import {
   Avatar,
@@ -35,18 +36,21 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const company = await prisma.company.findUnique({
-    where: { id },
-    include: {
-      contacts: { orderBy: { firstName: "asc" } },
-      // Sites this business takes delivery at (the Locations card below).
-      locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] },
-      opportunities: { orderBy: { createdAt: "desc" } },
-      orders: { orderBy: { createdAt: "desc" } },
-      // Service issues card below - open ones first, most recent on top.
-      serviceIssues: { orderBy: { reportedAt: "desc" }, take: 10 },
-    },
-  });
+  // Opportunity/order money columns come back as Decimal; plain numbers here.
+  const company = plainMoney(
+    await prisma.company.findUnique({
+      where: { id },
+      include: {
+        contacts: { orderBy: { firstName: "asc" } },
+        // Sites this business takes delivery at (the Locations card below).
+        locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] },
+        opportunities: { orderBy: { createdAt: "desc" } },
+        orders: { orderBy: { createdAt: "desc" } },
+        // Service issues card below - open ones first, most recent on top.
+        serviceIssues: { orderBy: { reportedAt: "desc" }, take: 10 },
+      },
+    })
+  );
   if (!company) notFound();
 
   return (

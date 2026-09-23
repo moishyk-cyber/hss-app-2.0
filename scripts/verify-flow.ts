@@ -5,6 +5,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { evaluatePaymentGate, deriveOrderStatus, canCompleteOrder, recomputeOrderStatus } from "@/lib/flow";
+import { plainMoney } from "@/lib/money";
 
 let failures = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -30,17 +31,20 @@ async function main() {
     data: { orderId: order.id, name: `${TAG} item`, qty: 1, rfqStatus: "approved", deliveryStatus: "pending" },
   });
 
-  const load = () =>
-    prisma.order.findUniqueOrThrow({
-      where: { id: order.id },
-      include: {
-        payments: true,
-        purchaseOrders: true,
-        lineItems: true,
-        deliveries: true,
-        company: { select: { requiresDeposit: true, depositPercent: true } },
-      },
-    });
+  // Money columns are Decimal; the flow engine works on plain numbers.
+  const load = async () =>
+    plainMoney(
+      await prisma.order.findUniqueOrThrow({
+        where: { id: order.id },
+        include: {
+          payments: true,
+          purchaseOrders: true,
+          lineItems: true,
+          deliveries: true,
+          company: { select: { requiresDeposit: true, depositPercent: true } },
+        },
+      })
+    );
 
   // 1. Fresh order: gate closed, needs $3,000 deposit; derived = awaiting_payment
   let o = await load();
@@ -107,16 +111,18 @@ async function main() {
   const trustedOrder = await prisma.order.create({
     data: { title: `${TAG} trusted order`, companyId: trusted.id, orderType: "project", status: "new", orderValue: 50000 },
   });
-  const to = await prisma.order.findUniqueOrThrow({
-    where: { id: trustedOrder.id },
-    include: {
-      payments: true,
-      purchaseOrders: true,
-      lineItems: true,
-      deliveries: true,
-      company: { select: { requiresDeposit: true, depositPercent: true } },
-    },
-  });
+  const to = plainMoney(
+    await prisma.order.findUniqueOrThrow({
+      where: { id: trustedOrder.id },
+      include: {
+        payments: true,
+        purchaseOrders: true,
+        lineItems: true,
+        deliveries: true,
+        company: { select: { requiresDeposit: true, depositPercent: true } },
+      },
+    })
+  );
   const tGate = evaluatePaymentGate(to);
   check("no-deposit project: gate open with zero payments", tGate.open, true);
   check("no-deposit project: exempt flag", tGate.exempt, true);
@@ -126,16 +132,18 @@ async function main() {
   const trustedSimple = await prisma.order.create({
     data: { title: `${TAG} trusted simple`, companyId: trusted.id, orderType: "order", status: "new", orderValue: 500 },
   });
-  const ts = await prisma.order.findUniqueOrThrow({
-    where: { id: trustedSimple.id },
-    include: {
-      payments: true,
-      purchaseOrders: true,
-      lineItems: true,
-      deliveries: true,
-      company: { select: { requiresDeposit: true, depositPercent: true } },
-    },
-  });
+  const ts = plainMoney(
+    await prisma.order.findUniqueOrThrow({
+      where: { id: trustedSimple.id },
+      include: {
+        payments: true,
+        purchaseOrders: true,
+        lineItems: true,
+        deliveries: true,
+        company: { select: { requiresDeposit: true, depositPercent: true } },
+      },
+    })
+  );
   check("simple order at trusted co: gate still closed", evaluatePaymentGate(ts).open, false);
 
   // 8. Close-dialog override: order.depositRequired beats the company-percent formula
@@ -149,30 +157,34 @@ async function main() {
       depositRequired: 500,
     },
   });
-  const co = await prisma.order.findUniqueOrThrow({
-    where: { id: custom.id },
-    include: {
-      payments: true,
-      purchaseOrders: true,
-      lineItems: true,
-      deliveries: true,
-      company: { select: { requiresDeposit: true, depositPercent: true } },
-    },
-  });
+  const co = plainMoney(
+    await prisma.order.findUniqueOrThrow({
+      where: { id: custom.id },
+      include: {
+        payments: true,
+        purchaseOrders: true,
+        lineItems: true,
+        deliveries: true,
+        company: { select: { requiresDeposit: true, depositPercent: true } },
+      },
+    })
+  );
   check("custom deposit: required is the agreed amount", evaluatePaymentGate(co).requiredTotal, 500);
   await prisma.payment.create({
     data: { orderId: custom.id, type: "deposit", amount: 500, status: "paid" },
   });
-  const co2 = await prisma.order.findUniqueOrThrow({
-    where: { id: custom.id },
-    include: {
-      payments: true,
-      purchaseOrders: true,
-      lineItems: true,
-      deliveries: true,
-      company: { select: { requiresDeposit: true, depositPercent: true } },
-    },
-  });
+  const co2 = plainMoney(
+    await prisma.order.findUniqueOrThrow({
+      where: { id: custom.id },
+      include: {
+        payments: true,
+        purchaseOrders: true,
+        lineItems: true,
+        deliveries: true,
+        company: { select: { requiresDeposit: true, depositPercent: true } },
+      },
+    })
+  );
   check("custom deposit: paying the agreed amount opens the gate", evaluatePaymentGate(co2).open, true);
 
   // --- cleanup ---

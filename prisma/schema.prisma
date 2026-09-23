@@ -26,6 +26,7 @@ model User {
   tasks         Task[]        @relation("TaskAssignee")
   taskComments  TaskComment[]
   serviceIssues ServiceIssue[] @relation("IssueAssignee")
+  activityLogs  ActivityLog[]
   createdAt     DateTime      @default(now())
 }
 
@@ -57,6 +58,7 @@ model Company {
   locations      Location[]
   serviceIssues  ServiceIssue[]
   createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
 }
 
 // A physical site belonging to a business (multi-location customers). Deals and
@@ -72,6 +74,9 @@ model Location {
   deliveryNotes String?
   contactName   String?
   contactPhone  String?
+  // Prisma can't express a partial unique index; the actual one-default-per-company
+  // guard is "Location_one_default_per_company" in
+  // prisma/sql/20260922_schema_hardening.sql (CREATE UNIQUE INDEX ... WHERE "isDefault").
   isDefault     Boolean   @default(false)
   opportunities Opportunity[]
   orders        Order[]
@@ -108,6 +113,7 @@ model Contact {
   opportunities Opportunity[]
   orders    Order[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([companyId])
 }
@@ -124,7 +130,7 @@ model Opportunity {
   stage            String    @default("new") // new | info_missing | estimating | proposal_sent | revisions_needed | negotiation | won | lost
   orderType        String    @default("order") // project | order
   needsPricing     Boolean   @default(true)
-  value            Float?
+  value            Decimal?  @db.Decimal(12, 2)
   neededByDate     DateTime?
   estDueDate       DateTime?
   nextFollowUp     DateTime?
@@ -135,7 +141,7 @@ model Opportunity {
   roomDimensions   String?
   wallMeasurements String?
   plumbingElectricalNotes String?
-  budget           Float?
+  budget           Decimal?  @db.Decimal(12, 2)
   clientVisionNotes String?
   deliveryType     String? // curbside | inside
   openingSize      String?
@@ -151,8 +157,10 @@ model Opportunity {
   lineItems        LineItem[]
   orders           Order[]
   createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
 
   @@index([stage])
+  @@index([primaryContactId])
   @@index([companyId])
   @@index([salespersonId])
   @@index([nextFollowUp])
@@ -179,8 +187,8 @@ model LineItem {
   sku            String?
   supplier       Company?     @relation("ItemSupplier", fields: [supplierId], references: [id])
   supplierId     String?
-  unitCost       Float?
-  unitPrice      Float?
+  unitCost       Decimal?     @db.Decimal(12, 2)
+  unitPrice      Decimal?     @db.Decimal(12, 2)
   // The date the item is called for (what the supplier quotes), not a day
   // count: the old `leadTimeDays` column stays in the database (no destructive
   // DDL this pass) but Prisma no longer maps it.
@@ -201,6 +209,7 @@ model LineItem {
   mondayId       String?      @unique
   serviceIssues  ServiceIssue[]
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   @@index([rfqStatus])
   @@index([stockStatus])
@@ -211,6 +220,7 @@ model LineItem {
   @@index([deliveryId])
   @@index([supplierId])
   @@index([nextFollowUp])
+  @@index([assigneeId])
 }
 
 model Order {
@@ -229,8 +239,8 @@ model Order {
   clientPoNumber String?
   jobId          String?
   quickbooksInvoiceNo String?
-  orderValue     Float?
-  depositRequired Float? // agreed gate amount from the close dialog; null = derive from company depositPercent
+  orderValue     Decimal?     @db.Decimal(12, 2)
+  depositRequired Decimal?    @db.Decimal(12, 2) // agreed gate amount from the close dialog; null = derive from company depositPercent
   location       Location?    @relation(fields: [locationId], references: [id])
   locationId     String?
   deliveryAddress String?
@@ -244,6 +254,9 @@ model Order {
   quoteStatus    String       @default("not_needed") // not_needed | needed | sent | accepted
   quoteUrl       String?
   quoteSentAt    DateTime?
+  // Last PO sequence number handed out for this order; createPurchaseOrder
+  // increments it atomically to build the next poNumber.
+  poSequence     Int          @default(0)
   notes          String?
   mondayId       String?      @unique
   lineItems      LineItem[]
@@ -252,6 +265,7 @@ model Order {
   deliveries     Delivery[]
   serviceIssues  ServiceIssue[]
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   @@index([status])
   @@index([companyId])
@@ -259,6 +273,8 @@ model Order {
   @@index([locationId])
   @@index([neededByDate])
   @@index([nextFollowUp])
+  @@index([contactId])
+  @@index([ownerId])
 }
 
 model PurchaseOrder {
@@ -267,7 +283,9 @@ model PurchaseOrder {
   orderId          String
   supplier         Company?   @relation("PoSupplier", fields: [supplierId], references: [id])
   supplierId       String?
-  poNumber         String?
+  // Allocated from Order.poSequence (PO-<jobId or order id tail>-<n>); globally
+  // unique so two orders sharing a jobId can never mint the same number.
+  poNumber         String     @unique
   autoQuotesPoNumber String? // the PO number typed into AutoQuotes for this vendor order
   status           String     @default("draft") // draft | sent | acknowledged | shipped | received
   shipTo           String     @default("hss") // hss | client_direct
@@ -285,8 +303,8 @@ model PurchaseOrder {
   lineItems        LineItem[]
   deliveries       Delivery[]
   createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @default(now()) @updatedAt
 
-  @@unique([orderId, poNumber])
   @@index([orderId])
   @@index([supplierId])
   @@index([status])
@@ -317,13 +335,14 @@ model Delivery {
   trucker               String?   // carrier or named driver, e.g. "ANDY", "UBER", "UPS DROPSHIP"
   pickupAddress         String?   // defaults from the supplier's address, overridable per leg
   scheduledDeliveryDate DateTime? // the "Schedule Delivery & Trucker" step
-  shipCost              Float?    // trucking/delivery cost
+  shipCost              Decimal?  @db.Decimal(12, 2) // trucking/delivery cost
   chargedToCustomer     Boolean   @default(false) // was shipCost billed back to the client?
   deliveryContactPhone  String?   // day-of-delivery contact number
   deliveredAt     DateTime?
   notes           String?
   lineItems       LineItem[]
   createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @default(now()) @updatedAt
 
   @@index([orderId])
   @@index([purchaseOrderId])
@@ -335,7 +354,7 @@ model Payment {
   order         Order    @relation(fields: [orderId], references: [id])
   orderId       String
   type          String // deposit | final | full
-  amount        Float
+  amount        Decimal  @db.Decimal(12, 2)
   status        String   @default("pending") // pending | invoiced | paid
   quickbooksRef String?
   date          DateTime?
@@ -343,6 +362,7 @@ model Payment {
   dueNote       String? // e.g. "Balance due before delivery"
   notes         String?
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   @@index([orderId])
 }
@@ -366,11 +386,13 @@ model Task {
   comments       TaskComment[]
   mondayId       String?   @unique
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   @@index([status])
   @@index([assigneeId])
   @@index([parentTaskId])
   @@index([linkedType, linkedId])
+  @@index([dueDate])
 }
 
 model TaskComment {
@@ -384,6 +406,7 @@ model TaskComment {
   createdAt  DateTime @default(now())
 
   @@index([taskId])
+  @@index([authorId])
 }
 
 model IntakeSubmission {
@@ -416,7 +439,13 @@ model Document {
 
 model ActivityLog {
   id            String   @id @default(cuid())
+  // userName stays the display snapshot (renders even if the user is later
+  // deleted or renamed); userId is the real link, added for the audit item 21
+  // fix - SetNull on delete so a removed user doesn't take their history with
+  // them.
   userName      String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
   linkedType    String
   linkedId      String
   action        String
@@ -432,6 +461,7 @@ model ActivityLog {
 
   @@index([linkedType, linkedId])
   @@index([userName])
+  @@index([userId])
   @@index([action])
   @@index([at])
 }
@@ -470,6 +500,7 @@ model ServiceIssue {
   resolvedAt  DateTime?
   resolution  String?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   @@index([status])
   @@index([assigneeId])

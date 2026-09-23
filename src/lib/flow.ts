@@ -9,7 +9,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
-import { roundCents } from "@/lib/money";
+import { plainMoney, roundCents, toMoney, type PlainMoney } from "@/lib/money";
 import { OPEN_SERVICE_ISSUE_STATUSES } from "@/lib/constants";
 import { deriveOrderStatus, FLOW_ORDER_INCLUDE, MANUAL_STATUSES } from "@/lib/flowRules";
 import type { OrderBallInput } from "@/lib/ballInCourt";
@@ -30,10 +30,12 @@ export type { PaymentGate } from "@/lib/flowRules";
  */
 export async function recomputeOrderStatus(orderId: string): Promise<string | null> {
   try {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: FLOW_ORDER_INCLUDE,
-    });
+    const order = plainMoney(
+      await prisma.order.findUnique({
+        where: { id: orderId },
+        include: FLOW_ORDER_INCLUDE,
+      })
+    );
     if (!order) return null;
     if (MANUAL_STATUSES.has(order.status)) return order.status;
 
@@ -71,19 +73,22 @@ export async function syncOrderValueFromLineItems(orderId: string): Promise<numb
       },
     });
     if (!order) return null;
-    const live = order.lineItems.filter((li) => li.rfqStatus !== "removed");
+    const orderValue = toMoney(order.orderValue);
+    const live = order.lineItems
+      .filter((li) => li.rfqStatus !== "removed")
+      .map((li) => ({ qty: li.qty, unitPrice: toMoney(li.unitPrice) }));
     if (live.length === 0 || live.some((li) => li.unitPrice == null || li.unitPrice <= 0)) {
-      return order.orderValue;
+      return orderValue;
     }
     const total = roundCents(live.reduce((sum, li) => sum + (li.unitPrice ?? 0) * li.qty, 0));
-    if (order.orderValue != null && Math.abs(order.orderValue - total) < 0.005) return order.orderValue;
+    if (orderValue != null && Math.abs(orderValue - total) < 0.005) return orderValue;
 
     await prisma.order.update({ where: { id: orderId }, data: { orderValue: total } });
     await logActivity(
       "order",
       orderId,
       "order_value_synced",
-      `Order value updated from $${order.orderValue ?? 0} to $${total} to match priced line items`
+      `Order value updated from $${orderValue ?? 0} to $${total} to match priced line items`
     );
     await recomputeOrderStatus(orderId);
     return total;
@@ -99,8 +104,9 @@ export async function syncOrderValueFromLineItems(orderId: string): Promise<numb
 
 /**
  * FLOW_ORDER_INCLUDE plus the open-issue count that orderBall() needs. Use as
- * `include: ORDER_BALL_INCLUDE` (or spread it into a bigger include) and pass
- * the row through orderBallInput().
+ * `include: ORDER_BALL_INCLUDE` (or spread it into a bigger include), convert
+ * the row with plainMoney() (money columns are Decimal) and pass it through
+ * orderBallInput().
  */
 export const ORDER_BALL_INCLUDE = {
   ...FLOW_ORDER_INCLUDE,
@@ -109,7 +115,9 @@ export const ORDER_BALL_INCLUDE = {
   },
 } satisfies Prisma.OrderInclude;
 
-export type OrderWithBallInclude = Prisma.OrderGetPayload<{ include: typeof ORDER_BALL_INCLUDE }>;
+export type OrderWithBallInclude = PlainMoney<
+  Prisma.OrderGetPayload<{ include: typeof ORDER_BALL_INCLUDE }>
+>;
 
 /** Shape an ORDER_BALL_INCLUDE row for orderBall() / opportunityBall(). */
 export function orderBallInput(order: OrderWithBallInclude): OrderBallInput {

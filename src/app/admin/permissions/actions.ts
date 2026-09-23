@@ -27,6 +27,11 @@ export async function setRolePermission(
   if (!isRole(role)) return { ok: false, message: "Not a valid role." };
   if (!isPermission(permission)) return { ok: false, message: "Not a valid permission." };
   if (role === "admin") return { ok: false, message: "Admin always has every permission." };
+  // can() grants admin.manage to role "admin" only, so a matrix override here
+  // would show as granted without doing anything.
+  if (permission === "admin.manage") {
+    return { ok: false, message: "Admin access comes from the Admin role only. Change the teammate's role on Admin > Team instead." };
+  }
 
   return safeAction(async () => {
     await prisma.rolePermission.upsert({
@@ -65,8 +70,8 @@ export async function resetRolePermissions(role: string): Promise<ActionResult> 
 
 /**
  * Open mode switch. "on" = every role can do everything (the shipped default);
- * "off" = enforce the matrix below. Guarded by admin.manage, which in open mode
- * everyone passes - the point is that an admin can close the door from here.
+ * "off" = enforce the matrix below. Guarded by admin.manage, which only role
+ * "admin" passes (open mode never extends to Admin).
  */
 export async function setPermissionsOpenMode(next: string): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");

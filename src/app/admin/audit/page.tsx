@@ -1,3 +1,5 @@
+import { can } from "@/lib/permissionsServer";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +33,7 @@ export default async function AuditLogPage({
 }: {
   searchParams: Promise<AuditSearchParams>;
 }) {
+  if (!(await can("admin.manage"))) notFound();
   const sp = await searchParams;
 
   const actorOptions = (

@@ -5,10 +5,11 @@ import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity, type ActivityLogMeta } from "@/lib/log";
 import { isValidValue, RFQ_STATUSES, STOCK_STATUSES } from "@/lib/constants";
-import { roundCents } from "@/lib/money";
+import { roundCents, toMoney } from "@/lib/money";
 import { syncOrderValueFromLineItems } from "@/lib/flow";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
+import { parseDateOnly } from "@/lib/input";
 
 async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
   await logActivity("line_item", linkedId, action, detail, meta);
@@ -78,7 +79,7 @@ export async function updateLineItemPricing(
       lineItemId,
       "rfq_pricing_updated",
       `Price set to $${price} on "${before.name}"${advance ? " - status advanced to quote_received" : ""}`,
-      { previousValue: before.unitPrice != null ? `$${before.unitPrice}` : "(none)", newValue: `$${price}` }
+      { previousValue: before.unitPrice != null ? `$${toMoney(before.unitPrice)}` : "(none)", newValue: `$${price}` }
     );
     await syncOpportunityPricing(lineItemId);
     await syncOrderPricing(lineItemId);
@@ -104,8 +105,8 @@ export async function clearLineItemPrice(lineItemId: string): Promise<ActionResu
     if (!before) throw new Error("Line item not found");
     if (before.unitPrice == null) return; // already clear - nothing to do, no audit noise
     await prisma.lineItem.update({ where: { id: lineItemId }, data: { unitPrice: null } });
-    await log(lineItemId, "rfq_price_cleared", `Price cleared on "${before.name}" (was $${before.unitPrice})`, {
-      previousValue: `$${before.unitPrice}`,
+    await log(lineItemId, "rfq_price_cleared", `Price cleared on "${before.name}" (was $${toMoney(before.unitPrice)})`, {
+      previousValue: `$${toMoney(before.unitPrice)}`,
       newValue: "(none)",
     });
     await syncOpportunityPricing(lineItemId);
@@ -158,7 +159,9 @@ async function syncOpportunityPricing(lineItemId: string): Promise<void> {
   });
   if (!opportunity || opportunity.stage === "won" || opportunity.stage === "lost") return;
 
-  const live = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
+  const live = opportunity.lineItems
+    .filter((li) => li.rfqStatus !== "removed")
+    .map((li) => ({ ...li, unitPrice: toMoney(li.unitPrice) }));
   const unpriced = live.filter(
     (li) => li.rfqStatus === "needs_pricing" || li.rfqStatus === "rfq_sent"
   );
@@ -267,6 +270,10 @@ export async function setLineItemBackorderExpected(
 ): Promise<ActionResult> {
   const denied = await requirePermission("pricing.edit");
   if (denied) return denied;
+  const parsedDate = parseDateOnly(backorderExpected);
+  if (parsedDate === undefined) {
+    return { ok: false, message: "Enter a valid date." };
+  }
   return safeAction(async () => {
     const before = await prisma.lineItem.findUnique({
       where: { id: lineItemId },
@@ -275,12 +282,12 @@ export async function setLineItemBackorderExpected(
     if (!before) throw new Error("Line item not found");
     await prisma.lineItem.update({
       where: { id: lineItemId },
-      data: { backorderExpected: backorderExpected ? new Date(backorderExpected) : null },
+      data: { backorderExpected: parsedDate },
     });
     await log(
       lineItemId,
       "backorder_expected_set",
-      `Backorder expected date ${backorderExpected ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
+      `Backorder expected date ${parsedDate ? `set to ${backorderExpected}` : "cleared"} on "${before.name}"`
     );
     await revalidateLineItem(lineItemId);
   }, "Could not save the expected date. Please try again.");

@@ -9,6 +9,7 @@ import { COMPANY_TYPES, COMPANY_VERTICALS, isValidValue } from "@/lib/constants"
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { findCompanyByNormalizedName } from "./nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
+import { cleanText, TEXT_LIMITS } from "@/lib/input";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -143,11 +144,6 @@ export type LocationInput = {
   deliveryNotes?: string | null;
 };
 
-function clean(value: string | null | undefined): string | null {
-  const trimmed = (value ?? "").trim();
-  return trimmed === "" ? null : trimmed;
-}
-
 /** Shared shape/validation for create + update. Returns null when the input is unusable. */
 function readLocationInput(input: LocationInput): {
   name: string;
@@ -156,15 +152,15 @@ function readLocationInput(input: LocationInput): {
   contactPhone: string | null;
   deliveryNotes: string | null;
 } | null {
-  const name = (input.name ?? "").trim();
-  const address = (input.address ?? "").trim();
+  const name = cleanText(input.name, TEXT_LIMITS.short);
+  const address = cleanText(input.address, TEXT_LIMITS.medium);
   if (!name || !address) return null;
   return {
     name,
     address,
-    contactName: clean(input.contactName),
-    contactPhone: clean(input.contactPhone),
-    deliveryNotes: clean(input.deliveryNotes),
+    contactName: cleanText(input.contactName, TEXT_LIMITS.short) || null,
+    contactPhone: cleanText(input.contactPhone, TEXT_LIMITS.short) || null,
+    deliveryNotes: cleanText(input.deliveryNotes, TEXT_LIMITS.long) || null,
   };
 }
 
@@ -180,6 +176,8 @@ function revalidateLocations(companyId: string) {
 }
 
 export async function createLocation(companyId: string, input: LocationInput): Promise<ActionResult> {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) return denied;
   const data = readLocationInput(input);
   if (!data) return { ok: false, message: "A location needs a name and an address." };
   return safeAction(async () => {
@@ -198,6 +196,8 @@ export async function createLocation(companyId: string, input: LocationInput): P
 }
 
 export async function updateLocation(locationId: string, input: LocationInput): Promise<ActionResult> {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) return denied;
   const data = readLocationInput(input);
   if (!data) return { ok: false, message: "A location needs a name and an address." };
   return safeAction(async () => {
@@ -214,6 +214,8 @@ export async function updateLocation(locationId: string, input: LocationInput): 
 
 /** Exactly one default per business - the picker prefills with it. */
 export async function setDefaultLocation(locationId: string): Promise<ActionResult> {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) return denied;
   return safeAction(async () => {
     const location = await prisma.location.findUnique({
       where: { id: locationId },
@@ -246,6 +248,8 @@ export async function deleteLocation(
   locationId: string,
   reassignToId?: string | null
 ): Promise<ActionResult> {
+  const denied = await requirePermission("phonebook.edit");
+  if (denied) return denied;
   const location = await prisma.location.findUnique({
     where: { id: locationId },
     select: {
