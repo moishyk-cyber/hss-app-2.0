@@ -1,3 +1,4 @@
+import { ValidatedForm } from "@/lib/ValidatedForm";
 import { FormFooter } from "@/lib/PageLayout";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -33,7 +34,22 @@ export default async function EditOpportunityPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
   const [opportunityRow, companies, contacts, users, req] = await Promise.all([
-    prisma.opportunity.findUnique({ where: { id } }),
+    prisma.opportunity.findUnique({
+      where: { id },
+      // Fetch the business's sites with the deal, while dropdown lookups run.
+      // This avoids a second round trip after the slowest lookup finishes.
+      include: {
+        lineItems: { select: { id: true, name: true, rfqStatus: true, unitPrice: true } },
+        company: {
+          select: {
+            locations: {
+              select: { id: true, name: true, address: true },
+              orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+            },
+          },
+        },
+      },
+    }),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.contact.findMany({
       select: { id: true, firstName: true, lastName: true },
@@ -48,13 +64,7 @@ export default async function EditOpportunityPage({
 
   // The deal's business supplies the location options (a site on another
   // business is refused by the action anyway).
-  const locations = opportunity.companyId
-    ? await prisma.location.findMany({
-        where: { companyId: opportunity.companyId },
-        select: { id: true, name: true, address: true },
-        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-      })
-    : [];
+  const locations = opportunity.company?.locations ?? [];
 
   const companyRequired = req["opportunity.companyId"];
   const neededByRequired = req["opportunity.neededByDate"];
@@ -77,7 +87,7 @@ export default async function EditOpportunityPage({
       </div>
       <PageHeader title={`Edit ${opportunity.title}`} subtitle="Opportunity details" />
 
-      <form action={updateOpportunity} className="card max-w-4xl space-y-8">
+      <ValidatedForm dealValidation={{ deal: opportunity, required: { company: companyRequired, neededBy: neededByRequired } }} action={updateOpportunity} className="card max-w-4xl space-y-8">
         {error === "stage_locked" ? (
           <div className="banner-alert">
             Won and Lost can&rsquo;t be set from this form - they create the order, carry the line
@@ -100,6 +110,10 @@ export default async function EditOpportunityPage({
             </Link>
             ). Please fill it in and save again.
           </div>
+        ) : error === "stage_requirements" ? (
+          <div className="banner-alert">This stage needs complete intake information and confirmed item pricing. <Link href={`/pipeline/${opportunity.id}`} className="underline">Review missing requirements on the deal</Link>. Nothing was saved.</div>
+        ) : error === "title_required" ? (
+          <div className="banner-alert">Enter a title before saving. Nothing was saved.</div>
         ) : error === "save_failed" ? (
           <div className="banner-alert">Something went wrong while saving. Please try again.</div>
         ) : error === "not_allowed" ? (
@@ -294,7 +308,7 @@ export default async function EditOpportunityPage({
           <BackLink href={`/pipeline/${opportunity.id}`} label="Cancel" className="btn"/>
           <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">Save changes</PendingButton>
         </FormFooter>
-      </form>
+      </ValidatedForm>
     </div>
   );
 }

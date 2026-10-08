@@ -2,7 +2,7 @@
 
 // Shared issue row with a full-page record link and independent status control.
 
-import Link from "@/lib/IntentLink";
+import { SectionLink as Link } from "@/lib/SectionLink";
 import {
   SERVICE_ISSUE_STATUSES,
   SERVICE_ISSUE_STATUS_COLORS,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/constants";
 import { BadgeSelect } from "@/lib/ui";
 import { fmtDateUTC } from "@/lib/dates";
-import { setServiceIssueStatus } from "./actions";
+import { setServiceIssueStatus } from "@/lib/workflowActions";
 
 export type IssueRowData = {
   id: string;
@@ -31,11 +31,11 @@ export type IssueRowData = {
   lineItem: { id: string; name: string } | null;
 };
 
-function Breadcrumb({ issue }: { issue: IssueRowData }) {
+function Breadcrumb({ issue, fullPage }: { issue: IssueRowData; fullPage: boolean }) {
   const parts: React.ReactNode[] = [];
   if (issue.company) {
     parts.push(
-      <Link
+      <Link fullPage={fullPage}
         key="company"
         href={`/companies/${issue.company.id}`}
         onClick={(e) => e.stopPropagation()}
@@ -49,7 +49,7 @@ function Breadcrumb({ issue }: { issue: IssueRowData }) {
     parts.push(<span key="location">{issue.location.name}</span>);
   if (issue.order) {
     parts.push(
-      <Link
+      <Link fullPage={fullPage}
         key="order"
         href={`/orders/${issue.order.id}#service`}
         onClick={(e) => e.stopPropagation()}
@@ -81,14 +81,16 @@ function Breadcrumb({ issue }: { issue: IssueRowData }) {
 
 export default function IssueRow({
   issue,
+  fullPage = false,
 }: {
   issue: IssueRowData;
+  fullPage?: boolean;
   users: { id: string; name: string }[];
 }) {
   return (
     <tr>
       <td>
-        <Link
+        <Link fullPage={fullPage}
           href={`/service/${issue.id}`}
           className="font-medium hover:underline"
         >
@@ -112,7 +114,7 @@ export default function IssueRow({
         </span>
       </td>
       <td>
-        <Breadcrumb issue={issue} />
+        <Breadcrumb fullPage={fullPage} issue={issue} />
       </td>
       <td className="min-w-[140px] whitespace-nowrap">
         {issue.assigneeName ?? "Unassigned"}

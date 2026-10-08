@@ -5,7 +5,7 @@
 // only which line item, if any). Agent D wires this into OrderTabs/page.tsx;
 // this file only owns its own rendering.
 
-import Link from "next/link";
+import { SectionLink as Link } from "@/lib/SectionLink";
 import IssueRow, { type IssueRowData } from "../../service/IssueRow";
 
 export type OrderIssuesPanelProps = {
@@ -22,7 +22,7 @@ export default function OrderIssuesPanel({ orderId, issues, users }: OrderIssues
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="section-label">Service issues</h2>
-        <Link href={`/service/new?orderId=${orderId}`} className="btn btn-sm">Log an issue</Link>
+        <Link fullPage href={`/service/new?orderId=${orderId}`} className="btn btn-sm">Log an issue</Link>
       </div>
 
 
@@ -36,7 +36,7 @@ export default function OrderIssuesPanel({ orderId, issues, users }: OrderIssues
         <div className="card card-flush overflow-hidden">
           <div className="divide-y divide-border">
             {issues.map((issue) => (
-              <IssueRow key={issue.id} issue={issue} users={users} />
+              <IssueRow fullPage key={issue.id} issue={issue} users={users} />
             ))}
           </div>
         </div>

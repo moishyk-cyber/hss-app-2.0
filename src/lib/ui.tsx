@@ -229,7 +229,8 @@ export function Spinner({ className = "" }: { className?: string }) {
  */
 function useOptimisticAction(value: string, action: (next: string) => Promise<ActionResult | void>) {
   const [isPending, startTransition] = useTransition();
-  const [optimistic, setOptimistic] = useOptimistic(value);
+  const [confirmed, setConfirmed] = useState<{ base: string; value: string } | null>(null);
+  const [optimistic, setOptimistic] = useOptimistic(confirmed?.base === value ? confirmed.value : value);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   function run(next: string) {
@@ -237,11 +238,13 @@ function useOptimisticAction(value: string, action: (next: string) => Promise<Ac
       setOptimistic(next);
       setError(null);
       try {
-        setError(errorFrom(await action(next)));
+        const result = await action(next);
+        setError(errorFrom(result));
+        if (result?.ok && "skipRefresh" in result) setConfirmed({ base: value, value: next });
+        else if (!result || (result.ok && !("skipRefresh" in result))) router.refresh();
       } catch {
         setError("Something went wrong. Please try again.");
       }
-      router.refresh();
     });
   }
   return { isPending, optimistic, error, run };
@@ -597,12 +600,13 @@ export function ActionButton({
           startTransition(async () => {
             setError(null);
             try {
-              setError(errorFrom(await action()));
+              const result = await action();
+              setError(errorFrom(result));
+              if (!result || (result.ok && !("skipRefresh" in result))) router.refresh();
             } catch {
               setError("Something went wrong. Please try again.");
             }
-            // Fresh server render so downstream state (stepper, badges) updates.
-            router.refresh();
+
           })
         }
       >

@@ -4,24 +4,27 @@ import { DetailHeader } from "@/lib/PageLayout";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { CloseoutControl } from "./CloseoutControl";
 import { StatusOwnerControls } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
 import ItemStatusChips from "./ItemStatusChips";
 import { OverviewStrip } from "./OverviewStrip";
 import { OrderTabs, type TabKey } from "./OrderTabs";
 import { OrderLocationField } from "./OrderLocationField";
-import { FlowStepper } from "@/lib/FlowStepper";
+import { DealProgress } from "@/app/pipeline/DealProgress";
+import { PricingItems } from "@/app/pipeline/PricingItems";
+import { WorkflowSelectionProvider, WorkflowPanel } from "@/lib/WorkflowSelection";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
+import { hasOrderTerms, orderBall } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
 import { ActivityHistory, getActivityEntries } from "@/lib/ActivityHistory";
 import { startOrderSupportingReads } from "./supportingData";
 import { OrderFiles, OrderService, OrderPurchasing, OrderDelivery, OrderCompanyEditor, OrderContactEditor, SectionLoading } from "./SupportingSections";
-import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
+import { evaluatePaymentGate, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
+import { dealJourney, orderCanClose } from "@/lib/dealWorkflow";
 import { plainMoney } from "@/lib/money";
-import { ActionButton, InlineEditField } from "@/lib/ui";
+import { InlineEditField } from "@/lib/ui";
 import {
-  markOrderComplete,
   setOrderClientPoNumber,
   setOrderDeliveryAddress,
   setOrderJobId,
@@ -88,7 +91,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const gate = evaluatePaymentGate(order);
   // One source of truth for "what happens next" - the header stepper, the badge,
   // the primary action and the opening tab all read this (see @/lib/ballInCourt).
-  const ball = withHolder(orderBall(orderBallInput(order)), holders);
+  const ballFacts = orderBallInput(order);
+  const ball = withHolder(orderBall(order.status === "complete" && !orderCanClose(ballFacts) ? { ...ballFacts, status: "delivered" } : ballFacts), holders);
 
   // Terms are free text (Sep 4 client decision) - the header grid shows the
   // first line, the Invoice tab holds the whole thing.
@@ -105,13 +109,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const anySent = order.purchaseOrders.some((po) => po.status === "sent");
 
-  // The nine-step journey (sales through customer service), replacing the order
-  // module's own five-step read of the same facts. Sales-side steps link back to
-  // the deal, order-side steps open the matching tab.
-  const steps = fullFlowSteps(ball.step, {
-    dealHref: order.opportunityId ? `/pipeline/${order.opportunityId}` : undefined,
-    orderHref: `/orders/${order.id}`,
-    hint: ball.hint,
+  // Both record pages use the same journey and step labels.
+  // Completed sales work is reviewed in place; order work opens its local tab.
+  const steps = dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }).map((step, index) => {
+    // Sales-side work is historical once the order exists. Review it in place.
+    if (index < 3) return { ...step, state: "complete" as const, action: undefined, checks: [{ label: index === 0 ? "Request captured and carried into this order" : index === 1 ? "Deal pricing confirmed before order creation" : "Deal won and order created", complete: true, href: index === 0 ? "#order-intake" : index === 1 ? "#line-items" : "#order-summary" }], description: index === 0 ? "Review the intake details below. Changes to the customer, delivery address and needed-by date are saved on this order." : index === 1 ? "Review the item prices below. Price changes save when you leave the field or press Enter." : "The customer decision is recorded and this order was created. Continue with the remaining order steps." };
+    const localHref = (href: string) => href === `/orders/${order.id}` ? "#order-summary" : href.replace(`/orders/${order.id}`, "");
+    return { ...step, action: step.action ? { ...step.action, href: localHref(step.action.href) } : undefined, checks: step.checks.map(check => ({ ...check, href: check.href ? localHref(check.href) : undefined })) };
   });
 
   // ---- Header pattern (spec §H): ONE contextual primary action ----
@@ -119,21 +123,21 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   // POs, then completion.
   const isOpen = order.status !== "complete";
   let primaryAction: React.ReactNode = null;
-  if (isOpen && order.quoteStatus === "needed") {
+  if (isOpen && ["needed", "sent"].includes(order.quoteStatus)) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
-        Set quote status
+      <a href="#quote-status" className="btn btn-primary active:scale-[0.99]">
+        {order.quoteStatus === "sent" ? "Record customer approval" : "Review customer quote"}
       </a>
     );
   } else if (isOpen && !hasOrderTerms(order)) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
+      <a href="#order-terms" className="btn btn-primary active:scale-[0.99]">
         Set terms
       </a>
     );
   } else if (isOpen && !gate.open) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
+      <a href="#payments" className="btn btn-primary active:scale-[0.99]">
         Record payment
       </a>
     );
@@ -151,13 +155,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         Acknowledge POs
       </a>
     );
-  } else if (isOpen && canCompleteOrder(order)) {
+  } else if (isOpen && orderCanClose(orderBallInput(order))) {
     // canCompleteOrder is vacuously true when there are no POs at all (a direct
     // intake order with no purchasing leg) - don't gate this on purchaseOrders.length.
     primaryAction = (
-      <ActionButton action={markOrderComplete.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
-        Mark complete
-      </ActionButton>
+      <a href="#order-complete" className="btn btn-primary active:scale-[0.99]">
+        Review closeout
+      </a>
     );
   }
 
@@ -193,15 +197,64 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const hasLiveItems = chipItems.some((i) => i.rfqStatus !== "removed");
 
   return (
-    <div className="space-y-8">
+    <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={steps.map(step => step.key)} initialKey={steps.find(step => !["complete", "not_required", "stopped"].includes(step.state))?.key ?? "close"}>
+    <div className="pipeline-detail space-y-8">
       <DetailHeader backHref="/orders" backLabel="Back to Orders" title={order.title}
         subtitle={<>{order.company ? <Link href={`/companies/${order.company.id}`}>{order.company.name}</Link> : "No linked business"}{order.contact && <> · {order.contact.firstName} {order.contact.lastName ?? ""}</>}</>}
         badges={<><span className="badge badge-gray capitalize">{order.orderType}</span><BallInCourtBadge ball={ball}/></>}
         action={primaryAction}/>
+      <DealProgress steps={steps} lost={false} />
+      <WorkflowPanel when={["pricing"]}>
+        <PricingItems items={order.lineItems} editable={isOpen} />
+      </WorkflowPanel>
+      <WorkflowPanel when={["quote", "terms", "deposit", "pos", "delivery", "service", "files"]}>
       <div className="card">
-        <div>
-          <FlowStepper steps={steps} />
-        </div>
+        <OrderTabs
+          defaultTab={defaultTab}
+          invoice={
+            <PaymentsSection
+              orderId={order.id}
+              payments={order.payments}
+              gate={gate}
+              terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms }}
+              quote={{
+                quoteStatus: order.quoteStatus,
+                quoteUrl: order.quoteUrl,
+                quoteSentAt: order.quoteSentAt,
+              }}
+            />
+          }
+          purchaseOrders={
+            <Suspense fallback={<SectionLoading name="purchase orders" />}>
+              <OrderPurchasing orderId={order.id} data={supporting}
+                purchaseOrderIds={order.purchaseOrders.map(po => po.id)}
+                unassignedLineItems={unassignedLineItems} gate={gate} />
+            </Suspense>
+          }
+          delivery={
+            <Suspense fallback={<SectionLoading name="deliveries" />}>
+              <OrderDelivery orderId={order.id} data={supporting} users={users} />
+            </Suspense>
+          }
+          files={
+            <Suspense fallback={<SectionLoading name="files" />}>
+              <OrderFiles orderId={order.id} opportunityId={order.opportunityId} />
+            </Suspense>
+          }
+          service={<>
+            <Suspense fallback={<SectionLoading name="service issues" />}>
+              <OrderService orderId={order.id} companyId={order.companyId}
+                locationId={order.locationId} issues={supporting.issues} users={users}
+                items={order.lineItems.filter(li => li.rfqStatus !== "removed")
+                  .map(li => ({ id: li.id, name: li.name }))} />
+            </Suspense>
+            <CloseoutControl orderId={order.id} step={steps.find(step => step.key === "service")!} />
+          </>}
+        />
+      </div>
+      </WorkflowPanel>
+
+      <div className="card">
 
         <details className="mt-4 border-t border-border pt-4"><summary className="cursor-pointer text-sm font-medium">Fulfillment summary</summary>
         {hasLiveItems ? (
@@ -222,7 +275,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
         </details>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        <div id="order-summary" className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <StatusOwnerControls
             orderId={order.id}
             status={order.status}
@@ -231,7 +284,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           />
         </div>
 
-        <details className="mt-4 border-t border-border pt-4"><summary className="cursor-pointer text-sm font-medium">Order details</summary>
+        <WorkflowPanel when={["sales"]}>
+        <section id="order-intake" aria-label="Intake details" className="mt-4 border-t border-border pt-4"><h2 className="text-sm font-medium">Intake details</h2>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
           <div>
             <div className="field-label">Business</div>
@@ -365,54 +419,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
         </div>
-        </details>
+        </section>
+        </WorkflowPanel>
       </div>
 
-      <div className="card">
-        <OrderTabs
-          defaultTab={defaultTab}
-          invoice={
-            <PaymentsSection
-              orderId={order.id}
-              payments={order.payments}
-              gate={gate}
-              terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms }}
-              quote={{
-                quoteStatus: order.quoteStatus,
-                quoteUrl: order.quoteUrl,
-                quoteSentAt: order.quoteSentAt,
-              }}
-            />
-          }
-          purchaseOrders={
-            <Suspense fallback={<SectionLoading name="purchase orders" />}>
-              <OrderPurchasing orderId={order.id} data={supporting}
-                purchaseOrderIds={order.purchaseOrders.map(po => po.id)}
-                unassignedLineItems={unassignedLineItems} gate={gate} />
-            </Suspense>
-          }
-          delivery={
-            <Suspense fallback={<SectionLoading name="deliveries" />}>
-              <OrderDelivery orderId={order.id} data={supporting} users={users} />
-            </Suspense>
-          }
-          files={
-            <Suspense fallback={<SectionLoading name="files" />}>
-              <OrderFiles orderId={order.id} opportunityId={order.opportunityId} />
-            </Suspense>
-          }
-          service={
-            <Suspense fallback={<SectionLoading name="service issues" />}>
-              <OrderService orderId={order.id} companyId={order.companyId}
-                locationId={order.locationId} issues={supporting.issues} users={users}
-                items={order.lineItems.filter(li => li.rfqStatus !== "removed")
-                  .map(li => ({ id: li.id, name: li.name }))} />
-            </Suspense>
-          }
-        />
-      </div>
 
       <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} /></Suspense>
     </div>
+    </WorkflowSelectionProvider>
   );
 }

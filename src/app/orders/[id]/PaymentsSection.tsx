@@ -13,6 +13,7 @@
 // mistake stays fixable after the toast is gone.
 
 import { MoneyInput } from "@/lib/MoneyInput";
+import { useWorkflowSelection } from "@/lib/WorkflowSelection";
 
 import { useState } from "react";
 import type { PaymentGate } from "@/lib/flow";
@@ -22,7 +23,7 @@ import {
   markPaymentPaid,
   undoMarkPaymentPaid,
   setPaymentQuickbooksRef,
-} from "../actions";
+} from "@/lib/workflowActions";
 import { fmtDate, PAYMENT_METHODS, PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
@@ -30,20 +31,22 @@ import { useToast } from "@/lib/toast";
 import { fmtUSD } from "@/lib/money";
 import { ymdToday } from "@/lib/dates";
 import TermsCard from "./TermsCard";
+import { InvoiceDueDate } from "@/app/invoices/InvoiceDueDate";
 
-type Payment = {
+export type Payment = {
   id: string;
   type: string;
   amount: number;
   status: string;
   quickbooksRef: string | null;
   date: Date | null;
+  dueDate: Date | null;
   source: string;
   dueNote: string | null;
 };
 
 /** The review-then-confirm flow behind the "Mark paid" button on one payment row. */
-function MarkPaidControl({ payment }: { payment: Payment }) {
+export function MarkPaidControl({ payment }: { payment: Payment }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [receivedDate, setReceivedDate] = useState(ymdToday);
@@ -160,7 +163,7 @@ function MarkPaidControl({ payment }: { payment: Payment }) {
 }
 
 /** Confirm-guarded revert for a payment already marked paid. */
-function UnmarkPaidControl({ payment }: { payment: Payment }) {
+export function UnmarkPaidControl({ payment }: { payment: Payment }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const { toast } = useToast();
@@ -208,7 +211,7 @@ function UnmarkPaidControl({ payment }: { payment: Payment }) {
 }
 
 /** Inline "QuickBooks link" edit on a payment row - reveal, save, cancel. */
-function QuickBooksLinkControl({ payment }: { payment: Payment }) {
+export function QuickBooksLinkControl({ payment }: { payment: Payment }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -274,8 +277,8 @@ function QuickBooksLinkControl({ payment }: { payment: Payment }) {
 
 export default function PaymentsSection({
   orderId,
-  payments,
-  gate,
+  payments: savedPayments,
+  gate: savedGate,
   terms,
   quote,
 }: {
@@ -286,8 +289,12 @@ export default function PaymentsSection({
   quote: { quoteStatus: string; quoteUrl: string | null; quoteSentAt: Date | null };
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(payments.length === 0);
+  const [showAdd, setShowAdd] = useState(savedPayments.length === 0);
   const { toast } = useToast();
+  const selection = useWorkflowSelection();
+  const payments = selection?.paymentState?.payments.map(payment => ({ ...payment, date: payment.date ? new Date(payment.date) : null, dueDate: payment.dueDate ? new Date(payment.dueDate) : null })) ?? savedPayments;
+  const gate = selection?.paymentState?.gate ?? savedGate;
+  const step = selection?.selectedKey;
 
   async function handleAddInvoice(formData: FormData) {
     const type = String(formData.get("type") ?? "deposit");
@@ -298,7 +305,7 @@ export default function PaymentsSection({
       return;
     }
     setError(null);
-    const result = await addInvoice(orderId, type, parseFloat(amt), link);
+    const result = await addInvoice(orderId, type, parseFloat(amt), link, String(formData.get("dueDate") ?? ""));
     if (result.ok) {
       setShowAdd(false);
       toast({ kind: "success", message: `${type} invoice added` });
@@ -316,13 +323,15 @@ export default function PaymentsSection({
         quoteStatus={quote.quoteStatus}
         quoteUrl={quote.quoteUrl}
         quoteSentAt={quote.quoteSentAt}
+        showQuote={!step || step === "quote"}
+        showTerms={!step || step === "terms"}
       />
-
+      <div id="payments" hidden={!!step && step !== "deposit"} className="space-y-5">
       <div className="text-sm font-medium text-ink">
         {gate.exempt
           ? gate.reason
           : gate.requiredTotal != null
-          ? `Required ${fmtUSD(gate.requiredTotal)} · Paid ${fmtUSD(gate.paidTotal)} · Outstanding ${fmtUSD(gate.shortfall)}${
+          ? `Required ${fmtUSD(gate.requiredTotal, { cents: true })} · Paid ${fmtUSD(gate.paidTotal, { cents: true })} · Outstanding ${fmtUSD(gate.shortfall, { cents: true })}${
               gate.invoiced ? "" : " · Nothing invoiced yet"
             }`
           : gate.open
@@ -344,6 +353,7 @@ export default function PaymentsSection({
                 <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
                 {p.source === "terms" && <span className="badge badge-gray">from terms</span>}
                 {p.dueNote && <span className="text-xs text-gray-dark">{p.dueNote}</span>}
+                <InvoiceDueDate payment={p} canEdit />
                 <QuickBooksLinkControl payment={p} />
               </div>
               <div className="flex items-center gap-2.5">
@@ -383,6 +393,10 @@ export default function PaymentsSection({
             <MoneyInput min="0.01" required name="amount" className="input-klyne w-28" />
           </label>
           <label>
+            <span className="field-label">Due date</span>
+            <input type="date" name="dueDate" className="input-klyne" />
+          </label>
+          <label>
             <span className="field-label">QuickBooks link</span>
             <input
               type="url"
@@ -405,6 +419,7 @@ export default function PaymentsSection({
           + Add invoice
         </button>
       )}
+      </div>
     </div>
   );
 }

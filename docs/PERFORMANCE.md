@@ -31,6 +31,18 @@ the vendor directory. All data remains fresh per request; mutations keep their
 existing refresh and authorization behavior. This streams all sections during the
 initial request; it does not introduce fetching when a tab is clicked.
 
+Edit Deal fetches the company's locations in the same joined query as the deal,
+alongside the dropdown directories and field requirements. This removes the
+location query that previously waited for every directory to finish. A read-only
+comparison on the same deal verified identical form defaults and choices: median
+database time fell from 1,047 ms to 525 ms across three runs. These timings exclude
+compilation and browser rendering.
+
+The Edit Deal button uses hover/focus prefetching in production, and both the full
+page and drawer have an edit-form loading boundary. Next.js disables link
+prefetching in development, so the first visit on port 3000 can still compile.
+The production preview on port 3001 avoids that compilation after a rebuild.
+
 ## Read-only verification (October 8, 2026)
 
 Median of three comparisons against the same connected database and query shapes:

@@ -58,13 +58,15 @@ export function Card({
   title,
   children,
   action,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="card">
+    <section id={id} className="card scroll-mt-6">
       <div className="flex items-start justify-between gap-3">
         <h2 className="section-label">{title}</h2>
         {action}

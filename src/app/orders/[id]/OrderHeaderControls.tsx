@@ -3,7 +3,7 @@
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { ActionButton } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
-import { reopenOrder, setOrderOwner, unstickOrder } from "../actions";
+import { reopenOrder, setOrderOwner, unstickOrder } from "@/lib/workflowActions";
 
 export function StatusOwnerControls({
   orderId,

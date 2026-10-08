@@ -360,6 +360,7 @@ model Payment {
   status        String   @default("pending") // pending | invoiced | paid
   quickbooksRef String?
   date          DateTime?
+  dueDate       DateTime? // calendar due date; date remains the received-payment date
   source        String   @default("manual") // manual | terms (auto-created by applyTermsToOrder)
   dueNote       String? // e.g. "Balance due before delivery"
   notes         String?
@@ -367,6 +368,7 @@ model Payment {
   updatedAt     DateTime @default(now()) @updatedAt
 
   @@index([orderId])
+  @@index([status, dueDate])
 }
 
 model Task {

@@ -5,6 +5,10 @@ import { BadgeSelect } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { changeOpportunityStage } from "./actions";
 import { stageOptions } from "./_ui";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ValidationDialog } from "@/lib/ValidationDialog";
+import type { ValidationIssue } from "@/lib/dealWorkflow";
 
 /**
  * The stage pill IS the dropdown - click it to move the deal.
@@ -22,9 +26,11 @@ export function StageSelect({
   stage: string;
 }) {
   const { toast } = useToast();
+  const router = useRouter();
+  const [issues, setIssues] = useState<ValidationIssue[]>([]);
 
   return (
-    <BadgeSelect
+    <><BadgeSelect
       value={stage}
       options={stageOptions(stage)}
       colorMap={STAGE_COLORS}
@@ -32,6 +38,7 @@ export function StageSelect({
       action={async (next) => {
         const previous = stage;
         const result = await changeOpportunityStage(opportunityId, next);
+        if (result.ok === false) setIssues(result.issues ?? [{ field: "stage", message: result.message, href: `/pipeline/${opportunityId}` }]);
         if (!result || result.ok !== false) {
           toast({
             kind: "success",
@@ -42,6 +49,10 @@ export function StageSelect({
         }
         return result;
       }}
-    />
+    /><ValidationDialog issues={issues} title="Before changing this deal’s stage" onClose={() => setIssues([])} onFix={() => {
+      const target = issues[0]?.href ?? `/pipeline/${opportunityId}`;
+      setIssues([]);
+      router.push(target.startsWith("#") ? `/pipeline/${opportunityId}${target}` : target);
+    }} /></>
   );
 }

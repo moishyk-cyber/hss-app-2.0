@@ -86,6 +86,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
           <div
             key={stage.value}
             onDragOver={(e) => {
+              if (!draggingId) return;
               e.preventDefault();
               e.dataTransfer.dropEffect = "move";
               if (dragOverStage !== stage.value) setDragOverStage(stage.value);
@@ -103,7 +104,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               if (id) moveByDrag(id, stage.value);
             }}
             className={`kanban-lane transition-colors ${isCollapsed ? "is-collapsed" : ""} ${
-              isDropTarget ? "bg-hover ring-2 ring-primary" : ""
+              isDropTarget ? "is-drop-target" : ""
             }`}
           >
             <div className="mb-4 flex items-center justify-between gap-2">

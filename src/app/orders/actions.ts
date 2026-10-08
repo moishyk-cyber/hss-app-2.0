@@ -1,5 +1,6 @@
 "use server";
 
+import { hasOrderTerms } from "@/lib/ballInCourt";
 import { fulfillment, lineItemPricing } from "@/lib/workflows";
 import { reconcileOrderStatus } from "@/lib/workflows/orderState";
 import { serialTransaction } from "@/lib/workflows/transaction";
@@ -14,6 +15,7 @@ import {
   deriveOrderStatus,
   canCompleteOrder,
   FLOW_ORDER_INCLUDE,
+  ORDER_BALL_INCLUDE,
 } from "@/lib/flow";
 import {
   isValidValue,
@@ -26,6 +28,7 @@ import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, parseDateOnly, TEXT_LIMITS } from "@/lib/input";
 import { PAYMENT_METHODS, PAYMENT_TYPES } from "./utils";
+import { parseInvoiceDueDate } from "@/lib/invoices";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 
 async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
@@ -33,6 +36,7 @@ async function log(linkedId: string, action: string, detail: string, meta?: Acti
 }
 
 function revalidateOrder(orderId: string) {
+  revalidatePath("/invoices");
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
   revalidatePath("/dashboard");
@@ -119,10 +123,13 @@ export async function markOrderComplete(orderId: string): Promise<ActionResult> 
   if (denied) return denied;
   try {
     const order = plainMoney(
-      await prisma.order.findUnique({ where: { id: orderId }, include: FLOW_ORDER_INCLUDE })
+      await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_BALL_INCLUDE })
     );
     if (!order) return { ok: false, message: "Order not found" };
 
+    if (!["accepted", "not_needed"].includes(order.quoteStatus)) return { ok: false, message: "Record customer quote acceptance before closing the order." };
+    if (!hasOrderTerms(order)) return { ok: false, message: "Save the agreed order terms before closing the order." };
+    if (order._count.serviceIssues > 0) return { ok: false, message: "Resolve all open service issues before closing the order." };
     if (!canCompleteOrder(order)) {
       const gate = evaluatePaymentGate(order);
       if (!gate.open) {
@@ -187,10 +194,17 @@ export async function addInvoice(
   orderId: string,
   type: string,
   amount: number,
-  quickbooksLink: string
+  quickbooksLink: string,
+  dueDateInput = "",
+  status = "invoiced"
 ): Promise<ActionResult> {
   const denied = await requirePermission("payments.edit");
   if (denied) return denied;
+  if (status !== "pending" && status !== "invoiced") {
+    return { ok: false, message: "Choose pending or invoiced. Record a received payment with Mark paid." };
+  }
+  const dueDate = parseInvoiceDueDate(dueDateInput);
+  if (dueDate === undefined) return { ok: false, message: "Enter a valid due date." };
   if (!isValidValue(PAYMENT_TYPES, type)) {
     return { ok: false, message: "Pick an invoice type." };
   }
@@ -207,12 +221,24 @@ export async function addInvoice(
   const cents = roundCents(amount);
   return safeAction(async () => {
     await prisma.payment.create({
-      data: { orderId, type, amount: cents, status: "invoiced", quickbooksRef: link || null },
+      data: { orderId, type, amount: cents, status, quickbooksRef: link || null, dueDate },
     });
-    await log(orderId, "invoice_added", `Invoice added: ${type} $${cents}${link ? " (QuickBooks link attached)" : ""}`);
+    await log(orderId, "invoice_added", `Billing record added: ${type} $${cents} (${status})${dueDateInput ? `, due ${dueDateInput}` : ""}${link ? " (QuickBooks link attached)" : ""}`);
     await recomputeOrderStatus(orderId);
     revalidateOrder(orderId);
   }, "Could not add the invoice. Please try again.");
+}
+
+export async function setPaymentDueDate(paymentId: string, input: string): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
+  const dueDate = parseInvoiceDueDate(input);
+  if (dueDate === undefined) return { ok: false, message: "Enter a valid due date." };
+  return safeAction(async () => {
+    const payment = await prisma.payment.update({ where: { id: paymentId }, data: { dueDate } });
+    await log(payment.orderId, "payment_due_date_set", `${payment.type} due date ${dueDate ? `set to ${dueDate.toISOString().slice(0, 10)}` : "cleared"}`);
+    revalidateOrder(payment.orderId);
+  }, "Could not save the due date. Please try again.");
 }
 
 export async function markPaymentInvoiced(paymentId: string): Promise<ActionResult> {
@@ -220,7 +246,7 @@ export async function markPaymentInvoiced(paymentId: string): Promise<ActionResu
   if (denied) return denied;
   return safeAction(async () => {
     const payment = await prisma.payment.update({
-      where: { id: paymentId },
+      where: { id: paymentId, status: "pending" },
       data: { status: "invoiced" },
     });
     await log(payment.orderId, "payment_invoiced", `Payment (${payment.type}) marked invoiced`);

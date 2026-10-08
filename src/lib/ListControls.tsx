@@ -61,6 +61,27 @@ export function ListControls({
   );
   const searchKey = searchParam ?? (searchField ? `f_${searchField.key}` : "");
   const [showSearch, setShowSearch] = useState(false);
+  const displayRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    function closeOutside(event: PointerEvent) {
+      const menu = displayRef.current;
+      if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      const menu = displayRef.current;
+      if (event.key !== "Escape" || !menu?.open) return;
+      menu.open = false;
+      if (menu.contains(document.activeElement)) {
+        menu.querySelector("summary")?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
   function update(mutate: (query: URLSearchParams) => void) {
     const query = new URLSearchParams(latest.current);
     mutate(query);
@@ -141,7 +162,7 @@ export function ListControls({
           )}
         </button>
         {(displayControls || (["/deliveries", "/rfq"].includes(pathname) && params.get("view") !== "kanban")) && (
-          <details className="toolbar-display">
+          <details ref={displayRef} className="toolbar-display">
             <summary className="btn btn-sm">Display</summary>
             <div className="toolbar-display-panel">
               {displayControls}

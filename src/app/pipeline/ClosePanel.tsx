@@ -20,7 +20,11 @@
 
 import { MoneyInput } from "@/lib/MoneyInput";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import { highlightSection } from "@/lib/SectionLink";
+import { useRouter } from "next/navigation";
+import { closeIssues, type ValidationIssue } from "@/lib/dealWorkflow";
+import { ValidationDialog } from "@/lib/ValidationDialog";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { fmtUSD, roundCents } from "@/lib/money";
 import { markOpportunityLost, markOpportunityWon } from "./actions";
@@ -65,6 +69,7 @@ function SummaryRow({
 
 export function ClosePanel({
   opportunityId,
+  prerequisiteIssues,
   isProject,
   requiresDeposit,
   depositPercent,
@@ -78,6 +83,7 @@ export function ClosePanel({
   locations,
 }: {
   opportunityId: string;
+  prerequisiteIssues: ValidationIssue[];
   isProject: boolean;
   /** Company.requiresDeposit - the account's own deposit rule, which still gates the POs. */
   requiresDeposit: boolean;
@@ -93,6 +99,12 @@ export function ClosePanel({
   /** The company's saved sites - picking one fills the name and address. */
   locations: CloseLocation[];
 }) {
+  const router = useRouter();
+  const [closingAs, setClosingAs] = useState<"won" | "lost">("won");
+  const [validation, setValidation] = useState<ValidationIssue[]>([]);
+  const [attempted, setAttempted] = useState(false);
+  const [lostReason, setLostReason] = useState(defaultLostReason ?? "");
+  const approved = useRef(false);
   const wonFormRef = useRef<HTMLFormElement>(null);
   const lostFormRef = useRef<HTMLFormElement>(null);
   const [wonSummary, setWonSummary] = useState<WonSummary | null>(null);
@@ -106,6 +118,11 @@ export function ClosePanel({
   const [locationName, setLocationName] = useState(defaultLocationName ?? "");
   const [address, setAddress] = useState(defaultDeliveryAddress ?? "");
   const [neededBy, setNeededBy] = useState(defaultNeededBy);
+  const previousNeededBy = useRef(defaultNeededBy);
+  useEffect(() => {
+    setNeededBy(current => current === previousNeededBy.current ? defaultNeededBy : current);
+    previousNeededBy.current = defaultNeededBy;
+  }, [defaultNeededBy]);
   const [terms, setTerms] = useState("");
   const [poNumber, setPoNumber] = useState("");
 
@@ -116,7 +133,7 @@ export function ClosePanel({
   const [editNeededBy, setEditNeededBy] = useState(!defaultNeededBy);
 
   const numericValue = Number(value);
-  const priceReady = Number.isFinite(numericValue) && numericValue > 0;
+  const priceReady = Number.isFinite(numericValue) && numericValue >= 0.01;
   // The POs still wait on the account's own deposit rule (Company.requiresDeposit
   // / depositPercent) - the free-text terms are for people, not for the gate.
   const accountDeposit = roundCents(((priceReady ? numericValue : 0) * depositPercent) / 100);
@@ -135,76 +152,99 @@ export function ClosePanel({
     }
   }
 
+  function validateWon() {
+    setAttempted(true);
+    const own = closeIssues({ value: numericValue, address, neededBy }, "won");
+    const issues = [...prerequisiteIssues.filter(i => i.field !== "neededByDate"), ...own];
+    if (own.some(i => i.field === "value")) setEditPrice(true);
+    if (own.some(i => i.field === "deliveryAddress")) setEditLocation(true);
+    if (own.some(i => i.field === "neededByDate")) setEditNeededBy(true);
+    setValidation(issues);
+    return issues.length === 0;
+  }
+
   function openWonConfirm() {
-    // Reveal whatever is still missing instead of failing silently on a
-    // collapsed row (its input isn't in the DOM to report validity on).
-    if (!priceReady) {
-      setEditPrice(true);
-      return;
-    }
-    if (!address.trim()) {
-      setEditLocation(true);
-      return;
-    }
-    if (!neededBy) {
-      setEditNeededBy(true);
-      return;
-    }
-    const form = wonFormRef.current;
-    if (!form || !form.reportValidity()) return;
-    setWonSummary({
-      value: numericValue,
-      terms: terms.trim(),
-      locationName: locationName.trim(),
-      address: address.trim(),
-      neededBy,
-      poNumber: poNumber.trim(),
-    });
+    if (submitting || !validateWon()) return;
+    setWonSummary({ value: numericValue, terms: terms.trim(), locationName: locationName.trim(), address: address.trim(), neededBy, poNumber: poNumber.trim() });
   }
 
   function confirmWon() {
-    setWonSummary(null);
-    setSubmitting("won");
+    if (!validateWon()) { setWonSummary(null); return; }
+    approved.current = true;
     wonFormRef.current?.requestSubmit();
   }
 
   function openLostConfirm() {
-    const form = lostFormRef.current;
-    if (!form || !form.reportValidity()) return;
-    setConfirmingLost(true);
+    if (submitting) return;
+    setAttempted(true);
+    const issues = closeIssues({ value: numericValue, address, neededBy, lostReason }, "lost");
+    setValidation(issues);
+    if (!issues.length) setConfirmingLost(true);
   }
 
   function confirmLost() {
-    setConfirmingLost(false);
-    setSubmitting("lost");
+    approved.current = true;
     lostFormRef.current?.requestSubmit();
   }
 
+  function fixRequiredFields() {
+    const issue = validation[0];
+    setValidation([]);
+    if (issue?.href) {
+      const source = wonFormRef.current;
+      requestAnimationFrame(() => { if (!issue.href!.startsWith("#") || !highlightSection(issue.href!, source)) router.push(issue.href!.startsWith("#") ? `/pipeline/${opportunityId}${issue.href}` : issue.href!); });
+      return;
+    }
+    requestAnimationFrame(() => {
+      const form = closingAs === "won" ? wonFormRef.current : lostFormRef.current;
+      const input = issue?.field === "value" ? form?.querySelector<HTMLInputElement>('input[inputmode="decimal"]') : form?.querySelector<HTMLInputElement>(`[name="${issue?.field}"]`);
+      if (input?.id) highlightSection(`#${input.id}`, form); else { input?.scrollIntoView({ block: "center" }); input?.focus(); }
+    });
+  }
+
+  async function submitClose(formData: FormData, kind: "won" | "lost") {
+    setSubmitting(kind);
+    try {
+      const result = await (kind === "won" ? markOpportunityWon(formData) : markOpportunityLost(formData));
+      if (result.ok) { router.push(result.href); router.refresh(); }
+      else { setWonSummary(null); setConfirmingLost(false); setValidation(result.issues); }
+    } catch {
+      setWonSummary(null); setConfirmingLost(false);
+      setValidation([{ field: "request", message: "The change could not be saved. Your entries are preserved. Please try again." }]);
+    } finally { setSubmitting(null); approved.current = false; }
+  }
+
   return (
-    <div
-      className={`grid grid-cols-1 gap-6 ${needsOrderRecovery ? "" : "md:grid-cols-2"}`}
-    >
-      <form ref={wonFormRef} action={markOpportunityWon} className="space-y-3">
+    <div className="space-y-5">
+      {!needsOrderRecovery ? <div className="flex flex-wrap items-center gap-2" aria-label="Customer decision">
+        <button type="button" className={`btn ${closingAs === "won" ? "btn-primary" : ""}`} aria-pressed={closingAs === "won"} disabled={!!submitting} onClick={() => { setClosingAs("won"); setAttempted(false); }}>Win deal</button>
+        <button type="button" className={`btn ${closingAs === "lost" ? "btn-primary" : ""}`} aria-pressed={closingAs === "lost"} disabled={!!submitting} onClick={() => { setClosingAs("lost"); setAttempted(false); }}>Mark lost</button>
+      </div> : null}
+      <form ref={wonFormRef} action={async data => submitClose(data, "won")} noValidate hidden={closingAs !== "won"} onSubmit={event => { if (!approved.current) { event.preventDefault(); openWonConfirm(); } }} className="space-y-4">
+        <p className="text-sm text-gray-dark">Confirm the agreed total, delivery address and needed-by date. We’ll review everything before creating the order.</p>
         <input type="hidden" name="id" value={opportunityId} />
         {/* Tells the action these fields were really asked (a blank price is a
             missing answer, not "this form didn't ask"). */}
         <input type="hidden" name="closePanel" value="1" />
 
-        <p className="section-label !mb-0">Won</p>
+        <p className="text-xs text-gray-dark">Required fields are labeled below. Terms and PO number can be added later.</p>
 
         {editPrice ? (
           <label className="block">
-            <span className="field-label">Total price agreed</span>
+            <span className="field-label">Total price agreed (required)</span>
             <MoneyInput
               name="value"
-              min="1"
+              id="close-price"
+              min="0.01"
               required
-              autoFocus={defaultValue == null}
+              aria-invalid={attempted && !priceReady}
+              aria-describedby={attempted && !priceReady ? "close-price-error" : undefined}
               value={value}
               onValueChange={setValue}
               placeholder="$0.00"
               className="input-klyne w-full"
             />
+            {attempted && !priceReady ? <span id="close-price-error" className="mt-1 block text-xs text-red">Enter an agreed total of at least $0.01.</span> : null}
           </label>
         ) : (
           <>
@@ -258,6 +298,9 @@ export function ClosePanel({
               <input
                 type="text"
                 name="deliveryAddress"
+                id="close-address"
+                aria-invalid={attempted && !address.trim()}
+                aria-describedby={attempted && !address.trim() ? "close-address-error" : undefined}
                 required
                 value={address}
                 onChange={(e) => {
@@ -267,6 +310,7 @@ export function ClosePanel({
                 placeholder="Where is this order going?"
                 className="input-klyne w-full"
               />
+              {attempted && !address.trim() ? <span id="close-address-error" className="mt-1 block text-xs text-red">Enter the delivery address.</span> : null}
             </label>
             <input type="hidden" name="locationId" value={locationId} />
           </div>
@@ -294,11 +338,15 @@ export function ClosePanel({
             <input
               type="date"
               name="neededByDate"
+              id="close-needed-by"
+              aria-invalid={attempted && !neededBy}
+              aria-describedby={attempted && !neededBy ? "close-date-error" : undefined}
               required
               value={neededBy}
               onChange={(e) => setNeededBy(e.target.value)}
               className="input-klyne w-full"
             />
+            {attempted && !neededBy ? <span id="close-date-error" className="mt-1 block text-xs text-red">Choose the needed-by date.</span> : null}
           </label>
         ) : (
           <>
@@ -314,7 +362,7 @@ export function ClosePanel({
         {/* Sep 4 (client): one free-text box. The salesperson reads the quote and
             writes what was agreed; the invoices are added by hand later. */}
         <label className="block">
-          <span className="field-label">Terms</span>
+          <span className="field-label">Terms (optional)</span>
           <textarea
             name="termsNotes"
             rows={3}
@@ -326,7 +374,7 @@ export function ClosePanel({
         </label>
 
         <label className="block">
-          <span className="field-label">PO number (from AutoQuotes)</span>
+          <span className="field-label">PO number (optional, from AutoQuotes)</span>
           <input
             type="text"
             name="poNumber"
@@ -348,7 +396,7 @@ export function ClosePanel({
         <button
           type="button"
           onClick={openWonConfirm}
-          disabled={submitting === "won"}
+          disabled={!!submitting}
           aria-haspopup="dialog"
           aria-busy={submitting === "won"}
           className={`btn active:scale-[0.99] ${submitting === "won" ? "cursor-progress opacity-60" : ""}`}
@@ -366,6 +414,7 @@ export function ClosePanel({
           title="Win this deal and create the order?"
           confirmLabel="Create the order"
           onConfirm={confirmWon}
+          pending={!!submitting}
           onClose={() => setWonSummary(null)}
         >
           {wonSummary ? (
@@ -411,19 +460,24 @@ export function ClosePanel({
       </form>
 
       {needsOrderRecovery ? null : (
-        <form ref={lostFormRef} action={markOpportunityLost} className="space-y-3">
+        <form ref={lostFormRef} action={async data => submitClose(data, "lost")} noValidate hidden={closingAs !== "lost"} onSubmit={event => { if (!approved.current) { event.preventDefault(); openLostConfirm(); } }} className="space-y-4">
           <input type="hidden" name="id" value={opportunityId} />
-          <p className="section-label !mb-0">Lost</p>
+          <p className="text-sm text-gray-dark">Record why the customer is not proceeding. This ends the deal without creating an order.</p>
           <label className="block">
             <span className="field-label">Lost reason (required)</span>
             <input
               type="text"
               name="lostReason"
+              id="close-lost-reason"
               required
-              defaultValue={defaultLostReason ?? ""}
+              value={lostReason}
+              onChange={event => setLostReason(event.target.value)}
+              aria-invalid={attempted && !lostReason.trim()}
+              aria-describedby={attempted && !lostReason.trim() ? "close-lost-error" : undefined}
               placeholder="Why did we lose it?"
               className="input-klyne w-full"
             />
+            {attempted && !lostReason.trim() ? <span id="close-lost-error" className="mt-1 block text-xs text-red">Enter a reason for losing this deal.</span> : null}
           </label>
           <p className="text-[13px] text-gray-dark">
             Closes the deal and drops it out of the follow-up queue. No order is created.
@@ -431,7 +485,7 @@ export function ClosePanel({
           <button
             type="button"
             onClick={openLostConfirm}
-            disabled={submitting === "lost"}
+            disabled={!!submitting}
             aria-haspopup="dialog"
             aria-busy={submitting === "lost"}
             className={`btn btn-danger active:scale-[0.99] ${
@@ -445,14 +499,17 @@ export function ClosePanel({
             title="Mark this deal lost?"
             confirmLabel="Mark lost"
             danger
+            pending={!!submitting}
             onConfirm={confirmLost}
             onClose={() => setConfirmingLost(false)}
           >
+            <p className="mb-3"><strong>Reason:</strong> {lostReason}</p>
             The deal closes and leaves the pipeline&rsquo;s follow-up queues. It stays on record
             with its reason, and an admin can still reopen it by editing the deal.
           </ConfirmDialog>
         </form>
       )}
+      <ValidationDialog issues={validation} title={closingAs === "won" ? "Before you can mark this deal Won" : "Before you can mark this deal Lost"} onClose={() => setValidation([])} onFix={fixRequiredFields} />
     </div>
   );
 }

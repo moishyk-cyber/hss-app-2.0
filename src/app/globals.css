@@ -1444,6 +1444,54 @@ textarea.input-klyne { height:auto; min-height:96px; resize:vertical; }
 .record-drawer-content .page-actions { width:100%; justify-content:flex-start; }
 .record-drawer-content .flow-stepper { padding-bottom:var(--sp-3); }
 .record-drawer-content .deal-line-items { min-width:720px; }
+
+/* Pipeline detail: one work area, evidence-led progress, quiet supporting data. */
+.pipeline-detail .detail-header .page-header { margin-bottom: 24px; }
+.deal-progress { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 32px; overflow: hidden; }
+.pipeline-detail { container-type: inline-size; }
+.deal-progress-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 16px 20px 8px; }
+.deal-progress-heading h2 { font-size: 15px; font-weight: 600; }
+.deal-progress-heading p { color: var(--gray-dark); margin-top: 4px; font-size: 13px; }
+.deal-journey { display: grid; grid-template-columns: repeat(9, minmax(76px, 1fr)); margin: 0 12px; padding: 6px 0 10px; gap: 0; list-style: none; overflow-x: auto; }
+.deal-journey li { position: relative; min-width: 0; }
+.deal-journey li:not(:last-child)::after { content: ""; position: absolute; left: calc(50% + 16px); right: calc(-50% + 16px); top: 20px; height: 1px; background: var(--border); pointer-events: none; }
+.deal-step { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 100%; padding: 8px 6px; border-radius: 8px; text-align: center; cursor: pointer; transition: background 150ms ease; }
+.deal-step:hover { background: var(--hover); }
+.deal-step[aria-pressed="true"] { background: var(--surface-sunken); }
+.deal-step[aria-pressed="true"] .deal-step-label { text-decoration: underline; text-underline-offset: 5px; text-decoration-color: var(--primary); }
+.deal-step-marker { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--gray-dark); font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.deal-step[data-state="complete"] .deal-step-marker { background: var(--green); border-color: var(--green); color: var(--surface); }
+.deal-step[data-state="waiting"] .deal-step-marker { border-color: var(--orange); color: var(--orange); }
+.deal-step[aria-current="step"] .deal-step-marker { background: var(--primary); border-color: var(--primary); color: var(--surface); }
+.deal-step-label { font-size: 12px; font-weight: 600; overflow-wrap: normal; word-break: normal; }
+.deal-step-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 32px; padding: 20px 24px; border-top: 1px solid var(--border); }
+.deal-step-intro h3 { font-size: 18px; font-weight: 600; }
+.deal-step-owner { font-size: 12px; color: var(--gray-dark); padding-left: 8px; border-left: 1px solid var(--border); }
+.deal-requirements { list-style: none; }
+.deal-requirements li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; overflow-wrap: anywhere; }
+.deal-requirements a:hover { text-decoration: underline; }
+.deal-check { color: var(--gray-dark); flex-shrink: 0; }
+.deal-check.is-complete { color: var(--green); }
+.deal-completion-note { font-size: 12px; color: var(--gray-dark); margin-top: 12px; max-width: 65ch; }
+.deal-completion-note summary { cursor: pointer; width: fit-content; }
+.deal-completion-note p { margin-top: 6px; }
+.deal-more-requirements { margin-top: 8px; font-size: 12px; color: var(--gray-dark); }
+.deal-more-requirements summary { cursor: pointer; width: fit-content; }
+.deal-order-handoff { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--border); font-size: 13px; color: var(--gray-dark); }
+.deal-order-handoff a { font-weight: 600; color: var(--ink); }
+.deal-extra-details summary { font-weight: 600; cursor: pointer; }
+.deal-extra-details[open] summary { margin-bottom: 16px; }
+.pipeline-detail .deal-detail-row { border-bottom: 1px solid var(--border); }
+.pipeline-detail .deal-detail-row:last-child { border-bottom: 0; }
+.input-klyne[aria-invalid="true"] { border-color: var(--red); }
+@container (max-width: 560px) {
+  .deal-step-detail { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .deal-journey { margin: 0 12px; }
+}
+@media (pointer: coarse) { .deal-step { min-height: 44px; } }
+.section-highlight { animation: section-attention 2.6s ease-out; }
+@keyframes section-attention { 0%, 35% { background-color: var(--orange-soft); outline: 2px solid var(--orange); outline-offset: 4px; } 100% { background-color: transparent; outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .section-highlight { animation: none; outline: 2px solid var(--orange); outline-offset: 4px; } }
 @container (max-width:740px) {
  .record-drawer-content .grid:not(.deal-detail-row) { grid-template-columns:minmax(0,1fr); }
  .record-drawer-content .grid > * { grid-column:auto; }
@@ -1808,7 +1856,14 @@ input.input-klyne[type="date"]::-webkit-calendar-picker-indicator { margin: 0 0 
   padding-top: var(--sp-2);
   border-top: 1px solid var(--border);
 }
-.kanban-card:focus-within {
+/* Keep drop feedback inside the lane so board scrolling cannot clip its edges. */
+.kanban-lane.is-drop-target {
+  background: var(--blue-soft);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+/* Mouse focus should not become a dark frame in the native drag preview. */
+.kanban-card:has(:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }

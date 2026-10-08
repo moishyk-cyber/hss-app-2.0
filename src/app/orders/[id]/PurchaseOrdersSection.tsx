@@ -16,7 +16,7 @@
 import { MoneyInput } from "@/lib/MoneyInput";
 
 import { useRef, useState } from "react";
-import Link from "next/link";
+import { SectionLink as Link } from "@/lib/SectionLink";
 import { useDialogAccessibility } from "@/lib/useDialogAccessibility";
 import {
   PO_STATUSES,
@@ -32,7 +32,7 @@ import {
   advancePoStatus,
   createPurchaseOrder,
   setPoAutoQuotesNumber,
-} from "../actions";
+} from "@/lib/workflowActions";
 import { PO_STATUS_COLORS, fmtDate, isLikelyTrackingUrl } from "../utils";
 import { PendingButton, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
@@ -144,12 +144,12 @@ export default function PurchaseOrdersSection({
   async function handleAdvance(po: Po, blocked: boolean, next: string) {
     if (blocked) {
       setErrors((e) => ({ ...e, [po.id]: gate.reason }));
-      return;
+      return { ok: false as const, message: gate.reason, skipRefresh: true };
     }
     if (next === "acknowledged") {
       clearError(po.id);
       setAckPoId(po.id);
-      return;
+      return { ok: true as const, skipRefresh: true };
     }
     const res = await advancePoStatus(po.id);
     if (!res.ok) {
@@ -157,6 +157,7 @@ export default function PurchaseOrdersSection({
     } else {
       clearError(po.id);
     }
+    return res;
   }
 
   async function handleCreatePo(formData: FormData) {
@@ -332,7 +333,7 @@ export default function PurchaseOrdersSection({
                 <li key={po.id} className="relative transition-colors hover:bg-hover">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
                     <Avatar name={po.supplier?.name ?? "?"} kind="business" size="sm" />
-                    <Link
+                    <Link fullPage
                       href={`/purchase-orders/${po.id}`}
                       className="min-w-0 flex-1 cursor-pointer truncate text-left text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                     >
@@ -531,7 +532,7 @@ function DeliveryReadout({ delivery }: { delivery: PoDelivery | null }) {
         <span className={`badge ${DELIVERY_LEG_STATUS_COLORS[delivery.status] ?? "badge-gray"}`}>
           {labelFor(DELIVERY_LEG_STATUSES, delivery.status)}
         </span>
-        <Link href={`/deliveries/${delivery.id}`} className="text-blue transition-colors hover:underline">
+        <Link fullPage href={`/deliveries/${delivery.id}`} className="text-blue transition-colors hover:underline">
           Open delivery
         </Link>
       </div>
@@ -590,6 +591,8 @@ function AcknowledgePoDialog({
   onClose: () => void;
   onAcknowledged: (poNumber: string) => void;
 }) {
+  const [pending, setPending] = useState(false);
+  const close = () => { if (!pending) onClose(); };
   const panelRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   // Re-acknowledging a PO that already has a delivery edits that delivery, so
@@ -599,9 +602,11 @@ function AcknowledgePoDialog({
   const showCarrierLeg = hasCarrierLeg(mode);
   const showTruckerLeg = hasTruckerLeg(mode);
 
-  useDialogAccessibility(panelRef, true, onClose);
+  useDialogAccessibility(panelRef, true, close, pending);
 
   async function handleAcknowledge(formData: FormData) {
+    setPending(true);
+    try {
     const result = await acknowledgePo(po.id, {
       mode: String(formData.get("mode") ?? ""),
       trackingCarrier: String(formData.get("trackingCarrier") ?? ""),
@@ -621,13 +626,15 @@ function AcknowledgePoDialog({
     } else {
       setError(result.message);
     }
+    } catch { setError("Could not confirm the save. Reload to check before trying again."); }
+    finally { setPending(false); }
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
+      className="record-drawer-backdrop"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) close();
       }}
     >
       <div
@@ -636,16 +643,17 @@ function AcknowledgePoDialog({
         aria-modal="true"
         aria-labelledby="ack-po-title"
         tabIndex={-1}
-        className="card w-full max-w-md space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
+        className="record-drawer overflow-y-auto p-6 space-y-4 shadow-[var(--shadow-card-hover)]"
       >
-        <div>
-          <h2 id="ack-po-title" className="text-base font-semibold text-ink">
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 id="ack-po-title" className="text-base font-semibold text-ink">
             Acknowledge {po.poNumber ?? "this PO"}
           </h2>
           <div className="text-xs text-gray-dark">
             {po.supplier?.name ?? "The vendor"} confirmed the order. This creates its delivery -
             {delivery ? " updating the one already on file." : " one delivery per PO, splittable later."}
-          </div>
+          </div></div>
+          <button type="button" className="record-drawer-close" aria-label="Close acknowledgement" onClick={close} disabled={pending}>×</button>
         </div>
 
         <form action={handleAcknowledge} className="space-y-3 border-t border-border pt-4">
@@ -782,7 +790,7 @@ function AcknowledgePoDialog({
           </label>
 
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className="btn btn-sm" onClick={onClose}>
+            <button type="button" className="btn btn-sm" onClick={close} disabled={pending}>
               Cancel
             </button>
             <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">

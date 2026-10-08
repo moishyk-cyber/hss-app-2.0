@@ -12,10 +12,12 @@ import {
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { lineItemPricing } from "@/lib/workflows";
+import { stageIssues, closeIssues, type ValidationIssue } from "@/lib/dealWorkflow";
+import { serialTransaction } from "@/lib/workflows/transaction";
 import { recomputeOrderStatus } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
-import { roundCents, toMoney } from "@/lib/money";
+import { roundCents, toMoney, plainMoney } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, parseDateOnly, parseNonNegativeNumber, TEXT_LIMITS } from "@/lib/input";
@@ -28,7 +30,11 @@ import {
 
 /** Won/Lost never move through a dropdown - they are side-effectful closes. */
 const CLOSED_STAGE_MESSAGE =
-  "Use the Close panel on the deal page - it creates the order and stages the payment.";
+  "Use the decision section on the deal page to review requirements and mark the deal Won or Lost.";
+
+class DealValidationError extends Error {
+  constructor(readonly issues: ValidationIssue[]) { super("Deal requirements changed"); }
+}
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -46,13 +52,6 @@ function num(formData: FormData, key: string): number | null | undefined {
   return parseNonNegativeNumber(str(formData, key));
 }
 
-function date(formData: FormData, key: string): Date | null {
-  const raw = str(formData, key);
-  if (!raw) return null;
-  const parsed = new Date(`${raw}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 /** Same shape as str(), but capped so nothing unbounded reaches the database. */
 function text(formData: FormData, key: string, max: number): string | null {
   const value = cleanText(formData.get(key), max);
@@ -61,6 +60,38 @@ function text(formData: FormData, key: string, max: number): string | null {
 
 function bool(formData: FormData, key: string): boolean {
   return formData.get(key) === "1";
+}
+
+/** Save just the inline intake fields; all other deal data stays intact. */
+export async function saveDealIntake(formData: FormData): Promise<ActionResult & { issues?: ValidationIssue[] }> {
+  const denied = await requirePermission("deals.edit");
+  if (denied) return denied;
+  const id = str(formData, "id");
+  const title = text(formData, "title", TEXT_LIMITS.short);
+  const companyId = str(formData, "companyId");
+  const neededByDate = parseDateOnly(formData.get("neededByDate"));
+  const req = await getFieldRequirements();
+  const issues: ValidationIssue[] = [];
+  if (!title) issues.push({ field: "title", message: "Enter a deal title." });
+  if (req["opportunity.companyId"] && !companyId) issues.push({ field: "companyId", message: "Choose a company." });
+  if (neededByDate === undefined || (req["opportunity.neededByDate"] && !neededByDate)) issues.push({ field: "neededByDate", message: "Choose a valid needed-by date." });
+  if (issues.length) return { ok: false, message: "Complete the intake requirements.", issues };
+  if (!id) return { ok: false, message: "Reload the deal before saving." };
+  return safeAction(async () => {
+    await serialTransaction(prisma, async tx => {
+      const before = await tx.opportunity.findUnique({ where: { id } });
+      if (!before || CLOSED_STAGES.includes(before.stage)) throw new Error("Deal is closed or missing");
+      if (companyId && !await tx.company.findUnique({ where: { id: companyId }, select: { id: true } })) throw new Error("Company not found");
+      await tx.opportunity.update({ where: { id }, data: {
+        title: title!, companyId, neededByDate,
+        // Sites and contacts from the previous company must not carry across.
+        ...(before.companyId !== companyId ? { locationId: null, primaryContactId: null, locationName: null, deliveryAddress: null } : {}),
+      } });
+    });
+    await logActivity("opportunity", id, "intake_updated", "Required intake details saved");
+    revalidatePath(`/pipeline/${id}`);
+    revalidatePath("/pipeline");
+  }, "Could not save intake details. Refresh if the deal was closed in another session, then try again.");
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +217,7 @@ export async function addLineItem(formData: FormData) {
 }
 
 /** Kanban card stage picker. */
-export async function changeOpportunityStage(id: string, stage: string): Promise<ActionResult> {
+export async function changeOpportunityStage(id: string, stage: string): Promise<ActionResult & { issues?: ValidationIssue[] }> {
   const denied = await requirePermission("deals.edit");
   if (denied) return denied;
   if (!isValidValue(OPPORTUNITY_STAGES, stage)) {
@@ -198,12 +229,20 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
     return { ok: false, message: CLOSED_STAGE_MESSAGE };
   }
 
+  const before = plainMoney(await prisma.opportunity.findUnique({ where: { id }, include: { lineItems: true } }));
+  if (!before) return { ok: false, message: "This deal no longer exists." };
+  if (before.stage === stage) return { ok: true };
+  if (before.stage === "won") return { ok: false, message: "This deal already has an order. Manage its fulfillment from the order page.", issues: [{ field: "stage", message: "A won deal cannot be reopened with the stage picker.", href: `/pipeline/${id}` }] };
+  const req = await getFieldRequirements();
+  const issues = stageIssues(before, stage, { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] });
+  if (issues.length) return { ok: false, message: "Complete the required work before moving to this stage.", issues };
   return safeAction(async () => {
-    const before = await prisma.opportunity.findUnique({ where: { id } });
-    if (!before) throw new Error("Opportunity not found");
-    if (before.stage === stage) return;
-
-    await prisma.opportunity.update({ where: { id }, data: { stage } });
+    await serialTransaction(prisma, async tx => {
+      const current = plainMoney(await tx.opportunity.findUnique({ where: { id }, include: { lineItems: true } }));
+      if (!current || current.stage === "won") throw new Error("Deal is won or missing");
+      if (stageIssues(current, stage, { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] }).length) throw new Error("Requirements changed in another session");
+      await tx.opportunity.update({ where: { id }, data: { stage } });
+    });
     await logActivity(
       "opportunity",
       id,
@@ -241,29 +280,8 @@ export async function moveStageFromStepper(
     redirect(`/pipeline/${id}`);
   }
 
-  try {
-    const before = await prisma.opportunity.findUnique({
-      where: { id },
-      select: { stage: true },
-    });
-    if (!before) throw new Error("Opportunity not found");
-    // Closed deals render a non-clickable stepper; refuse a reopen through the back door.
-    if (before.stage !== stage && !CLOSED_STAGES.includes(before.stage)) {
-      await prisma.opportunity.update({ where: { id }, data: { stage } });
-      await logActivity(
-        "opportunity",
-        id,
-        "stage_changed",
-        `Stage moved from ${labelFor(OPPORTUNITY_STAGES, before.stage)} to ${labelFor(
-          OPPORTUNITY_STAGES,
-          stage
-        )}`
-      );
-    }
-  } catch (err) {
-    console.error(err);
-    redirect(`/pipeline/${id}?error=save_failed`);
-  }
+  const result = await changeOpportunityStage(id, stage);
+  if (result.ok === false) redirect(`/pipeline/${id}?error=stage_requirements`);
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${id}`);
@@ -283,7 +301,7 @@ export async function updateOpportunity(formData: FormData) {
   // what lets an edit-form stage move be logged instead of silently freezing it.
   const before = await prisma.opportunity.findUnique({
     where: { id },
-    select: { stage: true, locationId: true },
+    include: { lineItems: true },
   });
   if (!before) redirect(`/pipeline/${id}/edit?error=save_failed`);
 
@@ -296,6 +314,8 @@ export async function updateOpportunity(formData: FormData) {
   if (CLOSED_STAGES.includes(stage) && stage !== before.stage) {
     redirect(`/pipeline/${id}/edit?error=stage_locked`);
   }
+
+  if (!text(formData, "title", TEXT_LIMITS.short)) redirect(`/pipeline/${id}/edit?error=title_required`);
 
   const orderType = str(formData, "orderType") ?? "order";
   const designStatus = str(formData, "designStatus") ?? "none";
@@ -334,6 +354,12 @@ export async function updateOpportunity(formData: FormData) {
     (req["opportunity.neededByDate"] && !neededByDate)
   ) {
     redirect(`/pipeline/${id}/edit?error=missing_required`);
+  }
+
+  if (before.stage === "won" && stage !== before.stage) redirect(`/pipeline/${id}/edit?error=stage_locked`);
+  if (stage !== before.stage) {
+    const issues = stageIssues({ ...plainMoney(before), title: str(formData, "title") ?? "", companyId, neededByDate }, stage, { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] });
+    if (issues.length) redirect(`/pipeline/${id}/edit?error=stage_requirements`);
   }
 
   // Salesperson: an inactive teammate can't be handed new open work.
@@ -431,39 +457,28 @@ export async function updateOpportunity(formData: FormData) {
   redirect(`/pipeline/${id}`);
 }
 
-export async function markOpportunityLost(formData: FormData) {
+export async function markOpportunityLost(formData: FormData): Promise<DealCloseResult> {
   const id = str(formData, "id");
-  if (!id) throw new Error("Missing opportunity id");
+  if (!id) return { ok: false, issues: [{ field: "id", message: "The deal could not be identified. Reload the page." }] };
   const denied = await requirePermission("deals.close");
-  if (denied) redirect(`/pipeline/${id}?error=not_allowed`);
-  const lostReason = str(formData, "lostReason");
-
-  // A lost reason is mandatory - bounce back to the detail page with an error.
-  if (!lostReason) {
-    redirect(`/pipeline/${id}?error=lost_reason_required`);
-  }
-
+  if (denied && denied.ok === false) return { ok: false, issues: [{ field: "permission", message: denied.message }] };
+  const lostReason = text(formData, "lostReason", TEXT_LIMITS.long);
+  const issues = closeIssues({ value: null, address: "", neededBy: "", lostReason: lostReason ?? "" }, "lost");
+  if (issues.length) return { ok: false, issues };
   try {
-    const updated = await prisma.opportunity.update({
-      where: { id },
-      // A closed deal has no next step - leaving the follow-up date behind puts a
-      // permanent "Follow up overdue" chip on a deal nobody should be chasing.
-      data: { stage: "lost", lostReason, nextFollowUp: null },
+    await serialTransaction(prisma, async tx => {
+      const before = await tx.opportunity.findUnique({ where: { id }, include: { orders: { select: { id: true } } } });
+      if (!before || before.stage === "won" || before.orders.length) throw new Error("This deal is already won or has an order.");
+      await tx.opportunity.update({ where: { id }, data: { stage: "lost", lostReason, nextFollowUp: null } });
     });
-    await logActivity(
-      "opportunity",
-      id,
-      "stage_changed",
-      `"${updated.title}" marked Lost - reason: ${lostReason}`
-    );
+    await logActivity("opportunity", id, "stage_changed", `Deal marked Lost - reason: ${lostReason}`);
   } catch (err) {
     console.error(err);
-    redirect(`/pipeline/${id}?error=save_failed`);
+    return { ok: false, issues: [{ field: "stage", message: "Could not mark this deal Lost. It may already have an order. Refresh the deal and try again." }] };
   }
-
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${id}`);
-  redirect(`/pipeline/${id}`);
+  return { ok: true, href: `/pipeline/${id}` };
 }
 
 /**
@@ -476,11 +491,13 @@ export async function markOpportunityLost(formData: FormData) {
  * the payment gate falls back to the account's own rule
  * (Company.requiresDeposit / depositPercent, see evaluatePaymentGate).
  */
-export async function markOpportunityWon(formData: FormData) {
+export type DealCloseResult = { ok: true; href: string } | { ok: false; issues: ValidationIssue[] };
+
+export async function markOpportunityWon(formData: FormData): Promise<DealCloseResult> {
   const id = str(formData, "id");
-  if (!id) throw new Error("Missing opportunity id");
+  if (!id) return { ok: false, issues: [{ field: "id", message: "The deal could not be identified. Reload the page." }] };
   const denied = await requirePermission("deals.close");
-  if (denied) redirect(`/pipeline/${id}?error=not_allowed`);
+  if (denied && denied.ok === false) return { ok: false, issues: [{ field: "permission", message: denied.message }] };
 
   const opportunity = await prisma.opportunity.findUnique({
     where: { id },
@@ -489,43 +506,30 @@ export async function markOpportunityWon(formData: FormData) {
       orders: { select: { id: true } },
     },
   });
-  if (!opportunity) throw new Error("Opportunity not found");
+  if (!opportunity) return { ok: false, issues: [{ field: "id", message: "This deal no longer exists." }] };
 
   // Idempotency guard is on the ORDER, not on the stage: a double-click must not
   // create a second order, but a deal stuck at stage "won" with no order (the old
   // dropdown bypass) must still be able to run this as recovery.
   if (opportunity.orders.length > 0) {
-    redirect(`/pipeline/${opportunity.id}`);
+    return { ok: true, href: `/orders/${opportunity.orders[0].id}` };
   }
 
-  // Marks a submission from the Close panel, so a blank field reads as "asked and
-  // left empty" instead of "this form didn't ask".
+  if (opportunity.stage === "lost") return { ok: false, issues: [{ field: "stage", message: "This deal is Lost. Reopen it before marking it Won." }] };
   const fromClosePanel = formData.get("closePanel") === "1";
-  const submittedValue = num(formData, "value");
-
-  // The gate and the deposit are both measured against this number. Winning at $0
-  // invoices $0 and opens the gate on an unpaid order - refuse instead.
-  // The Close panel requires it client-side; this is the server-side backstop.
-  const rawValue =
-    fromClosePanel && submittedValue != null && submittedValue > 0
-      ? submittedValue
-      : toMoney(opportunity.value);
-  if (!rawValue || rawValue <= 0) {
-    redirect(`/pipeline/${opportunity.id}?error=value_required`);
-  }
-  // Money always lands rounded to cents (Sep 2 QA: floats were drifting).
-  const value = roundCents(rawValue);
-
-  // Sep 2 QA: winning used to spawn an order with no destination, no date and
-  // no owner - already in fulfillment asking for POs. The Close panel now asks
-  // for both; this is the server-side backstop.
-  const closeDeliveryAddress = str(formData, "deliveryAddress");
-  const closeNeededByDate = date(formData, "neededByDate");
-  if (fromClosePanel && (!closeDeliveryAddress || !closeNeededByDate)) {
-    redirect(`/pipeline/${opportunity.id}?error=destination_required`);
-  }
-  const orderDeliveryAddress = closeDeliveryAddress ?? opportunity.deliveryAddress;
-  const orderNeededByDate = closeNeededByDate ?? opportunity.neededByDate;
+  // A deliberately cleared input must never fall back to the saved value.
+  const rawValue = fromClosePanel ? num(formData, "value") : toMoney(opportunity.value);
+  const closeDeliveryAddress = text(formData, "deliveryAddress", TEXT_LIMITS.medium);
+  const closeNeededByDate = parseDateOnly(formData.get("neededByDate"));
+  const orderDeliveryAddress = fromClosePanel ? closeDeliveryAddress : (closeDeliveryAddress ?? opportunity.deliveryAddress);
+  const orderNeededByDate = fromClosePanel ? closeNeededByDate : (closeNeededByDate ?? opportunity.neededByDate);
+  const req = await getFieldRequirements();
+  const issues = [
+    ...stageIssues({ ...plainMoney(opportunity), neededByDate: orderNeededByDate ?? null }, "won", { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] }).filter(i => i.field !== "neededByDate"),
+    ...closeIssues({ value: rawValue, address: orderDeliveryAddress ?? "", neededBy: fromClosePanel ? str(formData, "neededByDate") ?? "" : orderNeededByDate?.toISOString().slice(0, 10) ?? "" }, "won"),
+  ];
+  if (issues.length) return { ok: false, issues };
+  const value = roundCents(rawValue!);
   const closeLocationName = str(formData, "locationName");
 
   // The site picked in the Close panel carries into the order (and back onto the
@@ -556,15 +560,22 @@ export async function markOpportunityWon(formData: FormData) {
   // Whatever was agreed on the call, in the salesperson's own words. Nothing is
   // derived from it: depositRequired stays null so the gate reads the account's
   // deposit rule exactly as it did before terms existed.
-  const termsNotes = str(formData, "termsNotes");
+  const termsNotes = text(formData, "termsNotes", TEXT_LIMITS.long);
 
   // Customer PO # as read off AutoQuotes - typed once here so the order never
   // has to wait on someone adding it by hand afterward.
-  const poNumber = str(formData, "poNumber");
+  const poNumber = text(formData, "poNumber", TEXT_LIMITS.short);
 
   let order;
   try {
-    order = await prisma.$transaction(async (tx) => {
+    order = await serialTransaction(prisma, async (tx) => {
+      const existing = await tx.order.findFirst({ where: { opportunityId: id } });
+      if (existing) return existing;
+      const current = await tx.opportunity.findUnique({ where: { id }, include: { lineItems: true } });
+      if (!current || current.stage === "lost") throw new Error("The deal was closed in another session.");
+      if (current.updatedAt.getTime() !== opportunity.updatedAt.getTime()) throw new DealValidationError([{ field: "request", message: "This deal changed in another session. Refresh and review its details before marking it Won." }]);
+      const currentIssues = stageIssues({ ...plainMoney(current), neededByDate: orderNeededByDate ?? null }, "won", { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] });
+      if (currentIssues.length) throw new DealValidationError(currentIssues);
       const created = await tx.order.create({
         data: {
           title: opportunity.title,
@@ -613,8 +624,9 @@ export async function markOpportunityWon(formData: FormData) {
       return created;
     });
   } catch (err) {
+    if (err instanceof DealValidationError) return { ok: false, issues: err.issues };
     console.error(err);
-    redirect(`/pipeline/${opportunity.id}?error=save_failed`);
+    return { ok: false, issues: [{ field: "request", message: "Could not create the order. Your entries are preserved. Refresh if this deal changed in another session, then try again." }] };
   }
 
   // The order is already committed at this point - logActivity never throws, so a
@@ -642,5 +654,5 @@ export async function markOpportunityWon(formData: FormData) {
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${opportunity.id}`);
   revalidatePath("/orders");
-  redirect(`/orders/${order.id}`);
+  return { ok: true, href: `/orders/${order.id}` };
 }

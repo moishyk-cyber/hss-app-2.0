@@ -5,7 +5,7 @@
 import { MoneyInput } from "@/lib/MoneyInput";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { SectionLink as Link } from "@/lib/SectionLink";
 import { BackLink } from "@/lib/BackLink";
 import { FormFooter } from "@/lib/PageLayout";
 import { useRouter } from "next/navigation";
@@ -23,7 +23,7 @@ import {
   setDeliveryStatus,
   splitDelivery,
   updateDelivery,
-} from "../actions";
+} from "@/lib/workflowActions";
 import { PendingButton, BadgeSelect, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { fmtDate, isLikelyTrackingUrl } from "../utils";
@@ -152,7 +152,7 @@ function DeliveryRow({ delivery }: { delivery: Delivery }) {
         className="relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-hover"
       >
         <span className="min-w-0 flex-1">
-          <Link href={`/deliveries/${delivery.id}`} className="font-medium text-ink after:absolute after:inset-0">{deliveryTitle(delivery)}</Link>
+          <Link fullPage href={`/deliveries/${delivery.id}`} className="font-medium text-ink after:absolute after:inset-0">{deliveryTitle(delivery)}</Link>
           <span className="ml-2 text-xs text-gray-dark">
             {delivery.purchaseOrder?.supplier?.name ?? "no vendor"} · {itemCount} item
             {itemCount === 1 ? "" : "s"}
@@ -215,8 +215,10 @@ function DeliveryRow({ delivery }: { delivery: Delivery }) {
 /** Full delivery record editor, including shipment details and item allocation. */
 export function DeliveryDetail({delivery, siblings, orderId}: {delivery: Delivery; siblings: Delivery[]; orderId: string}) {
   const router = useRouter();
-  const onDone = () => router.refresh();
-  const onDeleted = () => { router.push(`/orders/${orderId}#delivery`); router.refresh(); };
+  const onDone = () => { if (!document.querySelector("[data-workflow-order]")) router.refresh(); };
+  // Document navigation leaves intercepted record drawers when used on a delivery page.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  const onDeleted = () => { if (!document.querySelector("[data-workflow-order]")) window.location.assign(`/orders/${orderId}#delivery`); };
   const delivered = delivery.status === "delivered_full";
 
   return (
@@ -468,6 +470,7 @@ function DeliveryItemsPanel({
     } else {
       setError(result.message);
     }
+    return result;
   }
 
   async function handleMove() {
@@ -484,6 +487,7 @@ function DeliveryItemsPanel({
     } else {
       setError(result.message);
     }
+    return result;
   }
 
   async function handleDelete() {
@@ -495,6 +499,7 @@ function DeliveryItemsPanel({
     } else {
       setError(result.message);
     }
+    return result;
   }
 
   return (

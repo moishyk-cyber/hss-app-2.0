@@ -1,20 +1,24 @@
 import { ORDER_BALL_SELECT, PIPELINE_DETAIL_INCLUDE } from "../data";
 import { getActiveUsers } from "@/lib/users";
-import Link from "next/link";
+import { SectionLink as Link } from "@/lib/SectionLink";
+import { DealIntake } from "../DealIntake";
+import IntentLink from "@/lib/IntentLink";
 import type { Prisma } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/permissionsServer";
 import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
+import { DealProgress } from "../DealProgress";
+import { WorkflowSelectionProvider, WorkflowPanel } from "@/lib/WorkflowSelection";
+import { dealJourney, intakeIssues, pricingIssues } from "@/lib/dealWorkflow";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
+import { ValidatedForm } from "@/lib/ValidatedForm";
 import { PendingButton } from "@/lib/ui";
-import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
-import { getStageHolders, withHolder } from "@/lib/courtHolders";
-import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
+import { type OrderBallInput } from "@/lib/ballInCourt";
 import { plainMoney, type PlainMoney } from "@/lib/money";
 import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
-import { addLineItem, moveStageFromStepper } from "../actions";
+import { addLineItem } from "../actions";
 import { ClosePanel } from "../ClosePanel";
 import { LineItemRow } from "../LineItemRow";
 import {
@@ -50,18 +54,19 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const [opportunityRow, users, holders, canClose, documents] = await Promise.all([
+  const [opportunityRow, users, canClose, documents, requirements, companies] = await Promise.all([
     prisma.opportunity.findUnique({
       where: { id },
       include: PIPELINE_DETAIL_INCLUDE,
     }),
     getActiveUsers(),
-    getStageHolders(),
     can("deals.close"),
     prisma.document.findMany({
       where: { linkedType: "opportunity", linkedId: id },
       orderBy: { uploadedAt: "desc" },
     }),
+    getFieldRequirements(),
+    prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   // Money columns are Decimal; plain numbers from here on (line items and the
   // deal value go to client components below).
@@ -85,7 +90,6 @@ export default async function OpportunityDetailPage({
 
   // Next action is derived cheaply from the line items' RFQ status counts.
   const liveItems = opportunity.lineItems.filter((li) => li.rfqStatus !== "removed");
-  const needsPricingCount = liveItems.filter((li) => li.rfqStatus === "needs_pricing").length;
   // The item called for furthest out is what the whole deal waits on.
   const leadTimes = liveItems
     .map((li) => li.leadTimeDate)
@@ -98,58 +102,10 @@ export default async function OpportunityDetailPage({
   const needsOrderRecovery = stage === "won" && !linkedOrder;
   const showClosePanel = (!closed || needsOrderRecovery) && canClose;
 
-  // Ball-in-court: the single next thing that has to happen, and who has to do
-  // it. A won deal delegates straight to its order (orderBall).
-  const ball = withHolder(
-    opportunityBall({
-      stage: opportunity.stage,
-      lineItems: opportunity.lineItems.map((li) => ({ rfqStatus: li.rfqStatus })),
-      order: linkedOrder ? toOrderBallInput(linkedOrder) : null,
-    }),
-    holders
-  );
-
-  // The 9-step full flow (sales through customer service), post-processed so
-  // the sales-side steps stay clickable exactly like the old 5-step stepper:
-  // each open step moves the deal to its stage; Close never writes a stage,
-  // it points at the Close panel where Won/Lost do their real work. The
-  // order-side steps keep the hrefs fullFlowSteps gives (the order's tabs).
-  const steps: FlowStep[] = fullFlowSteps(ball.step, {
-    dealHref: `/pipeline/${opportunity.id}`,
-    orderHref: linkedOrder ? `/orders/${linkedOrder.id}` : undefined,
-    hint: ball.hint,
-  }).map((step, i) => {
-    const key = FLOW_STEPS[i].key;
-    if (key === "sales" || key === "pricing") {
-      const target = key === "sales" ? "new" : "estimating";
-      return {
-        ...step,
-        href: undefined,
-        formAction:
-          !closed && step.state !== "current"
-            ? moveStageFromStepper.bind(null, opportunity.id, target)
-            : undefined,
-      };
-    }
-    if (key === "close") {
-      return { ...step, href: !closed ? "#close" : undefined, formAction: undefined };
-    }
-    return step;
-  });
-
-  // Exactly one contextual primary action (UX_FLOW §H).
-  const primaryAction =
-    needsOrderRecovery
-      ? { href: "#close", label: "Create the order" }
-      : stage === "won" && linkedOrder
-        ? { href: `/orders/${linkedOrder.id}`, label: "View order" }
-        : closed
-          ? { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" }
-          : needsPricingCount > 0
-            ? { href: "/rfq", label: `Open RFQ items (${needsPricingCount})` }
-            : stage === "proposal_sent" || stage === "revisions_needed" || stage === "negotiation"
-              ? { href: "#close", label: "Close this deal" }
-              : { href: `/pipeline/${opportunity.id}/edit`, label: "Edit deal" };
+  const journey = dealJourney(opportunity, {
+    company: requirements["opportunity.companyId"],
+    neededBy: requirements["opportunity.neededByDate"],
+  }, linkedOrder ? { id: linkedOrder.id, ...toOrderBallInput(linkedOrder) } : null);
 
   const followUpOverdue = isOverdue(opportunity.nextFollowUp);
 
@@ -170,7 +126,8 @@ export default async function OpportunityDetailPage({
   }));
 
   return (
-    <div>
+    <WorkflowSelectionProvider stepKeys={journey.map(step => step.key)} initialKey={journey.find(step => !["complete", "not_required", "stopped"].includes(step.state))?.key ?? "close"}>
+    <div className="pipeline-detail">
       <DetailHeader
         backHref="/pipeline"
         backLabel="Back to Pipeline"
@@ -179,7 +136,6 @@ export default async function OpportunityDetailPage({
         badges={
           <>
             <StageBadge stage={stage} />
-            <BallInCourtBadge ball={ball} />
             <span className="badge badge-gray">{labelFor(ORDER_TYPES, opportunity.orderType)}</span>
             {followUpOverdue ? (
               <span className="badge badge-orange">
@@ -189,60 +145,13 @@ export default async function OpportunityDetailPage({
           </>
         }
         secondary={
-          // One edit button, not two: when the primary action already IS
-          // "Edit deal", the secondary Edit would be a duplicate.
-          (!closed || stage === "won") && !primaryAction.href.endsWith("/edit") ? (
-            <Link
-              href={`/pipeline/${opportunity.id}/edit`}
-              className="btn active:scale-[0.99]"
-            >
-              Edit
-            </Link>
-          ) : null
-        }
-        action={
-          <Link href={primaryAction.href} className="btn btn-primary active:scale-[0.99]">
-            {primaryAction.label}
-          </Link>
+          <IntentLink href={`/pipeline/${opportunity.id}/edit`} className="btn">Edit deal</IntentLink>
         }
       />
 
-      <div className="card mb-8">
-        <FlowStepper steps={steps} />
-        {/* A div, not a p: the recovery branch below embeds a form. */}
-        {closed ? (
-          <div className="mt-4 border-t border-border pt-4 text-center text-xs text-gray-dark">
-            {stage === "won" ? (
-              linkedOrder ? (
-                <>
-                  Won - now an order:{" "}
-                  <Link
-                    href={`/orders/${linkedOrder.id}`}
-                    className="text-primary transition-colors hover:underline"
-                  >
-                    {linkedOrder.title}
-                  </Link>
-                </>
-              ) : (
-                // Recovery path: the old stage dropdown could set "won" without ever
-                // running markOpportunityWon, leaving a closed deal with no order and
-                // no payment. Point at the Close panel, which offers the missing half.
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <span>
-                    Marked Won, but no order was ever created - the line items and the payment are
-                    still sitting on the deal.
-                  </span>
-                  <Link href="#close" className="text-primary transition-colors hover:underline">
-                    Create the order
-                  </Link>
-                </div>
-              )
-            ) : (
-              <>Lost - {opportunity.lostReason ?? "no reason recorded"}</>
-            )}
-          </div>
-        ) : null}
-      </div>
+      <DealProgress steps={journey} lost={stage === "lost"} orderHref={linkedOrder ? `/orders/${linkedOrder.id}` : undefined} />
+      {needsOrderRecovery ? <div className="banner-alert mb-6">This deal is marked Won but has no order. <Link href="#close" className="underline">Review the details and create its order.</Link></div> : null}
+      {stage === "lost" ? <p className="mb-6 text-sm text-gray-dark">Lost reason: {opportunity.lostReason ?? "No reason recorded"}</p> : null}
 
       {error === "lost_reason_required" ? (
         <div className="banner-alert mb-4">
@@ -276,7 +185,7 @@ export default async function OpportunityDetailPage({
 
       <div className="deal-detail-layout grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-1">
-          <Card title="Deal">
+          <Card title="Deal" id="deal-summary">
             <DetailRow label="Stage" value={<StageBadge stage={opportunity.stage} />} />
             <DetailRow label="Order type" value={labelFor(ORDER_TYPES, opportunity.orderType)} />
             <DetailRow label="Needs pricing" value={opportunity.needsPricing ? "Yes" : "No"} />
@@ -352,7 +261,8 @@ export default async function OpportunityDetailPage({
             ) : null}
           </Card>
 
-          <Card title={isProject ? "Project details" : "Site details"}>
+          <details className="card deal-extra-details">
+            <summary>{isProject ? "Project details" : "Site details"}</summary>
             <DetailRow label="Facility type" value={opportunity.facilityType} />
             <DetailRow label="Menu" value={opportunity.menu} />
             <DetailRow label="Room dimensions" value={opportunity.roomDimensions} />
@@ -380,11 +290,15 @@ export default async function OpportunityDetailPage({
             <DetailRow label="Delivery address" value={opportunity.deliveryAddress} />
             <DetailRow label="Client vision" value={opportunity.clientVisionNotes} />
             <DetailRow label="Notes" value={opportunity.notes} />
-          </Card>
+          </details>
         </div>
 
         <div className="space-y-6 lg:col-span-2">
-          <section className="card card-flush overflow-hidden">
+          <WorkflowPanel when={["sales"]}>
+          {!closed ? <DealIntake id={opportunity.id} title={opportunity.title} companyId={opportunity.companyId} neededBy={fmtDate(opportunity.neededByDate) ?? ""} companies={companies} required={{ company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }} /> : null}
+          </WorkflowPanel>
+          <WorkflowPanel when={["sales", "pricing"]}>
+          <section id="line-items" className="card card-flush overflow-hidden scroll-mt-6">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <h2 className="section-label !mb-0">Line items</h2>
             </div>
@@ -398,13 +312,11 @@ export default async function OpportunityDetailPage({
               <div className="overflow-x-auto">
                 <table className="deal-line-items table-klyne">
                   <thead>
-                    {/*
-                      No Cost/Price here (Aug 31 feedback): pricing is the RFQ queue's
-                      job, and showing it on the deal invited edits in two places.
-                    */}
+                    {/* Pricing uses the RFQ's existing save control and server action. */}
                     <tr>
                       <th>Item</th>
                       <th>Qty</th>
+                      {!closed ? <th>Price</th> : null}
                       <th>Lead time</th>
                       <th>Assignee</th>
                       <th>RFQ status</th>
@@ -413,7 +325,7 @@ export default async function OpportunityDetailPage({
                   </thead>
                   <tbody>
                     {opportunity.lineItems.map((li) => (
-                      <LineItemRow key={li.id} item={li} users={users} />
+                      <LineItemRow key={li.id} item={li} users={users} showPricing={!closed} />
                     ))}
                   </tbody>
                 </table>
@@ -426,7 +338,7 @@ export default async function OpportunityDetailPage({
               captured at intake. New items land in the RFQ queue needing pricing.
             */}
             {closed ? null : (
-              <form
+              <ValidatedForm
                 action={addLineItem}
                 className="flex flex-wrap items-end gap-2 border-t border-border px-5 py-4"
               >
@@ -453,10 +365,11 @@ export default async function OpportunityDetailPage({
                 <PendingButton className="btn btn-sm mb-0.5 active:scale-[0.99]" pendingText="Adding…">
                   Add
                 </PendingButton>
-              </form>
+              </ValidatedForm>
             )}
           </section>
 
+          </WorkflowPanel>
           <section className="card">
             <FilesSection
               linkedType="opportunity"
@@ -493,6 +406,7 @@ export default async function OpportunityDetailPage({
             agreed) are typed HERE, and they become the order, the gate amount and
             the staged payment. Nothing about closing is guessed from a formula.
           */}
+          <WorkflowPanel when={["close"]}>
           {showClosePanel ? (
             <div id="close" className="scroll-mt-6">
               <Card
@@ -507,6 +421,7 @@ export default async function OpportunityDetailPage({
 
                 <ClosePanel
                   opportunityId={opportunity.id}
+                  prerequisiteIssues={[...intakeIssues(opportunity, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }), ...pricingIssues(opportunity)]}
                   isProject={isProject}
                   requiresDeposit={requiresDeposit}
                   depositPercent={depositPercent}
@@ -528,8 +443,10 @@ export default async function OpportunityDetailPage({
               </Card>
             </div>
           ) : null}
+          </WorkflowPanel>
         </div>
       </div>
     </div>
+    </WorkflowSelectionProvider>
   );
 }

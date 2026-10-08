@@ -25,6 +25,10 @@ const SECTIONS: {
     ],
   },
   {
+    label: "Bill",
+    items: [{ href: "/invoices", label: "Invoices" }],
+  },
+  {
     label: "Everyone",
     items: [
       { href: "/phonebook", label: "Phone Book" },
@@ -45,6 +49,7 @@ function NavIcon({ href }: { href: string }) {
     "/pipeline": "M4 4v16M12 4v16M20 4v16M6 7h3M14 11h3M6 14h3",
     "/rfq": "M5 3h10l4 4v14H5zM9 11h6M9 15h6",
     "/orders": "M4 7h16v14H4zM8 7V3h8v4M4 12h16",
+    "/invoices": "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6",
     "/deliveries":
       "M3 6h12v12H3zM15 10h4l3 4v4h-7M6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4M18 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
     "/service": "M4 5h16v11H9l-5 4z",

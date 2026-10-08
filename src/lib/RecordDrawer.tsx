@@ -11,7 +11,7 @@ export function RecordDrawer({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const panel = useRef<HTMLDivElement>(null);
-  const open = /^\/(tasks|service|companies|contacts|pipeline|orders|purchase-orders|deliveries)\/[^/]+(?:\/edit)?$/.test(pathname) || pathname === "/intake";
+  const open = /^\/(tasks|service|companies|contacts|pipeline|orders|purchase-orders|deliveries)\/[^/]+(?:\/edit)?$/.test(pathname) || pathname === "/intake" || pathname === "/invoices/new";
   const isForm = /\/(new|edit)$/.test(pathname) || pathname === "/intake";
   const href = pathname + (searchParams.size ? `?${searchParams}` : "");
   useDialogAccessibility(panel, open, () => router.back());
