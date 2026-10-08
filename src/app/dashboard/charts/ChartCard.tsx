@@ -3,6 +3,7 @@
 
 export function ChartCard({
   title,
+  description,
   hasData,
   children,
   tableHead,
@@ -10,6 +11,7 @@ export function ChartCard({
   emptyText = "No data yet.",
 }: {
   title: string;
+  description?: string;
   hasData: boolean;
   children: React.ReactNode;
   tableHead: string[];
@@ -17,8 +19,11 @@ export function ChartCard({
   emptyText?: string;
 }) {
   return (
-    <div className="card">
-      <h3 className="section-label">{title}</h3>
+    <div className="card dashboard-chart">
+      <div className="dashboard-chart-heading">
+        <h3>{title}</h3>
+        {description && <span>{description}</span>}
+      </div>
       {!hasData ? (
         <div className="py-8 text-center text-sm text-gray">{emptyText}</div>
       ) : (

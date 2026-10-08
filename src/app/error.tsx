@@ -6,6 +6,7 @@
 // a labeled state with a retry - not a mystery.
 
 import { useEffect } from "react";
+import Link from "next/link";
 
 export default function Error({
   error,
@@ -33,9 +34,9 @@ export default function Error({
           <button type="button" className="btn btn-primary" onClick={() => retry()}>
             Try again
           </button>
-          <a href="/dashboard" className="btn">
+          <Link href="/dashboard" className="btn">
             Go to Dashboard
-          </a>
+          </Link>
         </div>
       </div>
     </div>

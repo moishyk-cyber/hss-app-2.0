@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { LaneItems } from "@/lib/CollectionViews";
+import { CollapsibleKanbanLane } from "@/lib/CollapsibleKanbanLane";
+import Link from "@/lib/IntentLink";
 import { ORDER_PHASES, ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
 import type { Ball } from "@/lib/ballInCourt";
@@ -8,7 +10,7 @@ import { DueCell, fmtMoney } from "./utils";
 /**
  * One order on the board. Everything is resolved server-side - the board is
  * deliberately read-only, so unlike the pipeline's KanbanBoard there is no
- * client bundle, no drag handlers and no optimistic state here.
+ * drag handlers or optimistic order state here. Only lane collapse is interactive.
  *
  * Why read-only: an order's status is computed by deriveOrderStatus() from its
  * payments, POs and deliveries every time one of them changes. A dragged card
@@ -47,7 +49,7 @@ function money(amount: number | null): string | null {
 
 export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div className="kanban-board">
       {ORDER_PHASES.map((phase) => {
         const columnCards = cards.filter((c) => c.phase === phase.value);
         const total = columnCards.reduce((sum, c) => sum + (c.value ?? 0), 0);
@@ -58,10 +60,8 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
         // keeps them readable and hands the row back to overflow-x-auto once
         // the screen is too narrow to share.
         return (
-          <div key={phase.value} className="card flex min-w-[15rem] flex-1 flex-col">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h2 className="section-label !mb-0">{phase.label}</h2>
-              <div className="flex items-center gap-2">
+          <CollapsibleKanbanLane key={phase.value} label={phase.label} count={columnCards.length}
+            summary={<>
                 {stuckCount > 0 ? (
                   <span className="badge badge-red" title={`${stuckCount} stuck`}>
                     {stuckCount} stuck
@@ -70,16 +70,14 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                 {total > 0 ? (
                   <span className="text-xs tabular-nums text-gray">{money(total)}</span>
                 ) : null}
-                <span className="badge badge-gray">{columnCards.length}</span>
-              </div>
-            </div>
+            </>}>
 
-            <div className="flex-1 space-y-3">
+            <LaneItems laneKey={`orders:${phase.value}`}>
               {columnCards.map((card) => {
                 return (
                   <article
                     key={card.id}
-                    className="card-sunken card-interactive relative"
+                    className="card-sunken card-interactive kanban-card relative"
                   >
                     {/*
                       Stretched link (same pattern as the pipeline cards and the
@@ -88,29 +86,30 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                     */}
                     <Link
                       href={`/orders/${card.id}`}
-                      className="block text-[13px] font-medium leading-snug text-ink hover:underline after:absolute after:inset-0 after:content-['']"
+                      title={card.title}
+                      className="kanban-card-title block text-ink hover:underline after:absolute after:inset-0 after:content-['']"
                     >
                       {card.title}
                     </Link>
 
                     {/* Square avatar for the business, matching the directory rows. */}
-                    <div className="mt-1.5 flex items-center gap-2 text-xs text-gray">
+                    <div className="kanban-card-company flex items-center gap-2 text-xs text-gray">
                       {card.companyName ? (
                         <>
                           <Avatar name={card.companyName} kind="business" size="sm" />
-                          <span className="truncate">{card.companyName}</span>
+                          <span className="min-w-0 truncate" title={card.companyName}>{card.companyName}</span>
                         </>
                       ) : (
                         <span className="empty-value">no company</span>
                       )}
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+                    <div className="kanban-card-facts flex items-center justify-between gap-2 text-xs">
                       <span className="font-medium tabular-nums text-ink">
-                        {fmtMoney(card.value)}
+                        {card.value == null ? <span className="empty-value">No value</span> : fmtMoney(card.value)}
                       </span>
                       <span className="text-gray">
-                        <DueCell neededByDate={card.neededByDate} status={card.status} />
+                        {card.neededByDate ? <DueCell neededByDate={card.neededByDate} status={card.status} /> : <span className="empty-value">No due date</span>}
                       </span>
                     </div>
 
@@ -119,21 +118,23 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                       hide which of the nine statuses an order actually sits on.
                       A stuck order stays in its real phase and reads red here.
                     */}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <div className="kanban-card-status flex flex-wrap items-center gap-1.5">
                       <span className={`badge ${ORDER_STATUS_COLORS[card.status] ?? "badge-gray"}`}>
                         {labelFor(ORDER_STATUSES, card.status)}
                       </span>
-                      <BallInCourtBadge ball={card.ball} />
+                    </div>
+                    <div className="kanban-card-handoff">
+                      <BallInCourtBadge ball={card.ball} compact />
                     </div>
 
                     {card.itemSummary ? (
-                      <p className="mt-2 text-[11.5px] text-gray-dark">{card.itemSummary}</p>
+                      <p className="kanban-card-note text-xs text-gray-dark">{card.itemSummary}</p>
                     ) : null}
 
                     {card.ownerName ? (
-                      <div className="mt-2 flex items-center gap-1.5 text-[11.5px] text-gray">
+                      <div className="kanban-card-owner flex items-center gap-1.5 text-xs text-gray">
                         <Avatar name={card.ownerName} kind="person" size="sm" />
-                        <span className="truncate">{card.ownerName}</span>
+                        <span className="min-w-0 truncate" title={card.ownerName}>{card.ownerName}</span>
                       </div>
                     ) : null}
                   </article>
@@ -145,8 +146,8 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                   {EMPTY_HINT[phase.value]}
                 </p>
               ) : null}
-            </div>
-          </div>
+            </LaneItems>
+          </CollapsibleKanbanLane>
         );
       })}
     </div>

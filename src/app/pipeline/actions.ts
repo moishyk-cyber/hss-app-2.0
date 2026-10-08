@@ -11,7 +11,8 @@ import {
 } from "@/lib/constants";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
-import { recomputeOrderStatus, syncOrderValueFromLineItems } from "@/lib/flow";
+import { lineItemPricing } from "@/lib/workflows";
+import { recomputeOrderStatus } from "@/lib/flow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { currentUserId } from "@/lib/identityServer";
 import { roundCents, toMoney } from "@/lib/money";
@@ -82,19 +83,13 @@ export async function updateLineItemQty(lineItemId: string, qty: number): Promis
   if (denied) return denied;
   return safeAction(async () => {
     const safeQty = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
-    const item = await prisma.lineItem.update({
-      where: { id: lineItemId },
-      data: { qty: safeQty },
-    });
+    const { item } = await lineItemPricing.change(lineItemId, { kind: "quantity", qty: safeQty });
     await logActivity(
       "line_item",
       lineItemId,
       "qty_changed",
       `"${item.name}" quantity set to ${safeQty}`
     );
-    // Qty feeds the order total the same as price does (Sep 3 QA #4's sync rule).
-    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
-    revalidateLineItem(item);
   }, "Could not update quantity. Please try again.");
 }
 
@@ -134,19 +129,13 @@ export async function updateLineItemRfqStatus(lineItemId: string, rfqStatus: str
     return { ok: false, message: "That is not a valid RFQ status." };
   }
   return safeAction(async () => {
-    const item = await prisma.lineItem.update({
-      where: { id: lineItemId },
-      data: { rfqStatus },
-    });
+    const { item } = await lineItemPricing.change(lineItemId, { kind: "status", rfqStatus });
     await logActivity(
       "line_item",
       lineItemId,
       "rfq_status_changed",
       `"${item.name}" RFQ status set to ${labelFor(RFQ_STATUSES, rfqStatus)}`
     );
-    // Moving into/out of "removed" changes which items count toward the order total.
-    if (item.orderId) await syncOrderValueFromLineItems(item.orderId);
-    revalidateLineItem(item);
   }, "Could not update RFQ status. Please try again.");
 }
 
@@ -171,15 +160,13 @@ export async function addLineItem(formData: FormData) {
   const description = str(formData, "description");
 
   try {
-    const item = await prisma.lineItem.create({
-      data: {
-        opportunityId,
-        name,
-        description,
-        qty,
-        // A new item has never been out for quote - it starts in the RFQ queue.
-        rfqStatus: "needs_pricing",
-      },
+    const item = await lineItemPricing.add({
+      opportunityId,
+      name,
+      description,
+      qty,
+      // A new item has never been out for quote - it starts in the RFQ queue.
+      rfqStatus: "needs_pricing",
     });
     await logActivity(
       "line_item",

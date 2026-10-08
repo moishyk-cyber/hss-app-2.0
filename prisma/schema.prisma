@@ -3,6 +3,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Fetch nested relations in one database round trip (no database migration).
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

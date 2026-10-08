@@ -1,5 +1,5 @@
 // Local presentational helpers for the /pipeline module.
-import { BackLink } from "@/lib/BackLink";
+import { MoneyInput } from "@/lib/MoneyInput";
 import { OPPORTUNITY_STAGES, STAGE_COLORS, labelFor } from "@/lib/constants";
 
 export const ORDER_TYPES = [
@@ -46,67 +46,13 @@ export function StageBadge({ stage }: { stage: string }) {
   );
 }
 
-export function PageHeader({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6 flex items-start justify-between gap-4">
-      <div>
-        <h1 className="page-title">{title}</h1>
-        {subtitle ? <p className="page-sub">{subtitle}</p> : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
-    </div>
-  );
-}
+export { PageHeader } from "@/lib/PageLayout";
 
 /**
  * Detail-page header (UX_FLOW §H): back link · title · badges, and exactly ONE
  * contextual primary action on the right. Everything else stays secondary.
  */
-export function DetailHeader({
-  backHref,
-  backLabel,
-  title,
-  subtitle,
-  badges,
-  action,
-  secondary,
-}: {
-  backHref: string;
-  backLabel: string;
-  title: string;
-  subtitle?: string | null;
-  badges?: React.ReactNode;
-  action?: React.ReactNode;
-  secondary?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6">
-      {/* One back control everywhere - @/lib/BackLink (Aug 31 feedback). */}
-      <BackLink href={backHref} label={backLabel} />
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="page-title">{title}</h1>
-            {badges}
-          </div>
-          {subtitle ? <p className="page-sub">{subtitle}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {secondary}
-          {action}
-        </div>
-      </div>
-    </div>
-  );
-}
+export { DetailHeader } from "@/lib/PageLayout";
 
 export function Card({
   title,
@@ -149,8 +95,8 @@ export function DetailRow({
   const isEmpty = value === null || value === undefined || value === false || value === "";
   if (isEmpty && !emptyLabel) return null;
   return (
-    <div className="flex gap-4 py-2 text-[13px]">
-      <div className="w-44 shrink-0 text-gray-dark">{label}</div>
+    <div className="deal-detail-row grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-4 py-2 text-[13px]">
+      <div className="min-w-0 text-gray-dark">{label}</div>
       <div className="min-w-0 break-words text-ink">
         {isEmpty ? <Empty>{emptyLabel}</Empty> : value}
       </div>
@@ -190,14 +136,23 @@ export function Field({
         {label}
         {required ? <RequiredMark /> : null}
       </span>
-      <input
-        type={type}
-        name={name}
-        step={step}
-        required={required}
-        defaultValue={defaultValue ?? ""}
-        className="input-klyne w-full"
-      />
+      {type === "money" ? (
+        <MoneyInput
+          name={name}
+          required={required}
+          defaultValue={defaultValue ?? ""}
+          className="input-klyne w-full"
+        />
+      ) : (
+        <input
+          type={type}
+          name={name}
+          step={step}
+          required={required}
+          defaultValue={defaultValue ?? ""}
+          className="input-klyne w-full"
+        />
+      )}
     </label>
   );
 }

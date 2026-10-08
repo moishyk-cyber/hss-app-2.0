@@ -1,19 +1,14 @@
 "use client";
 
-// Delivery tab (Aug 31 feedback: "a delivery tab" under each order, then later
-// "show ALL the tracking/trucking info in one place"). Reads top-to-bottom: the
-// line-items table first (per-item delivery status, arrival dates, backorder
-// date, assignee, and the add-item form), then one row per delivery LEG -
-// clicking it pops open the mode-aware shipment form. Round 4 feedback: "fix
-// this to one thing only, not two - the form should only pop up when the item
-// is clicked", so nothing is permanently expanded.
-//
-// A leg is a Delivery row, not a PO: acknowledging a PO creates one leg, a
-// split PO has two, and an HSS-stock run has no PO at all. Which fields the modal
-// shows follows the leg's mode - carrier tracking for the manufacturer's
-// shipment, trucker/pickup/cost for HSS's own run to the customer, both for a
-// leg that does manufacturer -> HSS -> customer.
-import { useEffect, useMemo, useRef, useState } from "react";
+// Order delivery rows link to full delivery pages; shipment fields follow the delivery mode.
+
+import { MoneyInput } from "@/lib/MoneyInput";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { BackLink } from "@/lib/BackLink";
+import { FormFooter } from "@/lib/PageLayout";
+import { useRouter } from "next/navigation";
 import {
   DELIVERY_MODES,
   DELIVERY_MODE_COLORS,
@@ -97,9 +92,7 @@ export default function DeliverySection({
   users: { id: string; name: string }[];
   deliveries: Delivery[];
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
   const [showStockForm, setShowStockForm] = useState(false);
-  const open = deliveries.find((d) => d.id === openId) ?? null;
 
   // Items that belong to no leg yet AND sit on no PO: exactly what an
   // HSS-stock delivery is made of (anything on a PO already has that PO's leg).
@@ -138,44 +131,28 @@ export default function DeliverySection({
           <div className="card card-flush overflow-hidden">
             <ul className="divide-y divide-border">
               {deliveries.map((d) => (
-                <DeliveryRow key={d.id} delivery={d} onOpen={() => setOpenId(d.id)} />
+                <DeliveryRow key={d.id} delivery={d} />
               ))}
             </ul>
           </div>
         )}
       </div>
 
-      {open && (
-        <DeliveryModal
-          delivery={open}
-          siblings={deliveries.filter((d) => d.id !== open.id)}
-          onClose={() => setOpenId(null)}
-        />
-      )}
+
     </div>
   );
 }
 
 /** One compact line per delivery leg - click anywhere on it to open the full form. */
-function DeliveryRow({ delivery, onOpen }: { delivery: Delivery; onOpen: () => void }) {
+function DeliveryRow({ delivery }: { delivery: Delivery }) {
   const itemCount = delivery.lineItems.length;
   return (
     <li>
       <div
-        role="button"
-        tabIndex={0}
-        aria-haspopup="dialog"
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen();
-          }
-        }}
-        className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-hover"
+        className="relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-hover"
       >
         <span className="min-w-0 flex-1">
-          <span className="font-medium text-ink">{deliveryTitle(delivery)}</span>
+          <Link href={`/deliveries/${delivery.id}`} className="font-medium text-ink after:absolute after:inset-0">{deliveryTitle(delivery)}</Link>
           <span className="ml-2 text-xs text-gray-dark">
             {delivery.purchaseOrder?.supplier?.name ?? "no vendor"} · {itemCount} item
             {itemCount === 1 ? "" : "s"}
@@ -188,7 +165,7 @@ function DeliveryRow({ delivery, onOpen }: { delivery: Delivery; onOpen: () => v
           </span>
         </span>
 
-        <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+        <span className="relative z-10 shrink-0" onClick={(e) => e.stopPropagation()}>
           <BadgeSelect
             value={delivery.status}
             options={DELIVERY_LEG_STATUSES}
@@ -235,75 +212,15 @@ function DeliveryRow({ delivery, onOpen }: { delivery: Delivery; onOpen: () => v
   );
 }
 
-/**
- * The leg's modal, opened by clicking its row. Same accessible-dialog pattern
- * as tasks/TaskModal.tsx: role=dialog, focus on open, Escape and click-outside
- * close, background scroll locked while open.
- */
-function DeliveryModal({
-  delivery,
-  siblings,
-  onClose,
-}: {
-  delivery: Delivery;
-  siblings: Delivery[];
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
-
+/** Full delivery record editor, including shipment details and item allocation. */
+export function DeliveryDetail({delivery, siblings, orderId}: {delivery: Delivery; siblings: Delivery[]; orderId: string}) {
+  const router = useRouter();
+  const onDone = () => router.refresh();
+  const onDeleted = () => { router.push(`/orders/${orderId}#delivery`); router.refresh(); };
   const delivered = delivery.status === "delivered_full";
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delivery-modal-title"
-        tabIndex={-1}
-        className="card w-full max-w-lg space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id="delivery-modal-title" className="text-base font-semibold text-ink">
-              {deliveryTitle(delivery)}
-            </h2>
-            <div className="text-xs text-gray-dark">
-              {delivery.purchaseOrder?.supplier?.name ?? "No vendor - from HSS stock"}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray transition-colors hover:bg-hover hover:text-ink"
-          >
-            ✕
-          </button>
-        </div>
-
+    <div className="card space-y-4">
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <label className="flex items-center gap-2">
             <span className="field-label" style={{ marginBottom: 0 }}>
@@ -332,8 +249,7 @@ function DeliveryModal({
 
         <DeliveryDetailsForm delivery={delivery} />
 
-        <DeliveryItemsPanel delivery={delivery} siblings={siblings} onClose={onClose} />
-      </div>
+        <DeliveryItemsPanel delivery={delivery} siblings={siblings} onClose={onDone} onDeleted={onDeleted} />
     </div>
   );
 }
@@ -470,9 +386,7 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
             </label>
             <label className="block">
               <span className="field-label">Ship cost</span>
-              <input
-                type="number"
-                step="0.01"
+              <MoneyInput
                 min="0"
                 name="shipCost"
                 className="input-klyne w-full px-2 py-1 text-xs"
@@ -504,9 +418,12 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
         />
       </label>
 
-      <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-        Save delivery details
-      </PendingButton>
+      <FormFooter>
+        <BackLink href="/deliveries" label="Cancel" className="btn"/>
+        <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
+          Save delivery details
+        </PendingButton>
+      </FormFooter>
     </form>
   );
 }
@@ -520,10 +437,12 @@ function DeliveryItemsPanel({
   delivery,
   siblings,
   onClose,
+  onDeleted,
 }: {
   delivery: Delivery;
   siblings: Delivery[];
   onClose: () => void;
+  onDeleted: () => void;
 }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [target, setTarget] = useState("");
@@ -572,7 +491,7 @@ function DeliveryItemsPanel({
     const result = await deleteEmptyDelivery(delivery.id);
     if (result.ok) {
       toast({ kind: "success", message: "Empty delivery removed" });
-      onClose();
+      onDeleted();
     } else {
       setError(result.message);
     }

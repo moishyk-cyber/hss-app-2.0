@@ -7,8 +7,9 @@
 // PO, its delivery leg, and a delivery-status pill you can change right there
 // (the drill-down Moishy asked for: "which 2 items are still in transit?").
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { DELIVERY_STATUSES, DELIVERY_MODES, DELIVERY_LEG_STATUSES, labelFor } from "@/lib/constants";
+import { useDialogAccessibility } from "@/lib/useDialogAccessibility";
 import { BadgeSelect } from "@/lib/ui";
 import { setLineItemDeliveryStatus } from "../actions";
 import { DELIVERY_STATUS_COLORS } from "../utils";
@@ -61,22 +62,7 @@ function groupItems(items: ChipItem[]): Group[] {
 function ItemsDialog({ group, onClose }: { group: Group; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
+  useDialogAccessibility(panelRef, true, onClose);
 
   return (
     <div

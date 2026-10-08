@@ -22,9 +22,13 @@ const TABS: { key: TabKey; label: string; hash: string }[] = [
 export function DashboardTabs({
   overview,
   myItems,
+  controls,
+  header,
 }: {
   overview: React.ReactNode;
   myItems: React.ReactNode;
+  controls?: React.ReactNode;
+  header?: React.ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("overview");
 
@@ -47,7 +51,10 @@ export function DashboardTabs({
 
   return (
     <div>
-      <div role="tablist" aria-label="Dashboard sections" className="flex gap-1 border-b border-border">
+      <div className="dashboard-sticky">
+      {header}
+      <div className="dashboard-toolbar">
+      <div role="tablist" aria-label="Dashboard sections" className="flex gap-1">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
@@ -67,7 +74,10 @@ export function DashboardTabs({
           );
         })}
       </div>
-      <div className="pt-6">
+      {tab === "overview" && controls}
+      </div>
+      </div>
+      <div className="pt-4">
         <div className={tab === "overview" ? "" : "hidden"}>{overview}</div>
         <div className={tab === "my-items" ? "" : "hidden"}>{myItems}</div>
       </div>

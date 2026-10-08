@@ -18,6 +18,19 @@ The app runs at http://localhost:3000 and redirects to the dashboard.
 `npx prisma generate` is required before the first `dev` or `tsc` run, and again
 after any change to `prisma/schema.prisma`. It is already part of `npm run build`.
 
+## Fast local preview
+
+For everyday use, run `npm run preview` instead of `npm run dev`. This builds
+all pages once, then serves the production app at http://localhost:3001.
+The separate port lets the development server keep running on port 3000.
+
+Development mode compiles routes on demand, which is why opening a record can
+show “Compiling” and pause. Production mode removes that compilation delay.
+After code changes, stop the preview and run `npm run preview` again to rebuild.
+Both development and production builds use Turbopack. In the restricted desktop
+environment, run them with permission to bind local ports; Turbopack's CSS helper
+also needs a local port during compilation.
+
 ## Environment
 
 Create `.env` with:

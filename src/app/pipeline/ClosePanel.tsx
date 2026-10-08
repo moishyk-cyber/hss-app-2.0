@@ -18,6 +18,8 @@
 // and writes what was agreed; nothing is invoiced automatically. The invoices
 // are added by hand on the order's Invoice tab.
 
+import { MoneyInput } from "@/lib/MoneyInput";
+
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { fmtUSD, roundCents } from "@/lib/money";
@@ -193,16 +195,14 @@ export function ClosePanel({
         {editPrice ? (
           <label className="block">
             <span className="field-label">Total price agreed</span>
-            <input
-              type="number"
+            <MoneyInput
               name="value"
               min="1"
-              step="0.01"
               required
               autoFocus={defaultValue == null}
               value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="0"
+              onValueChange={setValue}
+              placeholder="$0.00"
               className="input-klyne w-full"
             />
           </label>

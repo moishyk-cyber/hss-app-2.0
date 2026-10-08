@@ -11,7 +11,7 @@ import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, TEXT_LIMITS } from "@/lib/input";
-import { MAX_UPLOAD_BYTES, storagePathFor, uploadObject, uploadsConfigured } from "@/lib/storage";
+import { attachments } from "@/lib/workflows";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -37,96 +37,25 @@ function all(formData: FormData, key: string): string[] {
   return formData.getAll(key).map((v) => (typeof v === "string" ? v : ""));
 }
 
-function parseHttpUrl(raw: string): URL | null {
-  try {
-    const parsed = new URL(raw.trim());
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Google Drive share links get their own source so the Files list can label them. */
-function sourceForUrl(url: URL): "link" | "google_drive" {
-  const host = url.hostname.toLowerCase();
-  return host === "drive.google.com" || host === "docs.google.com" ? "google_drive" : "link";
-}
-
-/** Drawings we accept as a direct upload: PDFs and images. */
-function isAllowedDrawingMime(mimeType: string): boolean {
-  return mimeType === "application/pdf" || mimeType.startsWith("image/");
-}
-
-/**
- * Save the optional attachment (a pasted link, an uploaded PDF/image, or both)
- * as Document row(s) on the record the intake just created. Both order types
- * offer it: a project's attachment is almost always a drawing, so it is filed
- * as one; a straight order's is more often the client's PO or a quote, so it
- * is filed as "other" and can be re-labeled on the Files tab. Runs AFTER the
- * record is committed - a storage hiccup here must never roll back or block an
- * otherwise-successful intake, so every failure is swallowed and logged rather
- * than thrown.
- */
+/** Optional attachments never undo a successful intake; transports share Document policy. */
 async function saveDrawingAttachment(
   formData: FormData,
   linkedType: "order" | "opportunity",
   linkedId: string,
   orderType: "project" | "order"
 ): Promise<void> {
-  const uploadedBy = await currentUserName();
   const kind = orderType === "project" ? "drawing" : "other";
-
   const link = str(formData, "drawingLink");
   if (link) {
-    const url = parseHttpUrl(link);
-    if (url) {
-      try {
-        await prisma.document.create({
-          data: {
-            linkedType,
-            linkedId,
-            kind,
-            fileUrl: url.toString(),
-            source: sourceForUrl(url),
-            uploadedBy,
-          },
-        });
-      } catch (err) {
-        console.error("intake drawing link save failed", err);
-      }
-    }
+    try {
+      await attachments.link({ linkedType, linkedId, uploadedBy: await currentUserName() }, { url: link, kind });
+    } catch (error) { console.error("intake attachment link failed", error); }
   }
-
   const file = formData.get("drawingFile");
   if (file instanceof File && file.size > 0) {
-    if (!isAllowedDrawingMime(file.type)) {
-      console.error(`intake drawing upload skipped - unsupported type ${file.type}`);
-    } else if (file.size > MAX_UPLOAD_BYTES) {
-      console.error("intake drawing upload skipped - file over the 25 MB limit");
-    } else if (!uploadsConfigured()) {
-      console.error("intake drawing upload skipped - storage is not configured");
-    } else {
-      try {
-        const storagePath = storagePathFor(linkedType, linkedId, file.name);
-        await uploadObject(storagePath, await file.arrayBuffer(), file.type);
-        await prisma.document.create({
-          data: {
-            linkedType,
-            linkedId,
-            kind,
-            fileUrl: storagePath,
-            fileName: file.name,
-            source: "upload",
-            mimeType: file.type || null,
-            sizeBytes: file.size,
-            storagePath,
-            uploadedBy,
-          },
-        });
-      } catch (err) {
-        console.error("intake drawing upload failed", err);
-      }
-    }
+    try {
+      await attachments.upload({ linkedType, linkedId, uploadedBy: await currentUserName() }, file, { kind });
+    } catch (error) { console.error("intake attachment upload failed", error); }
   }
 }
 

@@ -23,7 +23,7 @@ export default function DashboardLoading() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="dashboard-metrics">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="stat-card space-y-2">
               <div className="h-3 w-20 animate-pulse rounded bg-hover" />
@@ -32,23 +32,16 @@ export default function DashboardLoading() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="card space-y-3">
+        <div className="dashboard-charts">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card dashboard-chart space-y-3">
               <div className="h-3 w-40 animate-pulse rounded bg-hover" />
               <div className="h-40 w-full animate-pulse rounded bg-hover" />
             </div>
           ))}
         </div>
 
-        <div className="card space-y-2">
-          <div className="h-3 w-24 animate-pulse rounded bg-hover" />
-          <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-7 w-28 animate-pulse rounded-full bg-hover" />
-            ))}
-          </div>
-        </div>
+
       </div>
     </div>
   );

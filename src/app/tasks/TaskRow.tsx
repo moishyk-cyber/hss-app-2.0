@@ -1,18 +1,12 @@
 "use client";
 
-// Google-Tasks-style row (Aug 31 feedback): a circle checkbox completes the
-// task, the title is bold with the notes preview underneath, and due-date /
-// priority / assignee / link show as quiet chips rather than loud controls.
-// Later feedback (Aug 31, round 3): "instead of having an arrow, I should be
-// able to click on it and a pop-up should open" - clicking the row (anywhere
-// but the checkbox or the linked-record link) opens TaskModal with everything
-// the old inline expansion had, including subtasks.
+import Link from "@/lib/IntentLink";
 
-import { useState } from "react";
+// Compact task row with a full-page record link and independent completion control.
+
 import { TASK_PRIORITIES, labelFor } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
 import { TaskCheckbox } from "./TaskCheckbox";
-import TaskModal from "./TaskModal";
 import { TYPE_LABELS, linkedHref, isOverdue } from "./lib";
 import { fmtDateUTC } from "@/lib/dates";
 
@@ -35,12 +29,10 @@ export type TaskRowData = {
 
 export default function TaskRow({
   task,
-  users,
 }: {
   task: TaskRowData;
   users: { id: string; name: string }[];
 }) {
-  const [open, setOpen] = useState(false);
   const done = task.status === "done";
   const overdue = isOverdue(task.dueDate, task.status);
   const hasComments = task.commentCount > 0;
@@ -50,25 +42,15 @@ export default function TaskRow({
   return (
     <>
       <div
-        role="button"
-        tabIndex={0}
-        aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setOpen(true);
-          }
-        }}
-        className="flex cursor-pointer items-start gap-3 px-4 py-2.5 transition-colors hover:bg-hover"
+        className="relative flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-hover"
       >
-        <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
+        <span className="relative z-10"><TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} /></span>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className={`truncate text-sm font-semibold ${done ? "text-gray line-through" : "text-ink"}`}>
+            <Link href={`/tasks/${task.id}`} className={`truncate text-sm font-semibold after:absolute after:inset-0 ${done ? "text-gray line-through" : "text-ink"}`}>
               {task.title}
-            </span>
+            </Link>
             {hasComments && <span className="badge badge-gray shrink-0 text-[10px]">{task.commentCount}</span>}
             {task.subtasks.length > 0 && (
               <span className="badge badge-gray shrink-0 text-[10px]">
@@ -98,7 +80,7 @@ export default function TaskRow({
               <a
                 href={linkHref}
                 onClick={(e) => e.stopPropagation()}
-                className="truncate text-blue transition-colors hover:underline"
+                className="relative z-10 truncate text-blue transition-colors hover:underline"
               >
                 {TYPE_LABELS[task.linkedType]}: {task.linkedLabel}
               </a>
@@ -107,7 +89,6 @@ export default function TaskRow({
         </div>
       </div>
 
-      {open && <TaskModal task={task} users={users} onClose={() => setOpen(false)} />}
     </>
   );
 }

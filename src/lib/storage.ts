@@ -105,3 +105,10 @@ export async function removeObject(path: string): Promise<void> {
   const { error } = await serviceClient().storage.from(UPLOAD_BUCKET).remove([path]);
   if (error) throw error;
 }
+
+/** Authoritative metadata for an uploaded object, used when registering it. */
+export async function uploadedObjectInfo(path: string): Promise<{ mimeType: string; sizeBytes: number }> {
+  const { data, error } = await serviceClient().storage.from(UPLOAD_BUCKET).info(path);
+  if (error || !data) throw error ?? new Error("Could not verify the uploaded file");
+  return { mimeType: data.contentType ?? "", sizeBytes: data.size ?? 0 };
+}

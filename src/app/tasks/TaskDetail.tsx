@@ -1,12 +1,9 @@
 "use client";
 
-// Task detail popup (Aug 31 feedback #3: "instead of having an arrow, I should
-// be able to click on it and a pop-up should open"). Replaces the old inline
-// row expansion - everything that used to unfold under the row now lives here:
-// title, notes, status/priority/assignee/type controls, the linked record,
-// the comment thread, and subtasks.
+// Task record content: immediate field edits, related records, subtasks, and comments.
 
-import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { fmtDateUTC } from "@/lib/dates";
 import { TASK_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_COLORS } from "@/lib/constants";
 import { BadgeSelect } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
@@ -22,9 +19,9 @@ function SubtaskRow({ task }: { task: TaskRowData }) {
   return (
     <div className="flex items-center gap-2.5 px-3 py-2">
       <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
-      <span className={`min-w-0 flex-1 truncate text-sm ${done ? "text-gray line-through" : "text-ink"}`}>
+      <Link href={`/tasks/${task.id}`} className={`min-w-0 flex-1 truncate text-sm ${done ? "text-gray line-through" : "text-ink"}`}>
         {task.title}
-      </span>
+      </Link>
       <BadgeSelect
         value={task.status}
         options={TASK_STATUSES}
@@ -35,70 +32,17 @@ function SubtaskRow({ task }: { task: TaskRowData }) {
   );
 }
 
-export default function TaskModal({
+export default function TaskDetail({
   task,
   users,
-  onClose,
 }: {
   task: TaskRowData;
   users: { id: string; name: string }[];
-  onClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const done = task.status === "done";
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    // Lock background scroll while the dialog is open.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-modal-title"
-        tabIndex={-1}
-        className="card w-full max-w-lg space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-2.5">
-            <TaskCheckbox taskId={task.id} done={done} undoStatus={task.status} />
-            <h2
-              id="task-modal-title"
-              className={`min-w-0 text-base font-semibold ${done ? "text-gray line-through" : "text-ink"}`}
-            >
-              {task.title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray transition-colors hover:bg-hover hover:text-ink"
-          >
-            ✕
-          </button>
-        </div>
+    <div className="card space-y-6">
+
 
         {task.notes && <p className="text-sm text-gray-dark">{task.notes}</p>}
 
@@ -112,6 +56,7 @@ export default function TaskModal({
               options={TASK_STATUSES}
               action={(next) => setTaskStatus(task.id, next)}
               colorMap={TASK_STATUS_COLORS}
+              ariaLabel="Change task status"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -123,6 +68,7 @@ export default function TaskModal({
               options={TASK_PRIORITIES}
               action={(next) => setTaskPriority(task.id, next)}
               colorMap={TASK_PRIORITY_COLORS}
+              ariaLabel="Change task priority"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -142,6 +88,8 @@ export default function TaskModal({
             <span className="text-xs text-gray-dark">{TASK_TYPE_LABELS[task.type] ?? task.type}</span>
           </label>
         </div>
+
+        <div><span className="field-label">Due date</span><span className="text-sm text-gray-dark">{task.dueDate ? fmtDateUTC(task.dueDate) : "Not set"}</span></div>
 
         <div>
           <span className="field-label">Linked record</span>
@@ -167,7 +115,6 @@ export default function TaskModal({
         <div className="border-t border-border pt-4">
           <CommentThread taskId={task.id} />
         </div>
-      </div>
     </div>
   );
 }

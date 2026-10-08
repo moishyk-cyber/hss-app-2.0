@@ -12,6 +12,8 @@
 // logs, and offers Undo. Paid rows keep a confirm-guarded "Mark unpaid" so the
 // mistake stays fixable after the toast is gone.
 
+import { MoneyInput } from "@/lib/MoneyInput";
+
 import { useState } from "react";
 import type { PaymentGate } from "@/lib/flow";
 import {
@@ -378,7 +380,7 @@ export default function PaymentsSection({
           </label>
           <label>
             <span className="field-label">Amount</span>
-            <input type="number" step="0.01" min="0.01" required name="amount" className="input-klyne w-28" />
+            <MoneyInput min="0.01" required name="amount" className="input-klyne w-28" />
           </label>
           <label>
             <span className="field-label">QuickBooks link</span>

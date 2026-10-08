@@ -10,27 +10,31 @@ export default function WhoAmI({ name }: { name: string }) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="px-6 pb-4">
-      <span className="block pb-1 font-heading text-[10px] font-semibold uppercase tracking-[0.08em] text-gray">
-        Signed in as
+    <div className="sidebar-identity">
+      <span className="identity-avatar" aria-hidden>
+        {name
+          .split(" ")
+          .map((word) => word[0])
+          .slice(0, 2)
+          .join("")}
       </span>
-      <div className="flex items-center justify-between gap-2 rounded-[8px] border border-border bg-panel px-3 py-2">
-        <span className="truncate text-[13px] text-ink">{name}</span>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              await logout();
-              router.push("/login");
-              router.refresh();
-            })
-          }
-          className={`shrink-0 text-xs text-primary transition-colors hover:underline ${pending ? "opacity-60" : ""}`}
-        >
-          Log out
-        </button>
-      </div>
+      <span className="identity-name" title={name}>
+        {name}
+      </span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() =>
+          startTransition(async () => {
+            await logout();
+            router.push("/login");
+            router.refresh();
+          })
+        }
+        className={`shrink-0 text-xs text-primary transition-colors hover:underline ${pending ? "opacity-60" : ""}`}
+      >
+        Log out
+      </button>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 // Local presentational helpers for the /companies module.
-import { BackLink } from "@/lib/BackLink";
 import { COMPANY_TYPES, COMPANY_VERTICALS, labelFor } from "@/lib/constants";
 
 // Company type has no colour map in constants - map onto the shared badge palette.
@@ -38,71 +37,13 @@ export function VerticalLabel({ vertical }: { vertical: string | null }) {
   return <>{labelFor(COMPANY_VERTICALS, vertical)}</>;
 }
 
-export function PageHeader({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6 flex items-start justify-between gap-4">
-      <div>
-        <h1 className="page-title">{title}</h1>
-        {subtitle ? <p className="page-sub">{subtitle}</p> : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
-    </div>
-  );
-}
+export { PageHeader } from "@/lib/PageLayout";
 
 /**
  * Detail-page header (UX_FLOW §H): back link · title · badges, and exactly ONE
  * contextual primary action on the right. Everything else stays secondary.
  */
-export function DetailHeader({
-  backHref,
-  backLabel,
-  title,
-  subtitle,
-  badges,
-  action,
-  secondary,
-  avatar,
-}: {
-  backHref: string;
-  backLabel: string;
-  title: string;
-  subtitle?: string | null;
-  badges?: React.ReactNode;
-  action?: React.ReactNode;
-  secondary?: React.ReactNode;
-  /** Optional avatar that leads the title, so the name reads the same as in lists. */
-  avatar?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6">
-      {/* One back control everywhere - @/lib/BackLink (Aug 31 feedback). */}
-      <BackLink href={backHref} label={backLabel} />
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            {avatar}
-            <h1 className="page-title">{title}</h1>
-            {badges}
-          </div>
-          {subtitle ? <p className="page-sub">{subtitle}</p> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {secondary}
-          {action}
-        </div>
-      </div>
-    </div>
-  );
-}
+export { DetailHeader } from "@/lib/PageLayout";
 
 /** Visible required marker. The input's own `required` is what AT announces. */
 function RequiredMark() {

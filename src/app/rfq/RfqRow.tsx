@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { MoneyInput } from "@/lib/MoneyInput";
+
+import { useState, useTransition, useRef } from "react";
 import { RFQ_STATUSES, RFQ_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { PendingButton, ActionButton, BadgeSelect } from "@/lib/ui";
+import { ActionButton, BadgeSelect } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { parseMoney, fmtUSD } from "@/lib/money";
 import { Avatar } from "@/lib/Avatar";
 import { UserSelect } from "@/lib/UserSelect";
-import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import {
-  clearLineItemPrice,
   markLineItemRemoved,
   setLineItemAssignee,
   setLineItemRfqStatus,
@@ -45,24 +45,21 @@ type RfqItem = {
  *   its new group instead of the field appearing to wipe itself.
  * - every outcome is announced: inline error on failure, toast on success.
  *
- * Reliability spec P1 fix: a blank Save no longer clears the price (that was
- * one stray click from deleting trusted pricing data - see the "123 Test" /
- * "Order" incident). Blank now fails validation and the stored price is left
- * alone. Clearing a price is its own explicit, confirmed action below.
+ * Blank input preserves the saved price. Commit a valid price on blur or Enter.
  */
-function PriceCell({ item }: { item: RfqItem }) {
+export function PriceCell({ item }: { item: RfqItem }) {
   const { toast } = useToast();
+  const [saving, startSave] = useTransition();
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmingClear, setConfirmingClear] = useState(false);
-  const [clearing, startClear] = useTransition();
 
   async function handleSavePricing(formData: FormData) {
     const raw = String(formData.get("price") ?? "").trim();
     if (raw === "") {
       setError(
         item.unitPrice != null
-          ? "Enter a price, or use \"Clear price\" below to remove it."
-          : "Enter a price greater than $0."
+          ? "Enter a price. Leaving this blank keeps the saved price."
+          : "Enter a price greater than $0.",
       );
       return;
     }
@@ -75,11 +72,21 @@ function PriceCell({ item }: { item: RfqItem }) {
       setError("The price has to be more than $0.");
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     const willAdvance = item.rfqStatus === "needs_pricing";
     // One money field per item (Moishy, Aug 31): price only. unitCost passes
     // through unchanged so existing data is preserved without being shown.
-    const result = await updateLineItemPricing(item.id, item.unitCost, price);
+    let result;
+    try {
+      result = await updateLineItemPricing(item.id, item.unitCost, price);
+    } catch {
+      setError("Could not save the price. Press Enter to retry.");
+      return;
+    } finally {
+      inFlight.current = false;
+    }
     if (!result.ok) {
       setError(result.message);
       return;
@@ -92,86 +99,70 @@ function PriceCell({ item }: { item: RfqItem }) {
     });
   }
 
-  function handleConfirmClear() {
-    startClear(async () => {
-      const result = await clearLineItemPrice(item.id);
-      setConfirmingClear(false);
-      if (!result.ok) {
-        toast({ kind: "error", message: result.message });
-        return;
-      }
-      toast({ kind: "info", message: `Price cleared on "${item.name}"` });
-    });
-  }
-
   return (
-    <div className="relative space-y-1">
-      <form action={handleSavePricing} className="flex items-center gap-1">
-        <input
-          type="text"
-          inputMode="decimal"
+    <div className="price-cell relative min-w-[100px]">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          startSave(() => handleSavePricing(data));
+        }}
+        className="flex items-center gap-1"
+      >
+        <MoneyInput
+          min="0.01"
+          disabled={saving}
+          onBlur={(e) => {
+            const initial =
+              item.rfqStatus === "needs_pricing"
+                ? null
+                : item.unitPrice;
+            if (
+              parseMoney(e.currentTarget.value) !== initial &&
+              e.currentTarget.value.trim()
+            )
+              e.currentTarget.form?.requestSubmit();
+          }}
           name="price"
           // A reverted-to-needs_pricing item can still have a stale unitPrice on
           // record (Moishy, Sep 2 QA) - never pre-fill it here, or someone could
           // mistake the old number for a current quote. The stored value itself
           // is untouched; this only changes what the input renders.
-          defaultValue={item.rfqStatus === "needs_pricing" ? "" : item.unitPrice ?? ""}
+          defaultValue={
+            item.rfqStatus === "needs_pricing" ? "" : (item.unitPrice ?? "")
+          }
           className="input-klyne w-24 px-1.5 py-1 text-xs"
           placeholder="$0.00"
           aria-label={`Price for ${item.name}`}
-          // Enter should submit like clicking Save. Browsers do this implicitly for a
-          // lone text field + submit button, but that implicit behavior is easy for an
+          // Submit Enter explicitly: implicit form behavior is easy for an
           // extension (autofill, password managers) or an ancestor keydown handler to
           // swallow - request the submit explicitly so Enter is never a silent no-op.
           onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.currentTarget.value =
+                item.rfqStatus === "needs_pricing"
+                  ? ""
+                  : String(item.unitPrice ?? "");
+              setError(null);
+              e.currentTarget.blur();
+            }
             if (e.key === "Enter") {
               e.preventDefault();
               e.currentTarget.form?.requestSubmit();
             }
           }}
         />
-        <PendingButton
-          className="btn btn-primary btn-sm active:scale-[0.99]"
-          pendingText="Saving…"
-          ariaLabel={`Save price for ${item.name}`}
-        >
-          Save
-        </PendingButton>
       </form>
-      <div className="flex items-center gap-2">
-        {item.unitPrice != null ? (
-          <button
-            type="button"
-            onClick={() => setConfirmingClear(true)}
-            className="text-[11px] text-gray transition-colors hover:text-red"
-          >
-            Clear price
-          </button>
-        ) : null}
-        <a
-          href={`/admin/audit?f_recordType=line_item&f_recordId=${item.id}`}
-          className="text-[11px] text-gray transition-colors hover:text-ink"
-        >
-          History
-        </a>
-      </div>
+      {saving && (
+        <span role="status" className="text-xs text-gray-dark">
+          Saving…
+        </span>
+      )}
       {error ? (
-        <span role="alert" className="banner-alert absolute left-0 top-full z-10 mt-1 w-max max-w-56 px-2 py-1 text-xs">
+        <span role="alert" className="block text-red mt-1 max-w-40 text-xs">
           {error}
         </span>
       ) : null}
-      <ConfirmDialog
-        open={confirmingClear}
-        title={`Clear price on "${item.name}"?`}
-        confirmLabel="Clear price"
-        danger
-        pending={clearing}
-        onConfirm={handleConfirmClear}
-        onClose={() => setConfirmingClear(false)}
-      >
-        Current price: {item.unitPrice != null ? fmtUSD(item.unitPrice, { cents: true }) : "none"}. This removes it -
-        the item goes back to needing a price.
-      </ConfirmDialog>
     </div>
   );
 }
@@ -208,44 +199,56 @@ export default function RfqRow({
   }
 
   return (
-    <tr id={`li-${item.id}`} className="align-top scroll-mt-4 transition-colors hover:bg-hover">
-      <td className="!py-1.5">
-        <div className="text-[13.5px] font-semibold text-ink">{item.name}</div>
+    <tr
+      id={`li-${item.id}`}
+      className="align-top scroll-mt-4 transition-colors hover:bg-hover"
+    >
+      <td className="">
+        <div className="rfq-item-name font-semibold text-ink">{item.name}</div>
         {/* The lead time itself is the editable date column - not repeated here. */}
-        {item.brand && <div className="text-xs text-gray">{item.brand}</div>}
+        {item.brand && (
+          <div className="rfq-item-brand text-gray">{item.brand}</div>
+        )}
       </td>
-      <td className="!py-1.5 text-gray-dark">{item.qty}</td>
-      <td className="!py-1.5">
+      <td className=" text-gray-dark">{item.qty}</td>
+      <td className="">
         {parentHref ? (
-          <a href={parentHref} className="inline-flex min-w-0 max-w-52 items-center gap-1.5 text-[13px] text-gray-dark transition-colors hover:text-ink">
-            {parentCompany && <Avatar name={parentCompany} kind="business" size="sm" />}
+          <a
+            href={parentHref}
+            className="inline-flex min-w-0 max-w-52 items-center gap-1.5 text-[13px] text-gray-dark transition-colors hover:text-ink"
+          >
+            {parentCompany && (
+              <Avatar name={parentCompany} kind="business" size="sm" />
+            )}
             <span className="truncate">{parentLabel}</span>
           </a>
         ) : (
           <span className="empty-value">no parent</span>
         )}
       </td>
-      <td className={`!py-1.5 ${daysWaiting > RFQ_WAITING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray-dark"}`}>
+      <td
+        className={` ${daysWaiting > RFQ_WAITING_THRESHOLD_DAYS ? "font-medium text-orange" : "text-gray-dark"}`}
+      >
         {daysWaiting}d
       </td>
-      <td className="!py-1.5">
+      <td className="">
         <PriceCell item={item} />
       </td>
-      <td className="!py-1.5">
+      <td className="">
         <LeadTimeCell item={item} />
       </td>
-      <td className="!py-1.5">
+      <td className="">
         <StockStatusCell item={item} />
       </td>
-      <td className="!py-1.5">
+      <td className="">
         <UserSelect
           value={item.assigneeId ?? ""}
           users={users}
           action={(next) => setLineItemAssignee(item.id, next)}
         />
       </td>
-      <td className="!py-1.5">
-        <div className="flex flex-wrap items-center gap-2">
+      <td className="">
+        <div className="flex items-center gap-2">
           <BadgeSelect
             value={item.rfqStatus}
             options={RFQ_STATUSES}

@@ -1,3 +1,5 @@
+import { BackLink } from "@/lib/BackLink";
+import { FormFooter } from "@/lib/PageLayout";
 import Link from "next/link";
 import { COMPANY_TYPES, COMPANY_VERTICALS } from "@/lib/constants";
 import { FormAlert, PendingButton } from "@/lib/ui";
@@ -153,14 +155,12 @@ export function CompanyForm({
 
       <TextArea label="Notes" name="notes" defaultValue={company?.notes} className="mt-4" />
 
-      <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
+      <FormFooter>
+        <BackLink href={cancelHref} label="Cancel" className="btn"/>
         <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">
           {submitLabel}
         </PendingButton>
-        <Link href={cancelHref} className="btn active:scale-[0.99]">
-          Cancel
-        </Link>
-      </div>
+      </FormFooter>
     </form>
   );
 }

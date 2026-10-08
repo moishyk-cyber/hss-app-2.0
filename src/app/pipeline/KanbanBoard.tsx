@@ -1,6 +1,7 @@
 "use client";
+import { LaneItems } from "@/lib/CollectionViews";
 
-import Link from "next/link";
+import Link from "@/lib/IntentLink";
 import { useOptimistic, useState, useTransition } from "react";
 import { STAGE_COLORS } from "@/lib/constants";
 import { Avatar } from "@/lib/Avatar";
@@ -46,6 +47,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
   const [, startTransition] = useTransition();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<string[]>([]);
 
   /**
    * Must be called from inside a transition (applyMove is an optimistic update).
@@ -73,11 +75,12 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
   const openStages = OPEN_STAGES;
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
-      {openStages.map((stage, stageIndex) => {
+    <div className="kanban-board">
+      {openStages.map((stage) => {
         const columnCards = optimisticCards.filter((c) => c.stage === stage.value);
         const total = columnCards.reduce((sum, c) => sum + (c.value ?? 0), 0);
         const isDropTarget = dragOverStage === stage.value;
+        const isCollapsed = collapsed.includes(stage.value);
 
         return (
           <div
@@ -99,28 +102,39 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
               setDraggingId(null);
               if (id) moveByDrag(id, stage.value);
             }}
-            className={`card flex w-72 shrink-0 flex-col transition-colors ${
+            className={`kanban-lane transition-colors ${isCollapsed ? "is-collapsed" : ""} ${
               isDropTarget ? "bg-hover ring-2 ring-primary" : ""
             }`}
           >
             <div className="mb-4 flex items-center justify-between gap-2">
               <h2 className="section-label !mb-0">{stage.label}</h2>
-              <div className="flex items-center gap-2">
-                {total > 0 ? (
+              <div className="lane-summary flex items-center gap-2">
+                {!isCollapsed && total > 0 ? (
                   <span className="text-xs tabular-nums text-gray">{money(total)}</span>
                 ) : null}
                 <span className="badge badge-gray">{columnCards.length}</span>
+                <button
+                  type="button"
+                  className="lane-collapse"
+                  aria-expanded={!isCollapsed}
+                  aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${stage.label}`}
+                  onClick={() => setCollapsed(current => isCollapsed
+                    ? current.filter(value => value !== stage.value)
+                    : [...current, stage.value])}
+                >
+                  {isCollapsed ? "›" : "‹"}
+                </button>
               </div>
             </div>
 
-            <div className="flex-1 space-y-3">
+            {!isCollapsed && <LaneItems laneKey={`pipeline:${stage.value}`}>
               {columnCards.map((card) => (
                 <article
                   key={card.id}
                   draggable
                   onDragStart={(e) => {
                     // Let the stage picker keep its own mouse behaviour.
-                    if ((e.target as HTMLElement).closest("select")) {
+                    if ((e.target as HTMLElement).closest("input,select,button")) {
                       e.preventDefault();
                       return;
                     }
@@ -132,7 +146,7 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                     setDraggingId(null);
                     setDragOverStage(null);
                   }}
-                  className={`card-sunken card-interactive relative cursor-grab active:cursor-grabbing ${
+                  className={`card-sunken card-interactive kanban-card relative cursor-grab active:cursor-grabbing ${
                     draggingId === card.id ? "opacity-50" : ""
                   }`}
                 >
@@ -145,36 +159,37 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   */}
                   <Link
                     href={`/pipeline/${card.id}`}
+                    title={card.title}
                     draggable={false}
-                    className="block text-[13px] font-medium leading-snug text-ink hover:underline after:absolute after:inset-0 after:content-['']"
+                    className="kanban-card-title block text-ink hover:underline after:absolute after:inset-0 after:content-['']"
                   >
                     {card.title}
                   </Link>
                   {/* Square avatar for the business, matching the directory rows. */}
-                  <div className="mt-1.5 flex items-center gap-2 text-xs text-gray">
+                  <div className="kanban-card-company flex items-center gap-2 text-xs text-gray">
                     {card.companyName ? (
                       <>
                         <Avatar name={card.companyName} kind="business" size="sm" />
-                        <span className="truncate">{card.companyName}</span>
+                        <span className="min-w-0 truncate" title={card.companyName}>{card.companyName}</span>
                       </>
                     ) : (
                       <span className="empty-value">no company</span>
                     )}
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between text-xs">
+                  <div className="kanban-card-facts flex items-center justify-between gap-2 text-xs">
                     <span className="font-medium tabular-nums text-ink">
                       {money(card.value) ?? <span className="empty-value">no value</span>}
                     </span>
                     <span className="text-gray">{card.daysInStage}d in stage</span>
                   </div>
 
-                  <div className="mt-2">
-                    <BallInCourtBadge ball={card.ball} />
+                  <div className="kanban-card-handoff">
+                    <BallInCourtBadge ball={card.ball} compact />
                   </div>
 
                   {card.followUpLabel ? (
-                    <div className="mt-3">
+                    <div className="kanban-card-note">
                       <span
                         className={`badge ${card.followUpOverdue ? "badge-orange" : "badge-gray"}`}
                       >
@@ -185,35 +200,19 @@ export function KanbanBoard({ cards }: { cards: KanbanCard[] }) {
                   ) : null}
 
                   {/* Keyboard/no-drag alternative - moves the card optimistically too. */}
-                  <div className="relative z-10 mt-3 w-fit max-w-full">
+                  <div className="kanban-card-footer relative z-10 w-fit max-w-full">
                     <BadgeSelect
                       value={card.stage}
                       options={stageOptions(card.stage)}
                       colorMap={STAGE_COLORS}
+                      ariaLabel={`Change stage for ${card.title}`}
                       action={(next) => move(card.id, next)}
                     />
                   </div>
                 </article>
               ))}
 
-              {columnCards.length === 0 ? (
-                <p className="px-1 py-10 text-center text-xs leading-relaxed text-gray">
-                  {isDropTarget ? (
-                    <span className="font-medium text-ink">Drop to move here</span>
-                  ) : stageIndex === 0 ? (
-                    <>
-                      Deals land here from{" "}
-                      <Link href="/intake" className="text-primary transition-colors hover:underline">
-                        Intake
-                      </Link>
-                      .
-                    </>
-                  ) : (
-                    <>Nothing here - deals arrive from {openStages[stageIndex - 1].label}.</>
-                  )}
-                </p>
-              ) : null}
-            </div>
+            </LaneItems>}
           </div>
         );
       })}

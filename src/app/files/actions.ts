@@ -18,19 +18,16 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { requirePermission } from "@/lib/permissionsServer";
 import { currentUserName } from "@/lib/identityServer";
-import { cleanText, TEXT_LIMITS } from "@/lib/input";
-import { DOCUMENT_KINDS, isValidValue, labelFor } from "@/lib/constants";
+import { DOCUMENT_KINDS, labelFor } from "@/lib/constants";
 import {
-  MAX_UPLOAD_BYTES,
   createSignedDownloadUrl,
-  createSignedUploadUrl,
   removeObject,
-  storagePathFor,
   uploadsConfigured,
 } from "@/lib/storage";
 
-/** The records a file can hang off in this UI. */
-export type FileLinkedType = "order" | "opportunity" | "purchase_order";
+import { attachments } from "@/lib/workflows";
+import { AttachmentValidationError, type FileLinkedType } from "@/lib/workflows/attachments";
+export type { FileLinkedType } from "@/lib/workflows/attachments";
 
 export type SignedUploadResult =
   | { ok: true; uploadUrl: string; token: string; storagePath: string }
@@ -40,42 +37,12 @@ export type SignedUrlResult = { ok: true; url: string } | { ok: false; message: 
 
 const NOT_CONFIGURED = "Direct upload isn't configured yet - paste a link instead.";
 
-/** Uploads we accept: PDFs and images (the file input asks for the same set). */
-function isAllowedMime(mimeType: string): boolean {
-  return mimeType === "application/pdf" || mimeType.startsWith("image/");
-}
-
-function isLinkedType(value: string): value is FileLinkedType {
-  return value === "order" || value === "opportunity" || value === "purchase_order";
-}
-
-/**
- * A file's linkedId is client-supplied - never trust it points at something
- * real. Checked against the record's own table so a stale or tampered id
- * can't attach a document to (or mint an upload URL under) nothing.
- */
-async function linkedRecordExists(linkedType: FileLinkedType, linkedId: string): Promise<boolean> {
-  if (linkedType === "order") {
-    return (await prisma.order.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
-  }
-  if (linkedType === "opportunity") {
-    return (await prisma.opportunity.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
-  }
-  return (await prisma.purchaseOrder.findUnique({ where: { id: linkedId }, select: { id: true } })) != null;
-}
-
-/** Google Drive share links get their own source so the list can label them. */
-function sourceForUrl(url: URL): "link" | "google_drive" {
-  const host = url.hostname.toLowerCase();
-  return host === "drive.google.com" || host === "docs.google.com" ? "google_drive" : "link";
-}
-
-function parseHttpUrl(raw: string): URL | null {
-  try {
-    const parsed = new URL(raw.trim());
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
-  } catch {
-    return null;
+async function attachmentAction(work: () => Promise<void>, message: string): Promise<ActionResult> {
+  try { await work(); return { ok: true }; }
+  catch (error) {
+    if (error instanceof AttachmentValidationError) return { ok: false, message: error.message };
+    console.error(error);
+    return { ok: false, message };
   }
 }
 
@@ -92,6 +59,7 @@ async function revalidateFor(linkedType: string, linkedId: string): Promise<void
     revalidatePath(`/pipeline/${linkedId}`);
     revalidatePath("/pipeline");
   } else if (linkedType === "purchase_order") {
+    revalidatePath(`/purchase-orders/${linkedId}`);
     const po = await prisma.purchaseOrder.findUnique({ where: { id: linkedId }, select: { orderId: true } });
     if (po) {
       revalidatePath(`/orders/${po.orderId}`);
@@ -116,31 +84,9 @@ export async function createLinkDocument(
   const denied = await requirePermission("files.edit");
   if (denied) return denied;
 
-  if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
-  if (!(await linkedRecordExists(linkedType, linkedId))) {
-    return { ok: false, message: "That record no longer exists." };
-  }
-  const url = parseHttpUrl(input.url ?? "");
-  if (!url) return { ok: false, message: "Paste a full link starting with http:// or https://" };
-  if (!isValidValue(DOCUMENT_KINDS, input.kind)) return { ok: false, message: "Not a valid file kind." };
-
-  const fileName = cleanText(input.fileName, TEXT_LIMITS.short) || null;
-  const note = cleanText(input.note, TEXT_LIMITS.medium) || null;
-
-  return safeAction(async () => {
-    const uploadedBy = await currentUserName();
-    const doc = await prisma.document.create({
-      data: {
-        linkedType,
-        linkedId,
-        kind: input.kind,
-        fileUrl: url.toString(),
-        fileName,
-        source: sourceForUrl(url),
-        note,
-        uploadedBy,
-      },
-    });
+  return attachmentAction(async () => {
+    const doc = await attachments.link({ linkedType, linkedId, uploadedBy: await currentUserName() }, input);
+    const fileName = doc.fileName;
     await log(
       linkedType,
       linkedId,
@@ -173,20 +119,11 @@ export async function createSignedUpload(
   const denied = await requirePermission("files.edit");
   if (denied && denied.ok === false) return denied;
 
-  if (!uploadsConfigured()) return { ok: false, message: NOT_CONFIGURED };
-  if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
-  if (!(await linkedRecordExists(linkedType, linkedId))) {
-    return { ok: false, message: "That record no longer exists." };
-  }
-  if (!fileName.trim()) return { ok: false, message: "That file has no name." };
-  if (!isAllowedMime(mimeType)) return { ok: false, message: "Only PDFs and images can be uploaded." };
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return { ok: false, message: "That file looks empty." };
-  if (sizeBytes > MAX_UPLOAD_BYTES) return { ok: false, message: "That file is over the 25 MB limit." };
-
   try {
-    const signed = await createSignedUploadUrl(storagePathFor(linkedType, linkedId, fileName));
+    const signed = await attachments.start({ linkedType, linkedId, uploadedBy: null }, { fileName, mimeType, sizeBytes });
     return { ok: true, ...signed };
   } catch (err) {
+    if (err instanceof AttachmentValidationError) return { ok: false, message: err.message };
     console.error("createSignedUpload failed", err);
     return { ok: false, message: "Could not start the upload. Please try again." };
   }
@@ -208,40 +145,9 @@ export async function finalizeUpload(
   const denied = await requirePermission("files.edit");
   if (denied) return denied;
 
-  if (!uploadsConfigured()) return { ok: false, message: NOT_CONFIGURED };
-  if (!isLinkedType(linkedType) || !linkedId) return { ok: false, message: "Not a valid record to attach to." };
-  if (!(await linkedRecordExists(linkedType, linkedId))) {
-    return { ok: false, message: "That record no longer exists." };
-  }
-  if (!isValidValue(DOCUMENT_KINDS, input.kind)) return { ok: false, message: "Not a valid file kind." };
-  // The path must sit under this record's own prefix - never trust a client path.
-  if (!input.storagePath || !input.storagePath.startsWith(`${linkedType}/${linkedId}/`)) {
-    return { ok: false, message: "That upload does not belong to this record." };
-  }
-  if (input.sizeBytes > MAX_UPLOAD_BYTES) return { ok: false, message: "That file is over the 25 MB limit." };
-
-  const fileName = cleanText(input.fileName, TEXT_LIMITS.short) || "Uploaded file";
-  const note = cleanText(input.note, TEXT_LIMITS.medium) || null;
-
-  return safeAction(async () => {
-    const uploadedBy = await currentUserName();
-    await prisma.document.create({
-      data: {
-        linkedType,
-        linkedId,
-        kind: input.kind,
-        // Uploads are read back through a signed URL, so no durable public URL
-        // exists - the storage path is the address that matters.
-        fileUrl: input.storagePath,
-        fileName,
-        source: "upload",
-        mimeType: input.mimeType || null,
-        sizeBytes: Math.round(input.sizeBytes),
-        storagePath: input.storagePath,
-        note,
-        uploadedBy,
-      },
-    });
+  return attachmentAction(async () => {
+    const doc = await attachments.finalize({ linkedType, linkedId, uploadedBy: await currentUserName() }, input);
+    const fileName = doc.fileName;
     await log(
       linkedType,
       linkedId,

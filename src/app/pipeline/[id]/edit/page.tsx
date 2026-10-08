@@ -1,3 +1,4 @@
+import { FormFooter } from "@/lib/PageLayout";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -170,15 +171,13 @@ export default async function EditOpportunityPage({
           <Field
             label="Value ($)"
             name="value"
-            type="number"
-            step="0.01"
+            type="money"
             defaultValue={opportunity.value?.toString() ?? ""}
           />
           <Field
             label="Budget ($)"
             name="budget"
-            type="number"
-            step="0.01"
+            type="money"
             defaultValue={opportunity.budget?.toString() ?? ""}
           />
           <Field
@@ -291,14 +290,10 @@ export default async function EditOpportunityPage({
           <TextArea label="Notes" name="notes" defaultValue={opportunity.notes} />
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border pt-5">
-          <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">
-            Save changes
-          </PendingButton>
-          <Link href={`/pipeline/${opportunity.id}`} className="btn active:scale-[0.99]">
-            Cancel
-          </Link>
-        </div>
+        <FormFooter>
+          <BackLink href={`/pipeline/${opportunity.id}`} label="Cancel" className="btn"/>
+          <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">Save changes</PendingButton>
+        </FormFooter>
       </form>
     </div>
   );

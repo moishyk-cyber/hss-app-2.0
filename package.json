@@ -6,12 +6,14 @@
     "seed": "tsx prisma/seed.ts && tsx prisma/fix-links.ts"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && next build",
+    "dev": "next dev --turbopack",
+    "build": "prisma generate && next build --turbopack",
+    "preview": "npm run build && next start --hostname 127.0.0.1 --port 3001",
     "start": "next start",
     "lint": "eslint",
     "seed:demo": "tsx prisma/seed-demo.ts",
-    "seed:demo:remove": "tsx prisma/remove-demo.ts"
+    "seed:demo:remove": "tsx prisma/remove-demo.ts",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

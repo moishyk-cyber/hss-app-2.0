@@ -13,7 +13,11 @@
 // collected. From there the delivery is the Delivery tab's to edit; this tab
 // only reads it back.
 
-import { useEffect, useRef, useState } from "react";
+import { MoneyInput } from "@/lib/MoneyInput";
+
+import { useRef, useState } from "react";
+import Link from "next/link";
+import { useDialogAccessibility } from "@/lib/useDialogAccessibility";
 import {
   PO_STATUSES,
   DELIVERY_MODES,
@@ -95,7 +99,6 @@ export default function PurchaseOrdersSection({
   vendors,
   gate,
   documentsByPoId,
-  uploadsEnabled,
 }: {
   orderId: string;
   purchaseOrders: Po[];
@@ -124,8 +127,6 @@ export default function PurchaseOrdersSection({
   const [newVendorName, setNewVendorName] = useState("");
 
   // "Make it list": rows stay compact, the full PO detail pops up.
-  const [openPoId, setOpenPoId] = useState<string | null>(null);
-  const openPo = purchaseOrders.find((po) => po.id === openPoId) ?? null;
   // Acknowledging is the one step that needs decisions typed in first (this is
   // where the delivery is created), so it opens a dialog rather than firing.
   const [ackPoId, setAckPoId] = useState<string | null>(null);
@@ -331,17 +332,15 @@ export default function PurchaseOrdersSection({
                 <li key={po.id} className="relative transition-colors hover:bg-hover">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
                     <Avatar name={po.supplier?.name ?? "?"} kind="business" size="sm" />
-                    <button
-                      type="button"
-                      onClick={() => setOpenPoId(po.id)}
-                      aria-haspopup="dialog"
+                    <Link
+                      href={`/purchase-orders/${po.id}`}
                       className="min-w-0 flex-1 cursor-pointer truncate text-left text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                     >
                       {po.poNumber ?? "(no PO#)"}
                       <span className="ml-2 text-[12px] font-normal text-gray-dark">
                         {po.supplier?.name ?? "no vendor"}
                       </span>
-                    </button>
+                    </Link>
                     {po.autoQuotesPoNumber && (
                       <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
                         AQ# {po.autoQuotesPoNumber}
@@ -396,15 +395,6 @@ export default function PurchaseOrdersSection({
         </div>
       )}
 
-      {openPo ? (
-        <PoDetailModal
-          po={openPo}
-          documents={documentsByPoId[openPo.id] ?? []}
-          uploadsEnabled={uploadsEnabled}
-          onClose={() => setOpenPoId(null)}
-        />
-      ) : null}
-
       {ackPo ? (
         <AcknowledgePoDialog
           po={ackPo}
@@ -419,72 +409,11 @@ export default function PurchaseOrdersSection({
   );
 }
 
-/** PO popup: items, ship-to, the dates, the AutoQuotes PDF, and a read-only look at its delivery leg. */
-function PoDetailModal({
-  po,
-  documents,
-  uploadsEnabled,
-  onClose,
-}: {
-  po: Po;
-  documents: FileDocData[];
-  uploadsEnabled: boolean;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // A split PO has more than one leg; the modal summarizes the first and sends
-  // people to the Delivery tab for the rest.
+/** PO record: items, ship-to, the dates, the AutoQuotes PDF, and a read-only look at its delivery leg. */
+export function PurchaseOrderDetail({po, documents, uploadsEnabled}: {po: Po; documents: FileDocData[]; uploadsEnabled: boolean}) {
   const delivery = po.deliveries[0] ?? null;
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="po-modal-title"
-        tabIndex={-1}
-        className="card w-full max-w-lg space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id="po-modal-title" className="text-base font-semibold text-ink">
-              {po.poNumber ?? "(no PO#)"}
-            </h2>
-            <div className="text-xs text-gray-dark">{po.supplier?.name ?? "no vendor"}</div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray transition-colors hover:bg-hover hover:text-ink"
-          >
-            ✕
-          </button>
-        </div>
-
+    <div className="card space-y-4">
         <div className="text-xs text-gray-dark">
           Ship to: {po.shipTo === "hss" ? "HSS warehouse" : "Client direct"} · Sent: {fmtDate(po.sentDate)} · Ack:{" "}
           {fmtDate(po.ackDate)} · Expected: {fmtDate(delivery?.expectedDelivery ?? null)}
@@ -518,12 +447,11 @@ function PoDetailModal({
             emptyText="No AutoQuotes PDF attached yet - paste a link or upload it."
           />
         </div>
-      </div>
     </div>
   );
 }
 
-/** Modal's inline edit for the AutoQuotes PO # - same 40-char validation as create. */
+/** Inline edit for the AutoQuotes PO # - same 40-char validation as create. */
 function AutoQuotesField({ po }: { po: Po }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -603,9 +531,9 @@ function DeliveryReadout({ delivery }: { delivery: PoDelivery | null }) {
         <span className={`badge ${DELIVERY_LEG_STATUS_COLORS[delivery.status] ?? "badge-gray"}`}>
           {labelFor(DELIVERY_LEG_STATUSES, delivery.status)}
         </span>
-        <a href="#delivery" className="text-blue transition-colors hover:underline">
-          Edit on the Delivery tab
-        </a>
+        <Link href={`/deliveries/${delivery.id}`} className="text-blue transition-colors hover:underline">
+          Open delivery
+        </Link>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>Carrier: {delivery.trackingCarrier ?? <span className="empty-value">not set</span>}</span>
@@ -671,22 +599,7 @@ function AcknowledgePoDialog({
   const showCarrierLeg = hasCarrierLeg(mode);
   const showTruckerLeg = hasTruckerLeg(mode);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
+  useDialogAccessibility(panelRef, true, onClose);
 
   async function handleAcknowledge(formData: FormData) {
     const result = await acknowledgePo(po.id, {
@@ -817,9 +730,7 @@ function AcknowledgePoDialog({
                 </label>
                 <label className="block">
                   <span className="field-label">Cost</span>
-                  <input
-                    type="number"
-                    step="0.01"
+                  <MoneyInput
                     min="0"
                     name="shipCost"
                     className="input-klyne w-full px-2 py-1 text-xs"

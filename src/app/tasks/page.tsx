@@ -1,3 +1,10 @@
+import { getActiveUsers } from "@/lib/users";
+import { compileFilterTree } from "@/lib/nestedFilters";
+import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
+import { resolveLinkedLabels } from "./data";
+import { QueryLink } from "@/lib/QueryLink";
+import { currentUserId } from "@/lib/identityServer";
+import { PageHeader } from "@/lib/PageLayout";
 import Link from "next/link";
 import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
@@ -5,7 +12,6 @@ import { prisma } from "@/lib/prisma";
 import { TASK_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import CreateTaskPanel from "./CreateTaskPanel";
 import QuickAddTask from "./QuickAddTask";
 import TaskListClient from "./TaskListClient";
 import { TASK_TYPE_LABELS } from "./lib";
@@ -13,48 +19,19 @@ import type { TaskRowData } from "./TaskRow";
 
 export const dynamic = "force-dynamic";
 
-const TASK_TYPE_OPTIONS = Object.entries(TASK_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+const TASK_TYPE_OPTIONS = Object.entries(TASK_TYPE_LABELS).map(
+  ([value, label]) => ({ value, label }),
+);
 
 // Reliability spec: "An unassigned task appears in the Admin-visible
 // Unassigned queue." A magic filter value keeps this on the same Sort by /
 // Filter by control every other list already uses, instead of a one-off UI.
 const UNASSIGNED_FILTER_VALUE = "__unassigned__";
 
-type TasksSearchParams = { status?: string } & Record<string, string | string[] | undefined>;
-
-async function resolveLinkedLabels(pairs: { type: string; id: string }[]): Promise<Map<string, string>> {
-  const byType: Record<string, string[]> = {};
-  for (const p of pairs) {
-    (byType[p.type] ??= []).push(p.id);
-  }
-  const map = new Map<string, string>();
-  const [opps, orders, items, companies, contacts] = await Promise.all([
-    byType.opportunity?.length
-      ? prisma.opportunity.findMany({ where: { id: { in: byType.opportunity } }, select: { id: true, title: true } })
-      : Promise.resolve([]),
-    byType.order?.length
-      ? prisma.order.findMany({ where: { id: { in: byType.order } }, select: { id: true, title: true } })
-      : Promise.resolve([]),
-    byType.line_item?.length
-      ? prisma.lineItem.findMany({ where: { id: { in: byType.line_item } }, select: { id: true, name: true } })
-      : Promise.resolve([]),
-    byType.company?.length
-      ? prisma.company.findMany({ where: { id: { in: byType.company } }, select: { id: true, name: true } })
-      : Promise.resolve([]),
-    byType.contact?.length
-      ? prisma.contact.findMany({
-          where: { id: { in: byType.contact } },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : Promise.resolve([]),
-  ]);
-  opps.forEach((o) => map.set(`opportunity:${o.id}`, o.title));
-  orders.forEach((o) => map.set(`order:${o.id}`, o.title));
-  items.forEach((i) => map.set(`line_item:${i.id}`, i.name));
-  companies.forEach((c) => map.set(`company:${c.id}`, c.name));
-  contacts.forEach((c) => map.set(`contact:${c.id}`, `${c.firstName} ${c.lastName ?? ""}`.trim()));
-  return map;
-}
+type TasksSearchParams = { status?: string } & Record<
+  string,
+  string | string[] | undefined
+>;
 
 type TaskWithRelations = {
   id: string;
@@ -77,34 +54,53 @@ export default async function TasksPage({
   searchParams: Promise<TasksSearchParams>;
 }) {
   const sp = await searchParams;
-  const { status } = sp;
+  const limit = collectionLimit(sp);
+  const signedInUserId = await currentUserId();
+  const status =
+    typeof sp.f_status === "string"
+      ? sp.f_status
+      : typeof sp.status === "string"
+        ? sp.status
+        : undefined;
 
-  const users = await prisma.user.findMany({
-    where: { active: true },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  const users = await getActiveUsers();
 
   // Sort by / Filter by (Aug 31 feedback: "select by any field" on every list).
   // Status keeps its own chips + the client-side Completed split - not part of
   // this field set.
   const FIELDS: ListField[] = [
+    { key: "status", label: "Status", type: "enum", options: TASK_STATUSES },
     { key: "title", label: "Title", type: "text" },
     {
       key: "assignee",
       label: "Assignee",
       type: "enum",
-      options: [{ value: UNASSIGNED_FILTER_VALUE, label: "Unassigned" }, ...users.map((u) => ({ value: u.id, label: u.name }))],
+      options: [
+        { value: UNASSIGNED_FILTER_VALUE, label: "Unassigned" },
+        ...users.map((u) => ({ value: u.id, label: u.name })),
+      ],
     },
-    { key: "priority", label: "Priority", type: "enum", options: TASK_PRIORITIES },
+    {
+      key: "priority",
+      label: "Priority",
+      type: "enum",
+      options: TASK_PRIORITIES,
+    },
     { key: "type", label: "Type", type: "enum", options: TASK_TYPE_OPTIONS },
     { key: "dueDate", label: "Due Date", type: "date" },
   ];
   const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
 
   const where: Prisma.TaskWhereInput = { parentTaskId: null };
-  if (filters.title) where.title = { contains: filters.title, mode: "insensitive" };
-  if (filters.assignee) where.assigneeId = filters.assignee === UNASSIGNED_FILTER_VALUE ? null : filters.assignee;
+  if (sp.mine === "1" && signedInUserId)
+    where.AND = [{ assigneeId: signedInUserId }];
+  if (status && TASK_STATUSES.some((s) => s.value === status))
+    where.status = status;
+  if (filters.title)
+    where.title = { contains: filters.title, mode: "insensitive" };
+  if (filters.assignee)
+    where.assigneeId =
+      filters.assignee === UNASSIGNED_FILTER_VALUE ? null : filters.assignee;
   if (filters.priority) where.priority = filters.priority;
   if (filters.type) where.type = filters.type;
   if (filters.dueDate) {
@@ -114,6 +110,7 @@ export default async function TasksPage({
   }
 
   const ORDER_BY: Record<string, Prisma.TaskOrderByWithRelationInput> = {
+    status: { status: sortDir },
     title: { title: sortDir },
     assignee: { assignee: { name: sortDir } },
     priority: { priority: sortDir },
@@ -122,8 +119,22 @@ export default async function TasksPage({
   };
   const orderBy = sortKey ? ORDER_BY[sortKey] : undefined;
 
+  const nestedWhere = compileFilterTree<Prisma.TaskWhereInput>(
+    FIELDS,
+    sp.filter_tree,
+    {
+      title: "title",
+      status: "status",
+      assignee: "assigneeId",
+      priority: "priority",
+      type: "type",
+      dueDate: "dueDate",
+    },
+  );
+
   const tasks = await prisma.task.findMany({
-    where,
+    take: limit + 1,
+    where: { AND: [where, nestedWhere ?? {}] },
     include: {
       assignee: { select: { id: true, name: true } },
       _count: { select: { comments: true } },
@@ -138,7 +149,13 @@ export default async function TasksPage({
     orderBy: orderBy ?? { createdAt: "asc" },
   });
 
-  const allTasksFlat = tasks.flatMap((t) => [t as TaskWithRelations, ...(t.subtasks as TaskWithRelations[])]);
+  const hasMore = tasks.length > limit;
+  if (hasMore) tasks.pop();
+
+  const allTasksFlat = tasks.flatMap((t) => [
+    t as TaskWithRelations,
+    ...(t.subtasks as TaskWithRelations[]),
+  ]);
   const linkPairs = allTasksFlat
     .filter((t) => t.linkedType && t.linkedId)
     .map((t) => ({ type: t.linkedType as string, id: t.linkedId as string }));
@@ -157,7 +174,10 @@ export default async function TasksPage({
       type: t.type,
       linkedType: t.linkedType,
       linkedId: t.linkedId,
-      linkedLabel: t.linkedType && t.linkedId ? labelMap.get(`${t.linkedType}:${t.linkedId}`) ?? null : null,
+      linkedLabel:
+        t.linkedType && t.linkedId
+          ? (labelMap.get(`${t.linkedType}:${t.linkedId}`) ?? null)
+          : null,
       commentCount: t._count.comments,
       subtasks: [],
     };
@@ -168,53 +188,56 @@ export default async function TasksPage({
     subtasks: t.subtasks.map((s) => toRowData(s as TaskWithRelations)),
   }));
 
-  const counts: Record<string, number> = {};
-  for (const s of TASK_STATUSES) counts[s.value] = 0;
-  for (const t of allTasksFlat) counts[t.status] = (counts[t.status] ?? 0) + 1;
-
-  const validStatus = status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
-  const unassignedOpenCount = allTasksFlat.filter((t) => !t.assigneeId && t.status !== "done").length;
+  const validStatus =
+    status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
 
   return (
-    <div className="space-y-8 pb-24">
-      <div>
-        <h1 className="page-title">Tasks</h1>
-        <p className="page-sub">Internal, customer-service, and external follow-ups.</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {TASK_STATUSES.map((s) => {
-          const active = validStatus === s.value;
-          return (
-            <Link
-              key={s.value}
-              href={active ? "/tasks" : `/tasks?status=${s.value}`}
-              className="stat-card block transition-colors hover:bg-hover"
-              style={active ? { borderLeftWidth: 4, borderLeftColor: "var(--primary)" } : undefined}
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        title="Tasks"
+        subtitle="Internal, customer-service, and external follow-ups."
+        toolbar={
+          <Suspense>
+            <ListControls
+              hasMore={hasMore}
+              fields={FIELDS}
+              count={
+                rows.filter((t) => !validStatus || t.status === validStatus)
+                  .length
+              }
             >
-              <div className="section-label">{s.label}</div>
-              <div className="stat-value mt-1">{counts[s.value] ?? 0}</div>
-            </Link>
-          );
-        })}
-      </div>
-
-      {unassignedOpenCount > 0 ? (
-        <Link href={`/tasks?f_assignee=${UNASSIGNED_FILTER_VALUE}`} className="empty-state block transition-colors hover:bg-hover">
-          {unassignedOpenCount} open task{unassignedOpenCount === 1 ? "" : "s"} with no owner. Assign one or they stay
-          invisible to everyone&rsquo;s My Items.
+              <QueryLink
+                href="/tasks"
+                clear={["mine"]}
+                className={sp.mine === "1" ? "chip" : "chip chip-active"}
+              >
+                All tasks
+              </QueryLink>
+              <QueryLink
+                href="/tasks?mine=1"
+                className={sp.mine === "1" ? "chip chip-active" : "chip"}
+              >
+                My tasks
+              </QueryLink>
+            </ListControls>
+          </Suspense>
+        }
+      >
+        <Link href="/tasks/new" className="btn btn-primary">
+          New task
         </Link>
-      ) : null}
+      </PageHeader>
 
       <QuickAddTask />
 
-      <Suspense>
-        <ListControls fields={FIELDS} />
-      </Suspense>
+      <TaskListClient
+        tasks={rows}
+        statusFilter={validStatus}
+        users={users}
+        currentUserId={signedInUserId}
+      />
 
-      <TaskListClient tasks={rows} statusFilter={validStatus} users={users} />
-
-      <CreateTaskPanel users={users} />
+      <MoreRecords href="/tasks" limit={limit} hasMore={hasMore} />
     </div>
   );
 }

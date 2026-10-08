@@ -1,9 +1,11 @@
+import { ORDER_BALL_SELECT, PIPELINE_DETAIL_INCLUDE } from "../data";
+import { getActiveUsers } from "@/lib/users";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/permissionsServer";
-import { ORDER_STATUSES, ORDER_STATUS_COLORS, OPEN_SERVICE_ISSUE_STATUSES, labelFor } from "@/lib/constants";
+import { ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
 import { FlowStepper, type FlowStep } from "@/lib/FlowStepper";
 import { PendingButton } from "@/lib/ui";
 import { opportunityBall, fullFlowSteps, FLOW_STEPS, type OrderBallInput } from "@/lib/ballInCourt";
@@ -28,31 +30,6 @@ import {
   isOverdue,
 } from "../_ui";
 
-/**
- * Just enough of an Order to compute orderBall() - mirrors ORDER_BALL_INCLUDE
- * (@/lib/flow) but as a `select` so this detail page (which only ever needs
- * the one linked order) doesn't drag every column along for a badge. Kept
- * structurally in sync with OrderBallInput by hand; a tsc failure here means
- * it drifted.
- */
-const ORDER_BALL_SELECT = {
-  status: true,
-  orderType: true,
-  orderValue: true,
-  depositRequired: true,
-  quoteStatus: true,
-  termsNotes: true,
-  paymentTerms: true,
-  payments: { select: { status: true, amount: true } },
-  company: { select: { requiresDeposit: true, depositPercent: true } },
-  lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
-  purchaseOrders: { select: { status: true } },
-  deliveries: { select: { status: true } },
-  _count: {
-    select: { serviceIssues: { where: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
-  },
-} satisfies Prisma.OrderSelect;
-
 type OrderBallRow = PlainMoney<
   Prisma.OrderGetPayload<{ select: typeof ORDER_BALL_SELECT & { id: true; title: true } }>
 >;
@@ -73,25 +50,17 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const [opportunityRow, users] = await Promise.all([
+  const [opportunityRow, users, holders, canClose, documents] = await Promise.all([
     prisma.opportunity.findUnique({
       where: { id },
-      include: {
-        // locations feed the Close panel's picker (and the Location row below).
-        company: {
-          include: { locations: { orderBy: [{ isDefault: "desc" }, { name: "asc" }] } },
-        },
-        location: { select: { id: true, name: true, address: true } },
-        primaryContact: true,
-        salesperson: true,
-        lineItems: true,
-        orders: { select: { id: true, title: true, ...ORDER_BALL_SELECT } },
-      },
+      include: PIPELINE_DETAIL_INCLUDE,
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
+    getActiveUsers(),
+    getStageHolders(),
+    can("deals.close"),
+    prisma.document.findMany({
+      where: { linkedType: "opportunity", linkedId: id },
+      orderBy: { uploadedAt: "desc" },
     }),
   ]);
   // Money columns are Decimal; plain numbers from here on (line items and the
@@ -127,11 +96,10 @@ export default async function OpportunityDetailPage({
   // A won deal that never got an order is only half-closed - the Close panel stays
   // open as the recovery route (it reuses the same Won form).
   const needsOrderRecovery = stage === "won" && !linkedOrder;
-  const showClosePanel = (!closed || needsOrderRecovery) && (await can("deals.close"));
+  const showClosePanel = (!closed || needsOrderRecovery) && canClose;
 
   // Ball-in-court: the single next thing that has to happen, and who has to do
   // it. A won deal delegates straight to its order (orderBall).
-  const holders = await getStageHolders();
   const ball = withHolder(
     opportunityBall({
       stage: opportunity.stage,
@@ -187,10 +155,6 @@ export default async function OpportunityDetailPage({
 
   // Files land on a deal long before there is an order (drawings, the signed
   // quote), and the order page reads this same set back under "From the deal".
-  const documents = await prisma.document.findMany({
-    where: { linkedType: "opportunity", linkedId: opportunity.id },
-    orderBy: { uploadedAt: "desc" },
-  });
   const dealDocs: FileDocData[] = documents.map((d) => ({
     id: d.id,
     kind: d.kind,
@@ -310,7 +274,7 @@ export default async function OpportunityDetailPage({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="deal-detail-layout grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-1">
           <Card title="Deal">
             <DetailRow label="Stage" value={<StageBadge stage={opportunity.stage} />} />
@@ -432,7 +396,7 @@ export default async function OpportunityDetailPage({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="table-klyne">
+                <table className="deal-line-items table-klyne">
                   <thead>
                     {/*
                       No Cost/Price here (Aug 31 feedback): pricing is the RFQ queue's
