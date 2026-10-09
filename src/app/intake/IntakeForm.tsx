@@ -1309,11 +1309,11 @@ export function IntakeForm({
               <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
                 <div className="flex flex-wrap items-start gap-3">
                   <label className="block min-w-56 flex-1">
-                    <span className={labelClass}>Terms</span>
+                    <span className={labelClass}>Customer terms</span>
                     <textarea
                       name="termsNotes"
                       rows={3}
-                      placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
+                      placeholder="Enter the terms agreed with this customer in your own words…"
                       className={inputClass}
                     />
                   </label>

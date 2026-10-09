@@ -5,6 +5,7 @@
 import { prisma } from "@/lib/prisma";
 
 export const SETTING_KEYS = [
+  "account.ownerId",
   "service.defaultAssigneeId",
   // "off" enforces the role matrix; anything else (unset included) means open
   // mode: every role can do everything. Open by default (Sep 3: "open it up

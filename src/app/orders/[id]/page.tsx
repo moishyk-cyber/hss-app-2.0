@@ -1,3 +1,4 @@
+import { AutoQuotesField } from "./AutoQuotesField";
 import { Suspense } from "react";
 import { getActiveUsers } from "@/lib/users";
 import { DetailHeader } from "@/lib/PageLayout";
@@ -179,9 +180,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const defaultTab: TabKey = (ball.step ? TAB_FOR_STEP[ball.step] : undefined) ?? "delivery";
 
   const location = order.company?.locations.find((l) => l.id === order.locationId) ?? null;
-  const autoQuotesNumbers = order.purchaseOrders
-    .map((po) => po.autoQuotesPoNumber)
-    .filter((n): n is string => Boolean(n && n.trim()));
 
   const chipItems = order.lineItems.map((li) => ({
     id: li.id,
@@ -380,10 +378,17 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <div>
             <div className="field-label">AutoQuotes PO #</div>
             <div className="text-ink">
-              {autoQuotesNumbers.length > 0 ? (
-                autoQuotesNumbers.join(", ")
+              {order.purchaseOrders.length > 0 ? (
+                <div className="space-y-2">
+                  {order.purchaseOrders.map((po) => (
+                    <div key={po.id} className="space-y-1">
+                      {order.purchaseOrders.length > 1 && <div className="text-xs text-gray-dark">{po.poNumber ?? "Purchase order"}</div>}
+                      <AutoQuotesField po={po} />
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <span className="empty-value">not set</span>
+                <span className="empty-value">Add a purchase order first</span>
               )}
             </div>
           </div>

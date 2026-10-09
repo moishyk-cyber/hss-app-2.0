@@ -7,7 +7,8 @@ import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import type { ActionResult } from "@/lib/actionResult";
-import { updateUserField, setUserActive, deactivateAndReassign, setUserPassword } from "./actions";
+import { updateUserField, setUserActive, deactivateAndReassign, setUserPassword, deleteUser } from "./actions";
+import { useToast } from "@/lib/toast";
 
 /* --- glyphs (copied inline per this round's instructions - not imported
    from phonebook/_ui, which is off-limits this round) -------------------- */
@@ -304,20 +305,54 @@ function PasswordCell({ id, name }: { id: string; name: string }) {
   );
 }
 
+function DeleteUserButton({ user }: { user: { id: string; name: string } }) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const { toast } = useToast();
+
+  return (
+    <>
+      <button type="button" className="btn btn-sm btn-danger" aria-label={`Delete ${user.name}`} onClick={() => { setError(null); setOpen(true); }}>
+        Delete
+      </button>
+      <ConfirmDialog open={open} title={`Delete ${user.name}?`} confirmLabel="Delete teammate" danger pending={pending}
+        onClose={() => setOpen(false)}
+        onConfirm={() => startTransition(async () => {
+          setError(null);
+          const result = await deleteUser(user.id);
+          if (!result.ok) { setError(result.message); return; }
+          setOpen(false);
+          toast({ kind: "success", message: "Teammate deleted." });
+        })}
+      >
+        <div className="space-y-3">
+          <p>This permanently deletes {user.name}’s account and removes their access. Business records, comments, and activity history are kept. Completed work becomes unassigned.</p>
+          <p>Reassign any open work before deleting. This cannot be undone.</p>
+          {error && <p role="alert" className="text-xs text-red">{error}</p>}
+        </div>
+      </ConfirmDialog>
+    </>
+  );
+}
+
 export function UserRow({
   user,
   openWorkCount = 0,
   otherActiveUsers = [],
+  isAccountOwner = false,
 }: {
   user: { id: string; name: string; email: string; role: string; active: boolean };
   openWorkCount?: number;
   otherActiveUsers?: { id: string; name: string }[];
+  isAccountOwner?: boolean;
 }) {
   return (
     <tr>
       <td className="min-w-[200px]">
         <span className="flex min-w-0 items-center gap-2">
           <Avatar name={user.name} kind="person" size="md" />
+          {isAccountOwner && <span className="badge badge-gray shrink-0">Account owner</span>}
           <InlineField
             id={user.id}
             field="name"
@@ -341,7 +376,7 @@ export function UserRow({
       <td className="min-w-[140px]">
         {/* Role changes apply everywhere at once - a stray click shouldn't
             escalate anyone, so the pick is confirmed first (Sep 2 QA P2). */}
-        <OptimisticSelect
+        {isAccountOwner ? <span className="badge badge-gray">Admin</span> : <OptimisticSelect
           value={user.role}
           options={USER_ROLES}
           action={(next) => updateUserField(user.id, "role", next)}
@@ -354,11 +389,11 @@ export function UserRow({
             )}. The change applies immediately and is logged.`,
             confirmLabel: "Change role",
           })}
-        />
+        />}
       </td>
       <td>
         <div className="flex flex-col items-start gap-1">
-          <BadgeSelect
+          {isAccountOwner ? <span className="badge badge-green">Active</span> : <BadgeSelect
             value={user.active ? "active" : "inactive"}
             options={ACTIVE_STATES}
             colorMap={ACTIVE_COLORS}
@@ -383,8 +418,8 @@ export function UserRow({
                     confirmLabel: "Reactivate",
                   }
             }
-          />
-          {user.active && openWorkCount > 0 ? (
+          />}
+          {!isAccountOwner && openWorkCount > 0 ? (
             <ReassignAndDeactivate user={user} openWorkCount={openWorkCount} otherActiveUsers={otherActiveUsers} />
           ) : null}
         </div>
@@ -392,6 +427,7 @@ export function UserRow({
       <td className="min-w-[160px]">
         <PasswordCell id={user.id} name={user.name} />
       </td>
+      <td>{isAccountOwner ? <span className="text-xs text-gray-dark">Protected account</span> : <DeleteUserButton user={user} />}</td>
     </tr>
   );
 }

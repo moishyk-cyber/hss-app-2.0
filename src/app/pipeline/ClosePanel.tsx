@@ -362,13 +362,13 @@ export function ClosePanel({
         {/* Sep 4 (client): one free-text box. The salesperson reads the quote and
             writes what was agreed; the invoices are added by hand later. */}
         <label className="block">
-          <span className="field-label">Terms (optional)</span>
+          <span className="field-label">Customer terms (optional)</span>
           <textarea
             name="termsNotes"
             rows={3}
             value={terms}
             onChange={(e) => setTerms(e.target.value)}
-            placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
+            placeholder="Enter the terms agreed with this customer in your own words…"
             className="input-klyne w-full"
           />
         </label>

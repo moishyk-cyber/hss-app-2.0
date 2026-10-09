@@ -287,52 +287,8 @@ export default function LogIssueForm({
       {error && <FormAlert>{error}</FormAlert>}
 
       <form key={formKey} action={handleSubmit} className="space-y-4">
-        {/* ---- 2. The issue itself ---- */}
-        <div className="space-y-3">
-          <label className="block">
-            <span className="field-label">Title *</span>
-            <input name="title" required className="input-klyne w-full" placeholder="What went wrong?" />
-          </label>
-
-          <label className="block">
-            <span className="field-label">Description</span>
-            <textarea name="description" rows={3} className="input-klyne w-full" />
-          </label>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="field-label">Priority</span>
-              <select name="priority" defaultValue="medium" className="input-klyne w-full">
-                {TASK_PRIORITIES.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="field-label">Date</span>
-              <input type="date" name="reportedAt" defaultValue={ymdToday()} className="input-klyne w-full" />
-            </label>
-
-            <label className="block">
-              <span className="field-label">Assigned to</span>
-              <select name="assigneeId" defaultValue={defaultAssigneeId ?? ""} className="input-klyne w-full">
-                <option value="">Unassigned</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <p className="text-xs text-gray-dark">Assignment starts with your team’s service default; change it here if someone else will handle the issue.</p>
-        </div>
-
         {/* ---- 1. Who is this about: business -> location -> order -> item ---- */}
-        <details className="border-t border-border pt-4" open={Boolean(initialCompany)}><summary className="cursor-pointer font-medium">Link a business, order or item (optional)</summary><div key={pickersKey} className="space-y-2 mt-4">
+        <details className="border-b border-border pb-4" open><summary className="cursor-pointer font-medium">Link a business, order or item (optional)</summary><div key={pickersKey} className="space-y-2 mt-4">
           <p className="text-[13px] text-gray-dark">Who is this about? Search the business first.</p>
 
           <SearchLevel
@@ -397,6 +353,50 @@ export default function LogIssueForm({
             </p>
           ) : null}
         </div></details>
+
+        {/* ---- 2. The issue itself ---- */}
+        <div className="space-y-3">
+          <label className="block">
+            <span className="field-label">Title *</span>
+            <input name="title" required className="input-klyne w-full" placeholder="What went wrong?" />
+          </label>
+
+          <label className="block">
+            <span className="field-label">Description</span>
+            <textarea name="description" rows={3} className="input-klyne w-full" />
+          </label>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="field-label">Priority</span>
+              <select name="priority" defaultValue="medium" className="input-klyne w-full">
+                {TASK_PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="field-label">Date</span>
+              <input type="date" name="reportedAt" defaultValue={ymdToday()} className="input-klyne w-full" />
+            </label>
+
+            <label className="block">
+              <span className="field-label">Assigned to</span>
+              <select name="assigneeId" defaultValue={defaultAssigneeId ?? ""} className="input-klyne w-full">
+                <option value="">Unassigned</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="text-xs text-gray-dark">Assignment starts with your team’s service default; change it here if someone else will handle the issue.</p>
+        </div>
 
         <FormFooter>
           {fullPage && <BackLink href="/service" label="Cancel" className="btn"/>}

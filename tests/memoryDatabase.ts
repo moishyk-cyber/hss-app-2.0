@@ -13,8 +13,9 @@ export function memoryDatabase(seed: State) {
   const isolation: string[] = [];
   const matches = (row: Row, where: Query["where"] = {}): boolean => Object.entries(where).every(([key, value]) => {
     if (value && typeof value === "object" && !(value instanceof Date)) {
-      const clause = value as { in?: unknown[]; not?: unknown };
+      const clause = value as { in?: unknown[]; notIn?: unknown[]; not?: unknown };
       if (clause.in) return clause.in.includes(row[key]);
+      if (clause.notIn) return !clause.notIn.includes(row[key]);
       if ("not" in clause) return row[key] !== clause.not;
     }
     return row[key] === value;
@@ -57,13 +58,15 @@ export function memoryDatabase(seed: State) {
       return result;
     }
     const result: Record<string, unknown> = {};
-    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document']) {
+    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document', 'user', 'task', 'serviceIssue', 'taskComment', 'activityLog', 'appSetting']) {
       rows[model] ??= [];
       const fail = (operation: string) => {
         if (failure === `${model}.${operation}`) throw new Error(`Injected ${failure} failure`);
       };
       result[model] = {
         async findUnique(q: Query) { const row = rows[model].find(r => matches(r, q.where)); return row ? project(model, row, q) : null; },
+        async findMany(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).map(r => project(model, r, q)); },
+        async count(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).length; },
         async create(q: Query) {
           fail('create');
           const defaults = model === 'delivery' ? { status: 'pending', deliveredAt: null, createdAt: new Date() }
