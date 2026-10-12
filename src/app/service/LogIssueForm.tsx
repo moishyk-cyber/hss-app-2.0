@@ -1,7 +1,7 @@
 "use client";
 
 // Log-an-issue form, built like intake: search the business FIRST, then narrow
-// down to its location (only when the business has locations), one of its
+// down to its required location, one of its
 // orders, and an item on that order. Every pick collapses into a one-line
 // summary with a "change" link, so nothing is locked in - re-searching at any
 // level clears the picks below it. Then the issue itself: title, description,
@@ -78,6 +78,7 @@ function SearchLevel({
   selectedId,
   onPick,
   emptyText,
+  disabled = false,
 }: {
   label: string;
   placeholder: string;
@@ -85,14 +86,24 @@ function SearchLevel({
   selectedId: string;
   onPick: (option: ComboboxOption | null) => void;
   emptyText: string;
+  disabled?: boolean;
 }) {
   const picked = options.find((o) => o.id === selectedId) ?? null;
   const [query, setQuery] = useState(picked?.name ?? "");
 
+  if (disabled) {
+    return (
+      <label className="block">
+        <span className="field-label">{label} *</span>
+        <input disabled className="input-klyne w-full" placeholder={placeholder} />
+      </label>
+    );
+  }
+
   if (picked) {
     return (
       <PickedRow
-        label={label}
+        label={`${label} *`}
         value={
           <>
             {picked.name}
@@ -111,6 +122,7 @@ function SearchLevel({
     <div>
       <SearchCombobox
         label={label}
+        required
         placeholder={placeholder}
         options={options}
         query={query}
@@ -149,14 +161,14 @@ export default function LogIssueForm({
 }) {
   const router = useRouter();
   const initialCompany = useMemo(() => {
-    if (initialCompanyId) return companies.find((c) => c.id === initialCompanyId) ?? null;
     if (initialOrderId) return companies.find((c) => c.orders.some((o) => o.id === initialOrderId)) ?? null;
+    if (initialCompanyId) return companies.find((c) => c.id === initialCompanyId) ?? null;
     return null;
   }, [companies, initialCompanyId, initialOrderId]);
 
   const [open, setOpen] = useState(startOpen || Boolean(initialCompany));
   const [companyId, setCompanyId] = useState(initialCompany?.id ?? "");
-  const [orderId, setOrderId] = useState(initialOrderId ?? "");
+  const [orderId, setOrderId] = useState(initialCompany?.orders.find((o) => o.id === initialOrderId)?.id ?? "");
   const [lineItemId, setLineItemId] = useState("");
   const [locationId, setLocationId] = useState(() => {
     const order = initialCompany?.orders.find((o) => o.id === initialOrderId);
@@ -198,12 +210,12 @@ export default function LogIssueForm({
   );
   const orderOptions: ComboboxOption[] = useMemo(
     () =>
-      (company?.orders ?? []).map((o) => ({
+      (company?.orders ?? []).filter((o) => !o.locationId || o.locationId === locationId).map((o) => ({
         id: o.id,
         name: o.title,
         hint: `${o.lineItems.length} item${o.lineItems.length === 1 ? "" : "s"}`,
       })),
-    [company]
+    [company, locationId]
   );
   const itemOptions: ComboboxOption[] = useMemo(
     () => (order?.lineItems ?? []).map((i) => ({ id: i.id, name: i.name })),
@@ -221,6 +233,9 @@ export default function LogIssueForm({
 
   function pickLocation(next: ComboboxOption | null) {
     setLocationId(next?.id ?? "");
+    setOrderId("");
+    setLineItemId("");
+    setPickersKey((k) => k + 1);
   }
 
   function pickOrder(next: ComboboxOption | null) {
@@ -245,6 +260,10 @@ export default function LogIssueForm({
 
   async function handleSubmit(formData: FormData) {
     setError(null);
+    if (!company || !locationOptions.some((l) => l.id === locationId) || !order || !itemOptions.some((i) => i.id === lineItemId)) {
+      setError("Select a business, location, order, and specific order item before logging the issue.");
+      return;
+    }
     const result = await createServiceIssue(formData);
     if (result.ok === false) {
       setError(result.message);
@@ -265,7 +284,7 @@ export default function LogIssueForm({
   }
 
   const hasLocations = (company?.locations.length ?? 0) > 0;
-  const hasOrders = (company?.orders.length ?? 0) > 0;
+  const hasOrders = orderOptions.length > 0;
   const hasItems = (order?.lineItems.length ?? 0) > 0;
 
   return (
@@ -288,71 +307,54 @@ export default function LogIssueForm({
 
       <form key={formKey} action={handleSubmit} className="space-y-4">
         {/* ---- 1. Who is this about: business -> location -> order -> item ---- */}
-        <details className="border-b border-border pb-4" open><summary className="cursor-pointer font-medium">Link a business, order or item (optional)</summary><div key={pickersKey} className="space-y-2 mt-4">
-          <p className="text-[13px] text-gray-dark">Who is this about? Search the business first.</p>
-
-          <SearchLevel
-            label="Business"
-            placeholder="Search businesses…"
-            options={companyOptions}
-            selectedId={companyId}
-            onPick={pickCompany}
-            emptyText="No business on file with that name."
-          />
-          <input type="hidden" name="companyId" value={companyId} />
-
-          {company && hasLocations ? (
+        <section aria-labelledby="issue-order-heading" className="border-b border-border pb-4">
+          <h2 id="issue-order-heading" className="font-medium">Order details</h2>
+          <p className="mt-1 text-[13px] text-gray-dark">Select the business, location, order, and specific order item. All four fields are required.</p>
+          <div key={pickersKey} className="mt-4 space-y-3">
+            <SearchLevel
+              label="Business"
+              placeholder="Search businesses…"
+              options={companyOptions}
+              selectedId={companyId}
+              onPick={pickCompany}
+              emptyText="No business on file with that name."
+            />
+            <input type="hidden" name="companyId" value={companyId} />
             <SearchLevel
               label="Location"
-              placeholder={`Search ${company.name}'s locations…`}
+              placeholder={company ? `Search ${company.name}'s locations…` : "Select a business first"}
               options={locationOptions}
               selectedId={locationId}
               onPick={pickLocation}
+              disabled={!company || !hasLocations}
               emptyText="No location matches."
             />
-          ) : null}
-          <input type="hidden" name="locationId" value={locationId} />
-
-          {company ? (
-            hasOrders ? (
-              <SearchLevel
-                label="Order"
-                placeholder={`Search ${company.name}'s orders…`}
-                options={orderOptions}
-                selectedId={orderId}
-                onPick={pickOrder}
-                emptyText="No order matches."
-              />
-            ) : (
-              <p className="text-xs text-gray">
-                {company.name} has no orders on file - the issue will be logged against the business only.
-              </p>
-            )
-          ) : null}
-          <input type="hidden" name="orderId" value={orderId} />
-
-          {order ? (
-            hasItems ? (
-              <SearchLevel
-                label="Item"
-                placeholder="Search items on this order…"
-                options={itemOptions}
-                selectedId={lineItemId}
-                onPick={pickItem}
-                emptyText="No item matches."
-              />
-            ) : (
-              <p className="text-xs text-gray">This order has no items to pick from.</p>
-            )
-          ) : null}
-          <input type="hidden" name="lineItemId" value={lineItemId} />
-
-          {!company ? (
-            <p className="text-xs text-gray">
-              Can&rsquo;t find the business? You can still log the issue without linking it.
-            </p>
-          ) : null}
-        </div></details>
+            {company && !hasLocations && <p className="text-xs text-gray-dark">Add a location to this business before logging an issue.</p>}
+            <input type="hidden" name="locationId" value={locationId} />
+            <SearchLevel
+              label="Order"
+              placeholder={locationId ? "Search orders at this location…" : "Select a location first"}
+              options={orderOptions}
+              selectedId={orderId}
+              onPick={pickOrder}
+              disabled={!locationId || !hasOrders}
+              emptyText="No order matches."
+            />
+            {company && locationId && !hasOrders && <p className="text-xs text-gray-dark">This location has no orders available. Select another location or create an order first.</p>}
+            <input type="hidden" name="orderId" value={orderId} />
+            <SearchLevel
+              label="Specific order item"
+              placeholder={order ? "Search items on this order…" : "Select an order first"}
+              options={itemOptions}
+              selectedId={lineItemId}
+              onPick={pickItem}
+              disabled={!order || !hasItems}
+              emptyText="No item matches."
+            />
+            {order && !hasItems && <p className="text-xs text-gray-dark">Add an item to this order before logging an issue.</p>}
+            <input type="hidden" name="lineItemId" value={lineItemId} />
+          </div>
+        </section>
 
         {/* ---- 2. The issue itself ---- */}
         <div className="space-y-3">

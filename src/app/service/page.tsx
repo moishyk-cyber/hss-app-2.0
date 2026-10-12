@@ -1,17 +1,15 @@
+import ServiceCollection from "./ServiceCollection";
+import { loadServiceCollection } from "./collectionData";
+import { collectionLimit } from "@/lib/CollectionWindow";
+import { can } from "@/lib/permissionsServer";
 import { getActiveUsers } from "@/lib/users";
 import { compileFilterTree } from "@/lib/nestedFilters";
-import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
-import { SortHeader, TableRows } from "@/lib/CollectionViews";
 import { redirect } from "next/navigation";
-import { PageHeader } from "@/lib/PageLayout";
-import { Suspense } from "react";
-import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SERVICE_ISSUE_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
-import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import IssueRow, { type IssueRowData } from "./IssueRow";
+import type { IssueListData } from "./IssueRow";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +36,11 @@ export default async function ServicePage({
     redirect(`/service/new?${prefill}`);
   }
 
-  const users = await getActiveUsers();
+  const canEditPromise = can("service.edit");
+  const usersPromise = getActiveUsers();
+  // Only assignee filters require the directory before building the query.
+  // Nested filters may contain an assignee condition, so keep their validation intact.
+  const queryUsers = sp.f_assignee || sp.filter_tree ? await usersPromise : [];
 
   const FIELDS: ListField[] = [
     { key: "title", label: "Title", type: "text" },
@@ -52,7 +54,7 @@ export default async function ServicePage({
       key: "assignee",
       label: "Assignee",
       type: "enum",
-      options: users.map((u) => ({ value: u.id, label: u.name })),
+      options: queryUsers.map((u) => ({ value: u.id, label: u.name })),
     },
     { key: "company", label: "Business", type: "text" },
     {
@@ -111,38 +113,40 @@ export default async function ServicePage({
       reportedAt: { reportedAt: sortDir },
     };
 
-  const include = {
+  const select = {
+    id: true,
+    title: true,
+    status: true,
+    priority: true,
+    reportedAt: true,
+    assigneeId: true,
     company: { select: { id: true, name: true } },
     location: { select: { id: true, name: true } },
     order: { select: { id: true, title: true } },
     lineItem: { select: { id: true, name: true } },
     assignee: { select: { id: true, name: true } },
-  } satisfies Prisma.ServiceIssueInclude;
-  const query = (where: Prisma.ServiceIssueWhereInput) =>
+  } satisfies Prisma.ServiceIssueSelect;
+  const query = (where: Prisma.ServiceIssueWhereInput, take = limit + 1) =>
     prisma.serviceIssue.findMany({
-      take: limit + 1,
+      take,
       where,
-      include,
+      select,
+      relationLoadStrategy: "join",
       orderBy: [
         sortKey ? ORDER_BY[sortKey] : { reportedAt: "desc" },
         { id: "asc" },
       ],
     });
-  // Query the open section first so a page boundary never hides older open issues.
-  const rows =
-    !sortKey && !filters.status
-      ? (
-          await Promise.all([
-            query({ ...baseWhere, status: { in: [...OPEN_STATUSES] } }),
-            query({ ...baseWhere, status: { notIn: [...OPEN_STATUSES] } }),
-          ])
-        )
-          .flat()
-          .slice(0, limit + 1)
-      : await query(where);
-
-  const hasMore = rows.length > limit;
-  if (hasMore) rows.pop();
+  const queryIds = (where: Prisma.ServiceIssueWhereInput, take = limit + 1) =>
+    prisma.serviceIssue.findMany({
+      where, take, select: { id: true },
+      orderBy: [sortKey ? ORDER_BY[sortKey] : { reportedAt: "desc" }, { id: "asc" }],
+    });
+  const { rows, hasMore } = await loadServiceCollection(query, where, limit, queryIds);
+  const users = await usersPromise;
+  const fields = FIELDS.map(field => field.key === "assignee"
+    ? { ...field, options: users.map(user => ({ value: user.id, label: user.name })) }
+    : field);
 
   // Default (no explicit Sort by): open issues first, then reported most-recently first
   // within each group - the query already sorted by reportedAt desc, and JS sort is
@@ -158,15 +162,12 @@ export default async function ServicePage({
             : 1,
       );
 
-  const toRowData = (r: (typeof rows)[number]): IssueRowData => ({
+  const toRowData = (r: (typeof rows)[number]): IssueListData => ({
     id: r.id,
     title: r.title,
-    description: r.description,
     status: r.status,
     priority: r.priority,
     reportedAt: r.reportedAt,
-    resolvedAt: r.resolvedAt,
-    resolution: r.resolution,
     assigneeId: r.assigneeId,
     assigneeName: r.assignee?.name ?? null,
     company: r.company,
@@ -175,54 +176,7 @@ export default async function ServicePage({
     lineItem: r.lineItem,
   });
 
-  return (
-    <div className="space-y-6 pb-12">
-      <PageHeader
-        title="Customer Service"
-        subtitle="Customer issues from every order and line item."
-        toolbar={
-          <Suspense>
-            <ListControls
-              hasMore={hasMore}
-              fields={FIELDS}
-              count={issueRows.length}
-            />
-          </Suspense>
-        }
-      >
-        <Link href="/service/new" className="btn btn-primary">
-          Log an issue
-        </Link>
-      </PageHeader>
-
-      {issueRows.length === 0 ? (
-        <div className="empty-state">
-          {Object.values(filters).some(Boolean) || !!nestedWhere
-            ? "No issues match these filters."
-            : "No service issues yet. They land here once someone logs a customer call from the header, or from an order's Service tab."}
-        </div>
-      ) : (
-        <div className="table-scroll">
-          <table className="table-klyne min-w-[900px]">
-            <thead>
-              <tr>
-                <SortHeader field="title">Issue</SortHeader>
-                <SortHeader field="status">Status</SortHeader>
-                <SortHeader field="priority">Priority</SortHeader>
-                <SortHeader field="company">Related record</SortHeader>
-                <SortHeader field="assignee">Assignee</SortHeader>
-                <SortHeader field="reportedAt">Reported</SortHeader>
-              </tr>
-            </thead>
-            <TableRows columns={6}>
-              {issueRows.map((r) => (
-                <IssueRow key={r.id} issue={toRowData(r)} users={users} />
-              ))}
-            </TableRows>
-          </table>
-        </div>
-      )}
-      <MoreRecords href="/service" limit={limit} hasMore={hasMore} />
-    </div>
-  );
+  return <ServiceCollection issues={issueRows.map(toRowData)} users={users} fields={fields}
+    canEdit={await canEditPromise} hasMore={hasMore} limit={limit}
+    filtered={Object.values(filters).some(Boolean) || !!nestedWhere} />;
 }

@@ -291,6 +291,7 @@ export default async function OrdersPage({
         ownerName: order.owner?.name ?? null,
         value: order.orderValue,
         neededByDate: order.neededByDate,
+        paymentStatus: paymentState(order.payments),
         itemSummary: itemSummary(order.lineItems),
         ball: withHolder(orderBall(toOrderBallInput(order)), holders),
       },
@@ -413,6 +414,7 @@ export default async function OrdersPage({
                           <DueCell
                             neededByDate={order.neededByDate}
                             status={order.status}
+                            paymentStatus={ps}
                           />
                         </td>
                         <td>{order.owner?.name ?? "Unassigned"}</td>

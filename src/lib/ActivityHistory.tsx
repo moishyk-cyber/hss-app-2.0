@@ -30,27 +30,18 @@ export async function ActivityHistory({
   limit = 20,
   title = "Activity",
   entries: pendingEntries,
+  collapsible = false,
 }: {
   linkedType: string;
   linkedId: string;
   limit?: number;
   title?: string;
   entries?: ReturnType<typeof getActivityEntries>;
+  collapsible?: boolean;
 }) {
   const entries = await (pendingEntries ?? getActivityEntries(linkedType, linkedId, limit));
 
-  if (entries.length === 0) {
-    return (
-      <div className="card space-y-2">
-        <h3 className="section-label">{title}</h3>
-        <p className="empty-value text-sm">No activity recorded yet.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card space-y-3">
-      <h3 className="section-label">{title}</h3>
+  const content = entries.length === 0 ? <p className="empty-value text-sm">No activity recorded yet.</p> : (
       <ul className="space-y-2.5">
         {entries.map((e) => (
           <li key={e.id} className="border-b border-border pb-2.5 text-sm last:border-0 last:pb-0">
@@ -67,6 +58,15 @@ export async function ActivityHistory({
           </li>
         ))}
       </ul>
-    </div>
   );
+
+  if (collapsible) return <details className="collection-group">
+    <summary><span aria-hidden className="group-chevron">›</span>{title}</summary>
+    <div className="group-content">{content}</div>
+  </details>;
+
+  return <div className="card space-y-3">
+    <h3 className="section-label">{title}</h3>
+    {content}
+  </div>;
 }

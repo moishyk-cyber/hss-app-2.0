@@ -4,11 +4,10 @@
 
 import { MoneyInput } from "@/lib/MoneyInput";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { SectionLink as Link } from "@/lib/SectionLink";
 import { BackLink } from "@/lib/BackLink";
 import { FormFooter } from "@/lib/PageLayout";
-import { useRouter } from "next/navigation";
 import {
   DELIVERY_MODES,
   DELIVERY_MODE_COLORS,
@@ -18,37 +17,24 @@ import {
 } from "@/lib/constants";
 import {
   createDelivery,
-  deleteEmptyDelivery,
-  moveItemsToDelivery,
   setDeliveryStatus,
-  splitDelivery,
   updateDelivery,
 } from "@/lib/workflowActions";
 import { PendingButton, BadgeSelect, ActionButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { fmtDate, isLikelyTrackingUrl } from "../utils";
-import { hasCarrierLeg, hasTruckerLeg } from "../../deliveries/_ui";
-import LineItemsSection from "./LineItemsSection";
+import { hasCarrierLeg, hasTruckerLeg, manufacturerShipmentStatus } from "../../deliveries/_ui";
 
 type Item = {
   id: string;
   name: string;
   qty: number;
-  unitPrice: number | null;
-  deliveryStatus: string;
-  backorderExpected: Date | null;
-  assigneeId: string | null;
-  assignee: { name: string } | null;
-  dateOrdered: Date | null;
-  dateArrivedHss: Date | null;
-  dateArrivedClient: Date | null;
-  trackingUrl: string | null;
   purchaseOrderId: string | null;
   deliveryId: string | null;
   rfqStatus: string;
 };
 
-type DeliveryItem = { id: string; name: string; qty: number; deliveryStatus: string };
+type DeliveryItem = { deliveryStatus: string };
 
 type Delivery = {
   id: string;
@@ -84,12 +70,10 @@ function dateInputValue(d: Date | null): string {
 export default function DeliverySection({
   orderId,
   items,
-  users,
   deliveries,
 }: {
   orderId: string;
   items: Item[];
-  users: { id: string; name: string }[];
   deliveries: Delivery[];
 }) {
   const [showStockForm, setShowStockForm] = useState(false);
@@ -102,8 +86,6 @@ export default function DeliverySection({
 
   return (
     <div className="space-y-6">
-      <LineItemsSection orderId={orderId} items={items} users={users} />
-
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="section-label">Deliveries</h3>
@@ -137,93 +119,52 @@ export default function DeliverySection({
           </div>
         )}
       </div>
-
-
     </div>
   );
 }
 
 /** One compact line per delivery leg - click anywhere on it to open the full form. */
 function DeliveryRow({ delivery }: { delivery: Delivery }) {
-  const itemCount = delivery.lineItems.length;
+  const manufacturerStatus = manufacturerShipmentStatus(delivery);
   return (
-    <li>
-      <div
-        className="relative flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-hover"
-      >
-        <span className="min-w-0 flex-1">
+    <li className="relative space-y-3 px-4 py-3 transition-colors hover:bg-hover">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <Link fullPage href={`/deliveries/${delivery.id}`} className="font-medium text-ink after:absolute after:inset-0">{deliveryTitle(delivery)}</Link>
-          <span className="ml-2 text-xs text-gray-dark">
-            {delivery.purchaseOrder?.supplier?.name ?? "no vendor"} · {itemCount} item
-            {itemCount === 1 ? "" : "s"}
-          </span>
-        </span>
-
-        <span className="hidden shrink-0 lg:block">
-          <span className={`badge ${DELIVERY_MODE_COLORS[delivery.mode] ?? "badge-gray"}`}>
-            {labelFor(DELIVERY_MODES, delivery.mode)}
-          </span>
-        </span>
-
-        <span className="relative z-10 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <BadgeSelect
-            value={delivery.status}
-            options={DELIVERY_LEG_STATUSES}
+          <div className="mt-1 text-xs text-gray-dark">{delivery.purchaseOrder?.supplier?.name ?? "HSS stock"}</div>
+        </div>
+        <span className="relative z-10 shrink-0">
+          <BadgeSelect value={delivery.status} options={DELIVERY_LEG_STATUSES}
             action={(next) => setDeliveryStatus(delivery.id, next)}
-            colorMap={DELIVERY_LEG_STATUS_COLORS}
-            ariaLabel="Change delivery status"
-          />
+            colorMap={DELIVERY_LEG_STATUS_COLORS} ariaLabel="Change delivery status" />
         </span>
-
-        <span className="hidden shrink-0 text-xs text-gray-dark sm:block">
-          {delivery.scheduledDeliveryDate ? (
-            fmtDate(delivery.scheduledDeliveryDate)
-          ) : (
-            <span className="empty-value">not scheduled</span>
-          )}
-        </span>
-
-        <span className="hidden shrink-0 text-xs text-gray-dark md:block">
-          {delivery.trucker ?? <span className="empty-value">no trucker yet</span>}
-        </span>
-
-        <span className="hidden shrink-0 text-xs text-gray-dark lg:block">
-          Expected: {fmtDate(delivery.expectedDelivery)}
-        </span>
-
-        <span className="relative z-10 shrink-0 text-xs" onClick={(e) => e.stopPropagation()}>
-          {delivery.trackingUrl && isLikelyTrackingUrl(delivery.trackingUrl) ? (
-            <a
-              href={delivery.trackingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue transition-colors hover:underline"
-            >
-              Track{delivery.trackingCarrier ? ` (${delivery.trackingCarrier})` : ""}
-            </a>
-          ) : (
-            <span className="empty-value" title={delivery.trackingUrl ?? undefined}>
-              no tracking link yet
-            </span>
-          )}
-        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-dark">
+        <span className={`badge ${DELIVERY_MODE_COLORS[delivery.mode] ?? "badge-gray"}`}>{labelFor(DELIVERY_MODES, delivery.mode)}</span>
+        {manufacturerStatus && <span title="Manufacturer shipment">{manufacturerStatus}</span>}
+        {hasCarrierLeg(delivery.mode) && <>
+          <span>Carrier: {delivery.trackingCarrier ?? "not set"}</span>
+          <span>Expected: {fmtDate(delivery.expectedDelivery)}</span>
+        </>}
+        {hasTruckerLeg(delivery.mode) && <>
+          <span>Trucker: {delivery.trucker ?? "not assigned"}</span>
+          <span>Scheduled: {delivery.scheduledDeliveryDate ? fmtDate(delivery.scheduledDeliveryDate) : "not set"}</span>
+        </>}
+        {delivery.trackingUrl && isLikelyTrackingUrl(delivery.trackingUrl) ? (
+          <a href={delivery.trackingUrl} target="_blank" rel="noreferrer" className="relative z-10 text-blue hover:underline">Track shipment</a>
+        ) : <span className="empty-value">No tracking link</span>}
       </div>
     </li>
   );
 }
 
-/** Full delivery record editor, including shipment details and item allocation. */
-export function DeliveryDetail({delivery, siblings, orderId}: {delivery: Delivery; siblings: Delivery[]; orderId: string}) {
-  const router = useRouter();
-  const onDone = () => { if (!document.querySelector("[data-workflow-order]")) router.refresh(); };
-  // Document navigation leaves intercepted record drawers when used on a delivery page.
-  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-  const onDeleted = () => { if (!document.querySelector("[data-workflow-order]")) window.location.assign(`/orders/${orderId}#delivery`); };
+/** Delivery record editor focused on shipment and delivery tracking. */
+export function DeliveryDetail({ delivery }: { delivery: Delivery }) {
   const delivered = delivery.status === "delivered_full";
 
   return (
     <div className="card space-y-4">
-        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">
             <span className="field-label" style={{ marginBottom: 0 }}>
               Delivery status
@@ -251,7 +192,6 @@ export function DeliveryDetail({delivery, siblings, orderId}: {delivery: Deliver
 
         <DeliveryDetailsForm delivery={delivery} />
 
-        <DeliveryItemsPanel delivery={delivery} siblings={siblings} onClose={onDone} onDeleted={onDeleted} />
     </div>
   );
 }
@@ -312,7 +252,8 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
 
       {hasCarrierLeg(mode) && (
         <fieldset className="space-y-2 rounded-lg border border-border p-2.5">
-          <legend className="field-label px-1">Leg 1 - manufacturer shipment</legend>
+          <legend className="field-label px-1">Manufacturer shipment</legend>
+          <p className="text-sm text-ink">Shipment status: {manufacturerShipmentStatus({ ...delivery, mode })}</p>
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
               <span className="field-label">Carrier</span>
@@ -347,7 +288,7 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
 
       {hasTruckerLeg(mode) && (
         <fieldset className="space-y-2 rounded-lg border border-border p-2.5">
-          <legend className="field-label px-1">Leg 2 - HSS to the customer</legend>
+          <legend className="field-label px-1">HSS to the customer</legend>
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
               <span className="field-label">Scheduled delivery date</span>
@@ -427,147 +368,6 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
         </PendingButton>
       </FormFooter>
     </form>
-  );
-}
-
-/**
- * The leg's items, plus the two ways they move: split the ticked ones onto a
- * brand-new leg of the same PO, or move them onto another leg of this order.
- * Merging is "move them all, then delete the leg that is left empty".
- */
-function DeliveryItemsPanel({
-  delivery,
-  siblings,
-  onClose,
-  onDeleted,
-}: {
-  delivery: Delivery;
-  siblings: Delivery[];
-  onClose: () => void;
-  onDeleted: () => void;
-}) {
-  const [picked, setPicked] = useState<string[]>([]);
-  const [target, setTarget] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-  const isEmpty = delivery.lineItems.length === 0;
-  const siblingOptions = useMemo(
-    () => siblings.map((s) => ({ id: s.id, label: deliveryTitle(s) })),
-    [siblings]
-  );
-
-  function toggle(id: string) {
-    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  }
-
-  async function handleSplit() {
-    setError(null);
-    const result = await splitDelivery(delivery.id, picked);
-    if (result.ok) {
-      setPicked([]);
-      toast({ kind: "success", message: "Items split onto a new delivery" });
-      onClose();
-    } else {
-      setError(result.message);
-    }
-    return result;
-  }
-
-  async function handleMove() {
-    setError(null);
-    if (!target) {
-      setError("Pick the delivery to move them to.");
-      return;
-    }
-    const result = await moveItemsToDelivery(target, picked);
-    if (result.ok) {
-      setPicked([]);
-      toast({ kind: "success", message: "Items moved" });
-      onClose();
-    } else {
-      setError(result.message);
-    }
-    return result;
-  }
-
-  async function handleDelete() {
-    setError(null);
-    const result = await deleteEmptyDelivery(delivery.id);
-    if (result.ok) {
-      toast({ kind: "success", message: "Empty delivery removed" });
-      onDeleted();
-    } else {
-      setError(result.message);
-    }
-    return result;
-  }
-
-  return (
-    <div className="space-y-2 border-t border-border pt-4">
-      <div className="field-label">Items on this delivery</div>
-      {error && <div className="banner-warn">{error}</div>}
-
-      {isEmpty ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="empty-value text-xs">No items on this delivery.</span>
-          <ActionButton action={handleDelete} className="btn btn-sm active:scale-[0.99]">
-            Delete this delivery
-          </ActionButton>
-        </div>
-      ) : (
-        <>
-          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface p-2">
-            {delivery.lineItems.map((li) => (
-              <li key={li.id}>
-                <label className="flex items-center gap-2 text-sm text-ink">
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(li.id)}
-                    onChange={() => toggle(li.id)}
-                    className="h-4 w-4 rounded border-border accent-accent"
-                  />
-                  {li.name} <span className="text-gray">x{li.qty}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton
-              action={handleSplit}
-              className={`btn btn-sm active:scale-[0.99] ${picked.length === 0 ? "opacity-60" : ""}`}
-            >
-              Split {picked.length > 0 ? `${picked.length} ` : ""}item
-              {picked.length === 1 ? "" : "s"} into a new delivery
-            </ActionButton>
-
-            {siblingOptions.length > 0 && (
-              <>
-                <select
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  aria-label="Move items to which delivery"
-                  className="input-klyne px-2 py-1 text-xs"
-                >
-                  <option value="">Move to…</option>
-                  {siblingOptions.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <ActionButton
-                  action={handleMove}
-                  className={`btn btn-sm active:scale-[0.99] ${picked.length === 0 ? "opacity-60" : ""}`}
-                >
-                  Move
-                </ActionButton>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
   );
 }
 

@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 export async function resolveLinkedLabels(pairs: { type: string; id: string }[]): Promise<Map<string, string>> {
   const byType: Record<string, string[]> = {};
   for (const p of pairs) {
-    (byType[p.type] ??= []).push(p.id);
+    const ids = byType[p.type] ??= [];
+    if (!ids.includes(p.id)) ids.push(p.id);
   }
   const map = new Map<string, string>();
   const [opps, orders, items, companies, contacts] = await Promise.all([

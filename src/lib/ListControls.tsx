@@ -26,6 +26,9 @@ export function ListControls({
   hasMore = false,
   children,
   displayControls,
+  groupBy,
+  scopeControls,
+  scopeSelect,
 }: {
   fields: readonly ListField[];
   searchParam?: string;
@@ -33,6 +36,9 @@ export function ListControls({
   hasMore?: boolean;
   children?: ReactNode;
   displayControls?: ReactNode;
+  groupBy?: { value: string; options: readonly { value: string; label: string }[]; onChange?: (value: string) => void };
+  scopeControls?: ReactNode;
+  scopeSelect?: { label: string; value: string; options: readonly { value: string; label: string }[]; param: string; clear?: string[]; extraParams?: Record<string, string> };
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -133,6 +139,36 @@ export function ListControls({
       )}
       <div className="toolbar-row">
         {children && <div className="collection-view-controls">{children}</div>}
+        {groupBy && (
+          <label className="toolbar-group">
+            Group by
+            <select
+              aria-label="Group by"
+              className="input-klyne text-xs"
+              value={groupBy.value}
+              disabled={pending}
+              onChange={event => groupBy.onChange ? groupBy.onChange(event.target.value) : update(query => query.set("group", event.target.value))}
+            >
+              {groupBy.options.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {scopeControls}
+        {scopeSelect && (
+          <label className="toolbar-group">
+            {scopeSelect.label}
+            <select aria-label={scopeSelect.label} className="input-klyne text-xs" value={scopeSelect.value} disabled={pending}
+              onChange={event => update(query => {
+                scopeSelect.clear?.forEach(key => query.delete(key));
+                query.set(scopeSelect.param, event.target.value);
+                Object.entries(scopeSelect.extraParams ?? {}).forEach(([key, value]) => query.set(key, value));
+              })}>
+              {scopeSelect.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        )}
         {searchKey && (showSearch || params.get(searchKey)) && (
           <div className="toolbar-search">
             <ToolbarIcon name="search" />
@@ -161,12 +197,12 @@ export function ListControls({
             <span className="filter-dot" aria-label="Filters applied" />
           )}
         </button>
-        {(displayControls || (["/deliveries", "/rfq"].includes(pathname) && params.get("view") !== "kanban")) && (
+        {(displayControls || (pathname === "/rfq" && params.get("view") !== "kanban")) && (
           <details ref={displayRef} className="toolbar-display">
             <summary className="btn btn-sm">Display</summary>
             <div className="toolbar-display-panel">
               {displayControls}
-        {["/deliveries", "/rfq"].includes(pathname) &&
+        {pathname === "/rfq" &&
           params.get("view") !== "kanban" && (
             <label className="toolbar-group">
               Group by

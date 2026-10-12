@@ -29,6 +29,7 @@ export type OrderCard = {
   ownerName: string | null;
   value: number | null;
   neededByDate: Date | null;
+  paymentStatus: "none" | "pending" | "paid";
   /** "3/5 delivered · 1 pricing" - the same phrase the list rows carry. */
   itemSummary: string | null;
   ball: Ball;
@@ -109,7 +110,7 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                         {card.value == null ? <span className="empty-value">No value</span> : fmtMoney(card.value)}
                       </span>
                       <span className="text-gray">
-                        {card.neededByDate ? <DueCell neededByDate={card.neededByDate} status={card.status} /> : <span className="empty-value">No due date</span>}
+                        {card.neededByDate ? <DueCell neededByDate={card.neededByDate} status={card.status} paymentStatus={card.paymentStatus} /> : <span className="empty-value">No due date</span>}
                       </span>
                     </div>
 

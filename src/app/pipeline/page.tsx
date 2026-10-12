@@ -225,22 +225,9 @@ export default async function PipelinePage({
               hasMore={hasMore}
               fields={listFields}
               count={isList ? visibleCards.length : openCards.length}
-              displayControls={<div className="toolbar-scope"><span>Show opportunities</span><div className="flex items-center gap-1.5">
-                <QueryLink
-                  href="/pipeline"
-                  clear={["scope", "f_stage"]}
-                  className={closed ? "chip" : "chip chip-active"}
-                >
-                  Active
-                </QueryLink>
-                <QueryLink
-                  href="/pipeline?scope=closed&view=list"
-                  clear={["f_stage"]}
-                  className={closed ? "chip chip-active" : "chip"}
-                >
-                  Closed
-                </QueryLink>
-              </div></div>}
+              scopeSelect={{ label: "Show", value: closed ? "closed" : "active", param: "scope",
+                options: [{ value: "active", label: "Active" }, { value: "closed", label: "Closed" }],
+                clear: ["f_stage"], extraParams: { view: "list" } }}
             >
               {" "}
               <div className="flex items-center gap-1.5">

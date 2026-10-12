@@ -52,34 +52,35 @@ export function isLikelyTrackingUrl(url: string | null | undefined): boolean {
 
 // Orders no longer carry a manual urgency flag - the "Due" column and the
 // dashboard/deliveries queues all key off Order.neededByDate instead. A
-// delivered/complete order is done, so it never reads as overdue or soon.
+// Delivered/complete and fully paid orders never read as overdue or soon.
 const CLOSED_ORDER_STATUSES = new Set(["delivered", "complete"]);
 
 export type DueState = "overdue" | "soon" | null;
 
-/** Overdue: past neededByDate and not yet delivered/complete. Soon: due within 7 days. */
-export function dueState(neededByDate: Date | string | null | undefined, status: string): DueState {
-  if (!neededByDate || CLOSED_ORDER_STATUSES.has(status)) return null;
+/** Past-due and soon highlighting applies only to open, unpaid orders. */
+export function dueState(neededByDate: Date | string | null | undefined, status: string, paymentStatus?: string): DueState {
+  if (!neededByDate || CLOSED_ORDER_STATUSES.has(status) || paymentStatus === "paid" || status === "paid") return null;
   if (isPastDay(neededByDate)) return "overdue";
   if (isDueWithinDays(neededByDate, 7)) return "soon";
   return null;
 }
 
-/** "Due" column cell: red + "overdue" badge, orange when due within 7 days, muted dash when unset. */
+/** Due dates are red when overdue, orange when soon, with no extra badge. */
 export function DueCell({
   neededByDate,
   status,
+  paymentStatus,
 }: {
   neededByDate: Date | string | null | undefined;
   status: string;
+  paymentStatus?: string;
 }): ReactNode {
   if (!neededByDate) return mutedDash();
-  const state = dueState(neededByDate, status);
+  const state = dueState(neededByDate, status, paymentStatus);
   const cls = state === "overdue" ? "font-medium text-red" : state === "soon" ? "font-medium text-orange" : "";
   return (
     <span className={cls || undefined}>
       {fmtDateUTC(neededByDate)}
-      {state === "overdue" ? <span className="badge badge-red ml-1.5">overdue</span> : null}
     </span>
   );
 }

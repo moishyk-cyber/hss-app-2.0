@@ -10,12 +10,12 @@ Keep the current paper, charcoal, Archivo/Inter identity and semantic status col
 - Use `FormFooter` with Cancel first and the primary submit action last. Intake retains its persistent outcome summary alongside those actions. Mobile form footers remain visible while scrolling.
 - Modals are for confirmations and short actions or contextual inspections. Use `useDialogAccessibility` for initial focus, Tab containment, Escape, scroll lock, and return focus. Busy confirmations cannot dismiss while an action runs.
 - Keep Order's current workflow, status, owner, and next action prominent. Disclose fulfillment summaries and secondary order metadata instead of placing every field before the working tabs.
-- Required issue capture comes first; business/order/item linking is optional and progressively disclosed. Explain default assignment and retain dependent picker behavior.
+- Customer service creation starts with required business, location, order, and specific order item selectors. Keep all four visible and narrow each selection by its parent; changing a parent clears dependent picks. Validate record relationships on the server. Explain default assignment.
 - Quick task entry remains an optional accelerator, with a visible submit button and Enter hint. Full creation is available in the page header. My tasks uses the signed-in server identity and URL state.
 - Use the shared loading compositions for the new collection/detail routes. Empty filtered views explain how to recover; failure states retain input and display the server's actionable message.
 - At phone widths, the navigation collapses into Menu. Tables may scroll within their own containers; kanban boards scroll horizontally, with vertical scrolling owned by each lane; the whole page must not overflow.
 
-- Collection views use Spreadsheet and Kanban only where appropriate. Tasks, service, and directories use spreadsheets; pipeline, orders, and RFQ also offer kanban. Avoid summary stat strips on collection pages.
+- Collection views use Spreadsheet and Kanban only where appropriate. Customer service and tasks support a table and Kanban grouped by status or priority; directories use spreadsheets; pipeline, orders, and RFQ also offer kanban. Avoid summary stat strips on collection pages.
 - Use `table-scroll`, sticky headers/identifiers, and `TableRows` for collection tables. Render 30 rows per page; changing filters or sorting returns to page one. Use bounded query windows and `MoreRecords` for large collections.
 - Use `kanban-board`, `kanban-lane`, and `LaneItems` for boards. Each lane scrolls independently and initially renders 20 cards. Lane ordering is saved in this browser; stage transitions still run domain actions. Order stages are derived from fulfillment and only allow ordering within a lane.
 - `CollectionGroup` provides shared collapse/expand behavior. RFQ supports grouping by stage, assignee, or stock status; deliveries supports workflow sections or mode; both offer an ungrouped table.
@@ -25,3 +25,5 @@ Keep the current paper, charcoal, Archivo/Inter identity and semantic status col
 - Each filter is independently editable/removable. Use nested All of / Any of groups for AND/OR conditions; validate and compile the same bounded filter tree on the server before pagination.
 
 - The sidebar navigation scrolls within the viewport; the account area stays anchored below it. Horizontal gestures inside a kanban lane move its containing board.
+
+- Customer service and Tasks Table/Kanban and Status/Priority controls change the URL through native history and render the shared loaded ticket snapshot locally. Filters, sorting, load-more, and ticket mutations retain server reads and validation.

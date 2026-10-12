@@ -3,13 +3,24 @@ import { PAYMENT_STATUSES } from "@/lib/constants";
 import { PAYMENT_TYPES } from "@/app/orders/utils";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { compileFilterTree } from "@/lib/nestedFilters";
+import { loadBoardCollection } from "@/lib/loadBoardCollection";
+
+export function loadInvoiceCollection<Row extends { id: string }>(
+  query: (where: Prisma.PaymentWhereInput, take?: number) => Promise<Row[]>,
+  where: Prisma.PaymentWhereInput,
+  limit: number,
+  queryIds: (where: Prisma.PaymentWhereInput, take?: number) => Promise<{ id: string }[]> = query,
+) {
+  return loadBoardCollection<Row, Prisma.PaymentWhereInput>(query, where, limit,
+    PAYMENT_STATUSES.map(lane => ({ status: lane.value })), AND => ({ AND }), ids => ({ id: { in: ids } }), queryIds);
+}
 
 export const INVOICE_FIELDS: ListField[] = [
   { key: "order", label: "Order", type: "text" },
   { key: "company", label: "Customer", type: "text" },
   { key: "type", label: "Type", type: "enum", options: PAYMENT_TYPES },
   { key: "amount", label: "Amount", type: "number" },
-  { key: "status", label: "Status", type: "enum", options: PAYMENT_STATUSES },
+  { key: "status", label: "Payment Status", type: "enum", options: PAYMENT_STATUSES },
   { key: "dueDate", label: "Due date", type: "date" },
   { key: "attention", label: "Billing queue", type: "enum", sortable: false, options: [
     { value: "overdue", label: "Overdue" },

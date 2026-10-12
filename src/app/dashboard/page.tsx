@@ -15,6 +15,7 @@ import {
   labelFor,
 } from "@/lib/constants";
 import { fmtDateUTC, isPastDay } from "@/lib/dates";
+import { DueCell, paymentState } from "@/app/orders/utils";
 import { currentUserId } from "@/lib/identityServer";
 import { opportunityBall, orderBall, type OrderBallInput } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
@@ -151,7 +152,7 @@ export default async function DashboardPage({
       // ---- Overdue & due this week: replaces the old manual-urgency queue -
       // the client's call was "just filter it by due date". ----
       prisma.order.findMany({
-        where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
+        where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] }, OR: [{ payments: { none: {} } }, { payments: { some: { status: { not: "paid" } } } }] },
         select: { id: true, title: true, neededByDate: true },
         orderBy: { neededByDate: "asc" },
       }),
@@ -633,11 +634,7 @@ export default async function DashboardPage({
                 meta: (
                   <span className="flex flex-col items-end gap-1">
                     <BallInCourtBadge ball={ball} />
-                    <DateChip
-                      date={o.neededByDate}
-                      overdue={!!o.neededByDate && o.neededByDate < startOfToday}
-                      prefix="Needed"
-                    />
+                    {o.neededByDate && <span className="text-xs">Needed <DueCell neededByDate={o.neededByDate} status={o.status} paymentStatus={paymentState(o.payments)} /></span>}
                   </span>
                 ),
               };

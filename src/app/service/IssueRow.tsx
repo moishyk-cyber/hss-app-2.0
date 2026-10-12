@@ -31,7 +31,10 @@ export type IssueRowData = {
   lineItem: { id: string; name: string } | null;
 };
 
-function Breadcrumb({ issue, fullPage }: { issue: IssueRowData; fullPage: boolean }) {
+/** Collection views do not need the ticket's long description or resolution. */
+export type IssueListData = Omit<IssueRowData, "description" | "resolution" | "resolvedAt">;
+
+function Breadcrumb({ issue, fullPage }: { issue: IssueListData; fullPage: boolean }) {
   const parts: React.ReactNode[] = [];
   if (issue.company) {
     parts.push(
@@ -83,7 +86,7 @@ export default function IssueRow({
   issue,
   fullPage = false,
 }: {
-  issue: IssueRowData;
+  issue: IssueListData;
   fullPage?: boolean;
   users: { id: string; name: string }[];
 }) {

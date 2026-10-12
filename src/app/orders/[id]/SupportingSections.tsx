@@ -65,7 +65,7 @@ export async function OrderPurchasing({ data, purchaseOrderIds, ...props }:
 }
 
 export async function OrderDelivery({ data, ...props }:
-  Pick<ComponentProps<typeof DeliverySection>, "orderId" | "users"> & { data: OrderSupportingReads }) {
+  Pick<ComponentProps<typeof DeliverySection>, "orderId"> & { data: OrderSupportingReads }) {
   const [items, deliveries] = await Promise.all([data.items, data.deliveries]);
   return <DeliverySection {...props} items={items} deliveries={deliveries} />;
 }

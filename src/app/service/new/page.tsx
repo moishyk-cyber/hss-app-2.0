@@ -10,5 +10,5 @@ export default async function NewIssuePage({searchParams}: {searchParams:Promise
     getActiveUsers(),
     resolveDefaultAssigneeId(),
   ]);
-  return <div className="mx-auto max-w-3xl"><DetailHeader backHref="/service" backLabel="Back to Customer Service" title="Log an issue" subtitle="Capture the customer call, then link the relevant records."/><LogIssueForm companies={companies} users={users} defaultAssigneeId={defaultAssigneeId} initialCompanyId={prefill.companyId} initialOrderId={prefill.orderId} startOpen fullPage/></div>;
+  return <div className="mx-auto max-w-3xl"><DetailHeader backHref="/service" backLabel="Back to Customer Service" title="Log an issue" subtitle="Select the order and item, then capture the customer issue."/><LogIssueForm companies={companies} users={users} defaultAssigneeId={defaultAssigneeId} initialCompanyId={prefill.companyId} initialOrderId={prefill.orderId} startOpen fullPage/></div>;
 }
