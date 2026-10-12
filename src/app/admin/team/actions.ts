@@ -9,6 +9,8 @@ import { requirePermission } from "@/lib/permissionsServer";
 import { currentUserId } from "@/lib/identityServer";
 import { openWorkForUser, reassignAllOpenWork } from "@/lib/ownership";
 import { hashPassword } from "@/lib/password";
+import { deleteTeamMember } from "@/lib/workflows/userDeletion";
+import { getSetting } from "@/lib/settings";
 
 async function log(linkedId: string, action: string, detail: string, meta?: ActivityLogMeta) {
   await logActivity("user", linkedId, action, detail, meta);
@@ -16,6 +18,21 @@ async function log(linkedId: string, action: string, detail: string, meta?: Acti
 
 function refresh() {
   revalidatePath("/admin/team");
+}
+
+export async function deleteUser(id: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
+  if (typeof id !== "string" || !id.trim()) return { ok: false, message: "Pick a teammate to delete." };
+  try {
+    const result = await deleteTeamMember(prisma, id, await currentUserId());
+    if (!result.ok) return result;
+    revalidatePath("/", "layout");
+    return result;
+  } catch (error) {
+    console.error("Could not delete teammate", error);
+    return { ok: false, message: "Could not delete the teammate. Refresh the team list and try again." };
+  }
 }
 
 const EDITABLE_FIELDS = ["name", "email", "role"] as const;
@@ -55,6 +72,9 @@ const LAST_ADMIN_MESSAGE = "This is the last active admin. Make someone else an 
 
 /** Friendly refusal when a deactivation would lock the team out, or null when it's fine. */
 async function deactivationBlocked(id: string): Promise<ActionResult | null> {
+  if (id === await getSetting("account.ownerId")) {
+    return { ok: false, message: "The account owner cannot be deactivated." };
+  }
   if (id === (await currentUserId())) {
     return { ok: false, message: "You can't deactivate yourself. Ask another admin to do it." };
   }
@@ -113,6 +133,9 @@ export async function updateUserField(
   }
   if (field === "role" && !isValidValue(USER_ROLES, trimmed)) {
     return { ok: false, message: "Not a valid role." };
+  }
+  if (field === "role" && trimmed !== "admin" && id === await getSetting("account.ownerId")) {
+    return { ok: false, message: "The account owner must remain an admin." };
   }
   if (field === "role" && trimmed !== "admin" && (await isLastActiveAdmin(id))) {
     return { ok: false, message: LAST_ADMIN_MESSAGE };

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { UserRow } from "./UserRow";
 import { NewUserForm } from "./NewUserForm";
 import { openWorkForUsers } from "@/lib/ownership";
+import { getSetting } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,11 @@ export default async function TeamPage() {
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
 
-  // Reliability spec P0-4: every active row needs its open-work count so
-  // deactivating shows the real stakes instead of a generic warning, and can
-  // require reassignment before it silently strands anything.
-  const openWork = await openWorkForUsers(users.filter((u) => u.active).map((u) => u.id));
+  // Include inactive users too: deletion must require reassignment of any
+  // remaining open work, regardless of the teammate's current status.
+  const openWork = await openWorkForUsers(users.map((u) => u.id));
   const activeUsers = users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name }));
+  const accountOwnerId = await getSetting("account.ownerId");
 
   return (
     <div className="space-y-8">
@@ -37,6 +38,7 @@ export default async function TeamPage() {
                 <th>Role</th>
                 <th>Status</th>
                 <th>Login</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -44,6 +46,7 @@ export default async function TeamPage() {
                 <UserRow
                   key={u.id}
                   user={u}
+                  isAccountOwner={u.id === accountOwnerId}
                   openWorkCount={openWork.get(u.id)?.total ?? 0}
                   otherActiveUsers={activeUsers.filter((a) => a.id !== u.id)}
                 />

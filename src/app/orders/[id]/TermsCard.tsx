@@ -110,7 +110,8 @@ export default function TermsCard({
 
       {missingTerms ? <ValidationDialog issues={[{ field: "termsNotes", message: "Enter the terms agreed with the customer." }]} onClose={() => setMissingTerms(false)} onFix={() => { setMissingTerms(false); requestAnimationFrame(() => highlightSection("#order-terms")); }} /> : null}
       <form id="order-terms" hidden={!showTerms} action={handleSave} className={`space-y-3 ${showQuote ? "border-t border-border pt-4" : ""}`}>
-        <div className="section-label">Terms</div>
+        <label htmlFor="terms-notes" className="section-label">Customer terms</label>
+        <p id="customer-terms-help" className="text-xs text-gray-dark">Write the terms agreed with this customer in your own words.</p>
         {error && (
           <div role="alert" className="banner-alert">
             {error}
@@ -118,12 +119,13 @@ export default function TermsCard({
         )}
         <textarea
           id="terms-notes"
-          aria-label="Agreed order terms"
+          aria-describedby="customer-terms-help"
           name="termsNotes"
           rows={3}
+          maxLength={4000}
           value={text}
           onChange={event => setText(event.target.value)}
-          placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
+          placeholder="Enter payment timing, deposit requirements, and any other agreed conditions…"
           className="input-klyne w-full"
         />
         <div className="flex justify-end">

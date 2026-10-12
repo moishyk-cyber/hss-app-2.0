@@ -715,7 +715,7 @@ label > .field-label,
   max-width: 100%;
   max-height: calc(100dvh - 230px);
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
