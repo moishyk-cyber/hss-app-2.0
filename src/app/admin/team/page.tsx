@@ -1,3 +1,4 @@
+import { PageHeader } from "@/lib/PageLayout";
 import { can } from "@/lib/permissionsServer";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -22,16 +23,7 @@ export default async function TeamPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="page-title">Team</h1>
-          <p className="page-sub">
-            Everyone who can be assigned an order, item, or task. Add or update people here -
-            changes show up everywhere immediately.
-          </p>
-        </div>
-        <NewUserForm />
-      </div>
+      <PageHeader level={2} title="Team" subtitle="Everyone who can be assigned an order, item, or task. Add or update people here — changes show up everywhere immediately."><NewUserForm/></PageHeader>
 
       {users.length === 0 ? (
         <div className="empty-state">No teammates yet - add the first one above.</div>

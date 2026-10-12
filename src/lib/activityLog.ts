@@ -32,7 +32,11 @@ export function activityRecordHref(linkedType: string, linkedId: string): string
     case "company":
       return `/companies/${linkedId}`;
     case "service_issue":
-      return "/service";
+      return `/service/${linkedId}`;
+    case "task":
+      return `/tasks/${linkedId}`;
+    case "contact":
+      return `/contacts/${linkedId}`;
     default:
       return null;
   }

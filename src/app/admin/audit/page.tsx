@@ -1,3 +1,6 @@
+import { compileFilterTree } from "@/lib/nestedFilters";
+import { SortHeader } from "@/lib/CollectionViews";
+import { PageHeader } from "@/lib/PageLayout";
 import { can } from "@/lib/permissionsServer";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -5,7 +8,11 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import { ACTIVITY_RECORD_TYPES, activityRecordTypeLabel, activityRecordHref } from "@/lib/activityLog";
+import {
+  ACTIVITY_RECORD_TYPES,
+  activityRecordTypeLabel,
+  activityRecordHref,
+} from "@/lib/activityLog";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +28,10 @@ function fmtDateTime(d: Date): string {
   });
 }
 
-type AuditSearchParams = { page?: string } & Record<string, string | string[] | undefined>;
+type AuditSearchParams = { page?: string } & Record<
+  string,
+  string | string[] | undefined
+>;
 
 /**
  * Reliability spec P0-2: one place Admin can see every state-changing action
@@ -49,34 +59,63 @@ export default async function AuditLogPage({
     .filter((n): n is string => Boolean(n))
     .map((n) => ({ value: n, label: n }));
 
-  const recordTypeOptions = Object.entries(ACTIVITY_RECORD_TYPES).map(([value, label]) => ({ value, label }));
+  const recordTypeOptions = Object.entries(ACTIVITY_RECORD_TYPES).map(
+    ([value, label]) => ({ value, label }),
+  );
 
   const FIELDS: ListField[] = [
     { key: "actor", label: "Actor", type: "enum", options: actorOptions },
-    { key: "recordType", label: "Record type", type: "enum", options: recordTypeOptions },
+    {
+      key: "recordType",
+      label: "Record type",
+      type: "enum",
+      options: recordTypeOptions,
+    },
     { key: "recordId", label: "Record ID", type: "text" },
     { key: "action", label: "Action", type: "text" },
     { key: "at", label: "Date", type: "date" },
   ];
-  const { filters } = parseListQuery(FIELDS, sp);
+  const { sortKey, sortDir, filters } = parseListQuery(FIELDS, sp);
 
+  const orderBy: Record<string, Prisma.ActivityLogOrderByWithRelationInput> = {
+    actor: { userName: sortDir },
+    recordType: { linkedType: sortDir },
+    recordId: { linkedId: sortDir },
+    action: { action: sortDir },
+    at: { at: sortDir },
+  };
   const where: Prisma.ActivityLogWhereInput = {};
   if (filters.actor) where.userName = filters.actor;
   if (filters.recordType) where.linkedType = filters.recordType;
-  if (filters.recordId) where.linkedId = { contains: filters.recordId, mode: "insensitive" };
-  if (filters.action) where.action = { contains: filters.action, mode: "insensitive" };
+  if (filters.recordId)
+    where.linkedId = { contains: filters.recordId, mode: "insensitive" };
+  if (filters.action)
+    where.action = { contains: filters.action, mode: "insensitive" };
   if (filters.at) {
     const day = new Date(`${filters.at}T00:00:00.000Z`);
     const nextDay = new Date(day.getTime() + 24 * 60 * 60 * 1000);
     where.at = { gte: day, lt: nextDay };
   }
 
+  const nestedWhere = compileFilterTree<Prisma.ActivityLogWhereInput>(
+    FIELDS,
+    sp.filter_tree,
+    {
+      actor: "userName",
+      recordType: "linkedType",
+      recordId: "linkedId",
+      action: "action",
+      at: "at",
+    },
+  );
+  if (nestedWhere) where.AND = [nestedWhere];
+
   const page = Math.max(1, Number(sp.page) || 1);
   const [total, entries] = await Promise.all([
     prisma.activityLog.count({ where }),
     prisma.activityLog.findMany({
       where,
-      orderBy: { at: "desc" },
+      orderBy: sortKey ? orderBy[sortKey] : { at: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -96,15 +135,12 @@ export default async function AuditLogPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title">Audit Log</h1>
-        <p className="page-sub">
-          Every state-changing action across the app: actor, timestamp, record, and what changed. Append-only -
-          nothing here can be edited or deleted.
-        </p>
-      </div>
-
-      <ListControls fields={FIELDS} />
+      <PageHeader
+        level={2}
+        title="Audit Log"
+        subtitle="Every state-changing action across the app: actor, timestamp, record, and what changed. Append-only — nothing here can be edited or deleted."
+      />
+      <ListControls fields={FIELDS} count={total} />
 
       {entries.length === 0 ? (
         <div className="empty-state">No activity matches those filters.</div>
@@ -113,10 +149,10 @@ export default async function AuditLogPage({
           <table className="table-klyne min-w-[900px]">
             <thead>
               <tr>
-                <th>When</th>
-                <th>Actor</th>
-                <th>Record</th>
-                <th>Action</th>
+                <SortHeader field="at">When</SortHeader>
+                <SortHeader field="actor">Actor</SortHeader>
+                <SortHeader field="recordType">Record</SortHeader>
+                <SortHeader field="action">Action</SortHeader>
                 <th>Detail</th>
                 <th>Changed</th>
               </tr>
@@ -126,19 +162,32 @@ export default async function AuditLogPage({
                 const href = activityRecordHref(e.linkedType, e.linkedId);
                 return (
                   <tr key={e.id} className="align-top">
-                    <td className="whitespace-nowrap text-xs text-gray-dark">{fmtDateTime(e.at)}</td>
-                    <td className="whitespace-nowrap">{e.userName ?? <span className="empty-value">system</span>}</td>
+                    <td className="whitespace-nowrap text-xs text-gray-dark">
+                      {fmtDateTime(e.at)}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {e.userName ?? (
+                        <span className="empty-value">system</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap">
                       {href ? (
-                        <Link href={href} className="text-blue transition-colors hover:underline">
+                        <Link
+                          href={href}
+                          className="text-blue transition-colors hover:underline"
+                        >
                           {activityRecordTypeLabel(e.linkedType)}
                         </Link>
                       ) : (
                         activityRecordTypeLabel(e.linkedType)
                       )}
                     </td>
-                    <td className="whitespace-nowrap text-xs text-gray-dark">{e.action}</td>
-                    <td className="max-w-md text-sm text-gray-dark">{e.detail}</td>
+                    <td className="whitespace-nowrap text-xs text-gray-dark">
+                      {e.action}
+                    </td>
+                    <td className="max-w-md text-sm text-gray-dark">
+                      {e.detail}
+                    </td>
                     <td className="whitespace-nowrap text-xs text-gray">
                       {e.previousValue != null || e.newValue != null
                         ? `${e.previousValue ?? "(none)"} → ${e.newValue ?? "(none)"}`

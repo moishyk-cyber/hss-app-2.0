@@ -1,3 +1,4 @@
+import { PageHeader } from "@/lib/PageLayout";
 import { notFound } from "next/navigation";
 import { can } from "@/lib/permissionsServer";
 import { AdminTabs } from "./AdminTabs";
@@ -8,10 +9,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title">Admin</h1>
-        <p className="page-sub">Team members and app-wide settings.</p>
-      </div>
+      <PageHeader title="Admin" subtitle="Team members and app-wide settings."/>
       <AdminTabs />
       <div>{children}</div>
     </div>

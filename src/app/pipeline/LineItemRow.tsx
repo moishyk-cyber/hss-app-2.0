@@ -10,6 +10,7 @@ import {
   updateLineItemQty,
   updateLineItemRfqStatus,
 } from "./actions";
+import { PriceCell } from "../rfq/RfqRow";
 import { LeadTimeCell, StockStatusCell } from "../rfq/StockCells";
 
 export type EditableLineItem = {
@@ -93,12 +94,14 @@ function InlineNumber({
 export function LineItemRow({
   item,
   users,
+  showPricing = false,
 }: {
   item: EditableLineItem;
   users: { id: string; name: string }[];
+  showPricing?: boolean;
 }) {
   return (
-    <tr>
+    <tr id={`pricing-${item.id}`}>
       <td>
         <div className="font-semibold text-ink">{item.name}</div>
         {item.description ? (
@@ -116,7 +119,7 @@ export function LineItemRow({
         />
       </td>
 
-      {/* Cost and Price deliberately absent - pricing is edited in the RFQ queue. */}
+      {showPricing ? <td><PriceCell item={{ ...item, brand: null, assignee: null }} /></td> : null}
 
       {/* Lead time and stock edit here as well as in the RFQ queue - same controls, same saves. */}
       <td>

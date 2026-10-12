@@ -229,7 +229,8 @@ export function Spinner({ className = "" }: { className?: string }) {
  */
 function useOptimisticAction(value: string, action: (next: string) => Promise<ActionResult | void>) {
   const [isPending, startTransition] = useTransition();
-  const [optimistic, setOptimistic] = useOptimistic(value);
+  const [confirmed, setConfirmed] = useState<{ base: string; value: string } | null>(null);
+  const [optimistic, setOptimistic] = useOptimistic(confirmed?.base === value ? confirmed.value : value);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   function run(next: string) {
@@ -237,11 +238,13 @@ function useOptimisticAction(value: string, action: (next: string) => Promise<Ac
       setOptimistic(next);
       setError(null);
       try {
-        setError(errorFrom(await action(next)));
+        const result = await action(next);
+        setError(errorFrom(result));
+        if (result?.ok && "skipRefresh" in result) setConfirmed({ base: value, value: next });
+        else if (!result || (result.ok && !("skipRefresh" in result))) router.refresh();
       } catch {
         setError("Something went wrong. Please try again.");
       }
-      router.refresh();
     });
   }
   return { isPending, optimistic, error, run };
@@ -322,7 +325,7 @@ export function DropMenu({
   menuRef: React.RefObject<HTMLDivElement | null>;
   children: React.ReactNode;
 }) {
-  const [pos, setPos] = useState<{ top: number; left: number; minWidth: number; up: boolean } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; minWidth: number; up: boolean; portal: Element } | null>(null);
 
   useEffect(() => {
     // No cleanup needed here: `open` alone already gates the render bail-out
@@ -334,7 +337,7 @@ export function DropMenu({
       if (!r) return;
       const spaceBelow = window.innerHeight - r.bottom;
       const up = spaceBelow < 280 && r.top > spaceBelow;
-      setPos({ top: up ? r.top - 4 : r.bottom + 4, left: r.left, minWidth: r.width, up });
+      setPos({ top: up ? r.top - 4 : r.bottom + 4, left: r.left, minWidth: r.width, up, portal: anchorRef.current?.closest("[role=dialog]") ?? document.body });
     };
     update();
     window.addEventListener("scroll", update, true);
@@ -359,7 +362,7 @@ export function DropMenu({
     >
       {children}
     </div>,
-    document.body
+    pos.portal
   );
 }
 
@@ -597,12 +600,13 @@ export function ActionButton({
           startTransition(async () => {
             setError(null);
             try {
-              setError(errorFrom(await action()));
+              const result = await action();
+              setError(errorFrom(result));
+              if (!result || (result.ok && !("skipRefresh" in result))) router.refresh();
             } catch {
               setError("Something went wrong. Please try again.");
             }
-            // Fresh server render so downstream state (stepper, badges) updates.
-            router.refresh();
+
           })
         }
       >
@@ -638,7 +642,13 @@ export function InstantSearch({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [value, setValue] = useState(params.get(paramKey) ?? "");
+  const urlValue = params.get(paramKey) ?? "";
+  const [value, setValue] = useState(urlValue);
+  const [lastUrlValue, setLastUrlValue] = useState(urlValue);
+  if (lastUrlValue !== urlValue) {
+    setLastUrlValue(urlValue);
+    setValue(urlValue);
+  }
   const [isPending, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -647,6 +657,7 @@ export function InstantSearch({
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const sp = new URLSearchParams(window.location.search);
+      sp.delete("page");
       if (next) sp.set(paramKey, next);
       else sp.delete(paramKey);
       startTransition(() => {

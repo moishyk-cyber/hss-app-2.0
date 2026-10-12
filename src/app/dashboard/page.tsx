@@ -1,3 +1,4 @@
+import { PageHeader } from "@/lib/PageLayout";
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
@@ -121,6 +122,7 @@ export default async function DashboardPage({
   const mineId = userId ?? "__no_identity__";
 
   const [
+    holders,
     dueOrders,
     opportunityStageGroups,
     wonOpportunities,
@@ -145,6 +147,7 @@ export default async function DashboardPage({
     // whole batch into plain numbers for the tiles, charts and queues below.
   ] = plainMoney(
     await Promise.all([
+      getStageHolders(),
       // ---- Overdue & due this week: replaces the old manual-urgency queue -
       // the client's call was "just filter it by due date". ----
       prisma.order.findMany({
@@ -312,7 +315,6 @@ export default async function DashboardPage({
     ])
   );
 
-  const holders = await getStageHolders();
 
   // Same dead-deal rule as /rfq: a lost opportunity's item stops being work.
   const myPricingItems = myPricingItemsRaw.filter((i) => !isDeadDealItem(i));
@@ -437,17 +439,11 @@ export default async function DashboardPage({
   // Tab 1: Overview - the numbers and the graphs.
   // ------------------------------------------------------------------
   const overview = (
-    <div className="space-y-8">
-      {/* useSearchParams needs a boundary even on a force-dynamic page. */}
-      <Suspense fallback={<div className="h-14" />}>
-        <RangePicker />
-      </Suspense>
-
+    <div className="dashboard-overview">
       {dueOrders.length > 0 && (
         <Link
           href={dueOrders.length === 1 ? `/orders/${dueOrders[0].id}` : "/orders"}
-          className="card card-interactive flex items-center gap-3 text-sm"
-          style={{ padding: "14px 20px" }}
+          className="dashboard-alert flex items-center gap-3 text-sm"
         >
           <span className="badge badge-red shrink-0">{dueOrders.length} due</span>
           <span className="truncate text-ink">
@@ -462,7 +458,7 @@ export default async function DashboardPage({
         </Link>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="dashboard-metrics">
         <StatTile
           label="Open Pipeline Value"
           value={fmtMoney(openPipelineValue)}
@@ -482,7 +478,7 @@ export default async function DashboardPage({
         <StatTile label="Items Needing Pricing" value={fmtCount(pricingItems.length)} />
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="dashboard-charts">
         <ChartCard
           title="Pipeline value by stage"
           hasData={stageChartData.some((d) => d.value > 0)}
@@ -494,6 +490,31 @@ export default async function DashboardPage({
             data={stageChartData}
             formatValue={fmtCompactMoney}
             ariaLabel="Pipeline value by stage"
+          />
+        </ChartCard>
+
+        <ChartCard
+          title="Orders by status"
+          hasData={statusChartData.some((d) => d.value > 0)}
+          tableHead={["Status", "Orders"]}
+          tableRows={statusChartData.map((d) => [d.label, d.value])}
+          emptyText="No orders yet."
+        >
+          <HorizontalBarChart data={statusChartData} formatValue={fmtCount} ariaLabel="Orders by status" />
+        </ChartCard>
+
+        <ChartCard
+          title="RFQ Health"
+          description={`Avg wait: ${avgDaysWaiting}d`}
+          hasData={RFQ_QUEUE_STATUSES.some((s) => (rfqCounts[s.value] ?? 0) > 0)}
+          tableHead={["Status", "Items"]}
+          tableRows={RFQ_QUEUE_STATUSES.map((s) => [s.label, rfqCounts[s.value] ?? 0])}
+          emptyText="No items awaiting pricing."
+        >
+          <HorizontalBarChart
+            data={RFQ_QUEUE_STATUSES.map((s) => ({ label: s.label, value: rfqCounts[s.value] ?? 0 }))}
+            formatValue={fmtCount}
+            ariaLabel="RFQ health: items by status"
           />
         </ChartCard>
 
@@ -518,16 +539,6 @@ export default async function DashboardPage({
         </ChartCard>
 
         <ChartCard
-          title="Orders by status"
-          hasData={statusChartData.some((d) => d.value > 0)}
-          tableHead={["Status", "Orders"]}
-          tableRows={statusChartData.map((d) => [d.label, d.value])}
-          emptyText="No orders yet."
-        >
-          <HorizontalBarChart data={statusChartData} formatValue={fmtCount} ariaLabel="Orders by status" />
-        </ChartCard>
-
-        <ChartCard
           title="Project vs Order mix by month"
           hasData={mixChartData.some((d) => d.a > 0 || d.b > 0)}
           tableHead={["Month", "Project", "Order"]}
@@ -541,18 +552,6 @@ export default async function DashboardPage({
             ariaLabel="Project vs Order mix by month"
           />
         </ChartCard>
-      </div>
-
-      <div className="card">
-        <h3 className="section-label">RFQ Health</h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="chip cursor-default">Avg wait: {avgDaysWaiting}d</span>
-          {RFQ_QUEUE_STATUSES.map((s) => (
-            <span key={s.value} className="chip cursor-default">
-              {s.label}: {rfqCounts[s.value] ?? 0}
-            </span>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -764,7 +763,7 @@ export default async function DashboardPage({
               (i): QueueRow => ({
                 href: "/service",
                 primary: i.title,
-                secondary: i.company?.name ?? "not linked to a company",
+                secondary: i.company?.name ?? "not linked to a business",
                 meta: fmtDateUTC(i.reportedAt),
               })
             )}
@@ -776,12 +775,13 @@ export default async function DashboardPage({
   );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="page-title">Dashboard</h1>
-        <p className="page-sub">Business health at a glance.</p>
-      </div>
-      <DashboardTabs overview={overview} myItems={myItems} />
+    <div className="dashboard-page space-y-6">
+      <DashboardTabs
+        header={<PageHeader title="Dashboard" subtitle="Business health at a glance." />}
+        overview={overview}
+        myItems={myItems}
+        controls={<Suspense fallback={<div className="h-8" />}><RangePicker /></Suspense>}
+      />
     </div>
   );
 }

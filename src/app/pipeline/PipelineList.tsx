@@ -1,13 +1,13 @@
-import Link from "next/link";
+import Link from "@/lib/IntentLink";
 import { OPPORTUNITY_STAGES } from "@/lib/constants";
-import { Avatar } from "@/lib/Avatar";
+import { SortHeader, TableRows } from "@/lib/CollectionViews";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { StageSelect } from "./StageSelect";
 import type { KanbanCard } from "./KanbanBoard";
 import { fmtMoney } from "./_ui";
 
 const STAGE_ORDER = new Map<string, number>(
-  OPPORTUNITY_STAGES.map((s, i) => [s.value, i])
+  OPPORTUNITY_STAGES.map((s, i) => [s.value, i]),
 );
 
 /**
@@ -45,7 +45,10 @@ export function PipelineList({
             <p className="text-gray-dark">No deals yet.</p>
             <p className="mt-1">
               Deals land here from{" "}
-              <Link href="/intake" className="text-primary transition-colors hover:underline">
+              <Link
+                href="/intake"
+                className="text-primary transition-colors hover:underline"
+              >
                 Intake
               </Link>{" "}
               whenever a request is a project or still needs pricing.
@@ -57,58 +60,42 @@ export function PipelineList({
   }
 
   return (
-    <div className="card card-flush overflow-hidden">
-      <ul className="divide-y divide-border">
-        {rows.map((card) => (
-          <li
-            key={card.id}
-            className="relative flex items-center gap-3 px-4 py-2 transition-colors hover:bg-hover"
-          >
-            {/* Square avatar: the deal belongs to a business (@/lib/Avatar rule). */}
-            <Avatar name={card.companyName ?? card.title} kind="business" size="sm" />
-
-            {/*
-              Stretched link: the whole row opens the deal, while the stage picker
-              sits above it (relative z-10) so clicking the pill still changes stage.
-            */}
-            <Link
-              href={`/pipeline/${card.id}`}
-              className="min-w-0 flex-[3] truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
-            >
-              {card.title}
-            </Link>
-
-            <span className="hidden min-w-0 flex-[2] truncate text-[13px] text-gray-dark lg:block">
-              {card.companyName ?? <span className="empty-value">no company</span>}
-            </span>
-
-            <span
-              className="hidden w-28 shrink-0 truncate text-right text-[13px] tabular-nums text-gray-dark sm:block"
-              title="Deal value"
-            >
-              {fmtMoney(card.value) ?? <span className="empty-value">no value</span>}
-            </span>
-
-            {/*
-              Both badge columns get a fixed width so every row's columns line up:
-              the pills size themselves to their label, so left to their own width
-              a long stage ("Information Missing") would squeeze the flexible
-              title/company columns and shift that row out of line with the rest.
-            */}
-            <span className="relative z-10 w-44 shrink-0">
-              <StageSelect opportunityId={card.id} stage={card.stage} />
-            </span>
-
-            <span className="hidden w-52 shrink-0 truncate lg:block">
-              <BallInCourtBadge ball={card.ball} />
-            </span>
-
-            <span className="hidden w-24 shrink-0 text-right text-[13px] tabular-nums text-gray md:block">
-              {card.daysInStage}d in stage
-            </span>
-          </li>
-        ))}
-      </ul>
+    <div className="table-scroll">
+      <table className="table-klyne min-w-[850px]">
+        <thead>
+          <tr>
+            <SortHeader field="title">Deal</SortHeader>
+            <SortHeader field="company">Company</SortHeader>
+            <SortHeader field="value">Value</SortHeader>
+            <SortHeader field="stage">Stage</SortHeader>
+            <SortHeader>Next action</SortHeader>
+            <SortHeader>Waiting</SortHeader>
+          </tr>
+        </thead>
+        <TableRows columns={6}>
+          {rows.map((card) => (
+            <tr key={card.id}>
+              <td>
+                <Link
+                  href={`/pipeline/${card.id}`}
+                  className="font-medium hover:underline"
+                >
+                  {card.title}
+                </Link>
+              </td>
+              <td>{card.companyName ?? "—"}</td>
+              <td className="tabular-nums">{fmtMoney(card.value)}</td>
+              <td>
+                <StageSelect opportunityId={card.id} stage={card.stage} />
+              </td>
+              <td>
+                <BallInCourtBadge ball={card.ball} />
+              </td>
+              <td>{card.daysInStage}d</td>
+            </tr>
+          ))}
+        </TableRows>
+      </table>
     </div>
   );
 }

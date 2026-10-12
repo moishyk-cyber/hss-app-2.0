@@ -5,7 +5,8 @@
 // settings we need to set the roles = ball in court"; later split to one row
 // per stage with a multi-person pin).
 
-import { prisma } from "@/lib/prisma";
+import { cache } from "react";
+import { getActiveUsers } from "@/lib/users";
 import { getSettings, type SettingKey } from "@/lib/settings";
 import { USER_ROLES, labelFor } from "@/lib/constants";
 import { isRole, type Role } from "@/lib/permissions";
@@ -56,34 +57,28 @@ function parseUserIds(raw: string | null): string[] {
 }
 
 /**
- * One settings read (all eighteen keys) plus one users read (the distinct
- * pinned ids, active only) per page. Falls back to the shipped default role -
+ * Read settings and the request-shared team directory concurrently. Falls back to the shipped default role -
  * and no pinned people - for any stage left unset; never throws (an
  * unreachable table reads the same as unset, same as getSettings/getSetting).
  */
-export async function getStageHolders(): Promise<StageHolders> {
+export const getStageHolders = cache(async (): Promise<StageHolders> => {
   const keys = STEPS_LIST.flatMap((s) => [STEP_SETTING_KEYS[s].role, STEP_SETTING_KEYS[s].userIds]);
-  const settings = await getSettings(keys);
+  const [settings, users] = await Promise.all([
+    getSettings(keys),
+    getActiveUsers().catch(() => []),
+  ]);
 
   const pending: Record<FlowStepKey, { role: Role; userIds: string[] }> = {} as Record<
     FlowStepKey,
     { role: Role; userIds: string[] }
   >;
-  const allUserIds = new Set<string>();
   for (const s of STEPS_LIST) {
     const roleValue = settings[STEP_SETTING_KEYS[s].role];
     const role = isRole(roleValue) ? roleValue : DEFAULT_STEP_ROLES[s];
     const userIds = parseUserIds(settings[STEP_SETTING_KEYS[s].userIds]);
     pending[s] = { role, userIds };
-    for (const id of userIds) allUserIds.add(id);
   }
 
-  const users = allUserIds.size
-    ? await prisma.user.findMany({
-        where: { id: { in: [...allUserIds] }, active: true },
-        select: { id: true, name: true },
-      })
-    : [];
   const nameById = new Map(users.map((u) => [u.id, u.name]));
 
   const holders = {} as StageHolders;
@@ -99,7 +94,7 @@ export async function getStageHolders(): Promise<StageHolders> {
     };
   }
   return holders;
-}
+});
 
 /** The pinned people's names if any, else the role label, else the step name. */
 export function holderLabel(step: FlowStepKey, holders: StageHolders): string {

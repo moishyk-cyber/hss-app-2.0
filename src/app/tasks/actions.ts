@@ -72,6 +72,7 @@ export async function createTask(formData: FormData): Promise<ActionResult> {
     });
     await log(task.id, "task_created", `Task "${title}" created`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
     revalidatePath("/dashboard");
   }, "Could not create the task. Please try again.");
 }
@@ -99,6 +100,7 @@ export async function quickAddTask(
     });
     await log(task.id, "task_created", `Task "${trimmed}" created`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
     revalidatePath("/dashboard");
     return { ok: true, id: task.id, assigneeName: task.assignee?.name ?? null };
   } catch (err) {
@@ -118,6 +120,7 @@ export async function deleteTask(taskId: string): Promise<ActionResult> {
     await prisma.task.delete({ where: { id: taskId } });
     await log(taskId, "task_deleted", "Task deleted");
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
     revalidatePath("/dashboard");
   }, "Could not delete the task.");
 }
@@ -132,6 +135,7 @@ export async function setTaskStatus(taskId: string, status: string): Promise<Act
     await prisma.task.update({ where: { id: taskId }, data: { status } });
     await log(taskId, "task_status_set", `Task status set to ${status}`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
     revalidatePath("/dashboard");
   }, "Could not update task status. Please try again.");
 }
@@ -145,6 +149,7 @@ export async function setTaskAssignee(taskId: string, assigneeId: string): Promi
     await prisma.task.update({ where: { id: taskId }, data: { assigneeId: assigneeId || null } });
     await log(taskId, "task_assignee_set", `Assignee set to ${assigneeId || "unassigned"}`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
   }, "Could not update the assignee. Please try again.");
 }
 
@@ -158,6 +163,7 @@ export async function setTaskPriority(taskId: string, priority: string): Promise
     await prisma.task.update({ where: { id: taskId }, data: { priority } });
     await log(taskId, "task_priority_set", `Task priority set to ${priority}`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
   }, "Could not update task priority. Please try again.");
 }
 
@@ -173,6 +179,7 @@ export async function setTaskLink(taskId: string, linkedType: string, linkedId: 
     await prisma.task.update({ where: { id: taskId }, data: { linkedType, linkedId } });
     await log(taskId, "task_linked", `Task linked to ${linkedType}:${linkedId}`);
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
   }, "Could not link the task. Please try again.");
 }
 
@@ -197,6 +204,7 @@ export async function addTaskComment(taskId: string, body: string): Promise<Acti
     });
     await log(taskId, "task_commented", "Comment added");
     revalidatePath("/tasks");
+    revalidatePath("/tasks/[id]", "page");
   }, "Could not post the comment. Please try again.");
 }
 

@@ -6,8 +6,9 @@
 // the zero-users bootstrap below). admin.manage always means role "admin",
 // even in open mode; open mode only relaxes the everyday permissions.
 
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
-import { currentUserId } from "@/lib/identityServer";
+import { sessionUser } from "@/lib/identityServer";
 import { getSetting } from "@/lib/settings";
 import type { ActionResult } from "@/lib/actionResult";
 import { USER_ROLES, labelFor } from "@/lib/constants";
@@ -25,7 +26,7 @@ import {
 export type CurrentUser = { id: string; name: string; role: Role };
 
 /** Shipped defaults + RolePermission overrides. Falls back to the defaults if the table is unreachable. */
-export async function getRolePermissions(): Promise<PermissionMatrix> {
+export const getRolePermissions = cache(async (): Promise<PermissionMatrix> => {
   try {
     const rows = await prisma.rolePermission.findMany();
     return buildPermissionMatrix(rows);
@@ -33,23 +34,13 @@ export async function getRolePermissions(): Promise<PermissionMatrix> {
     console.error("getRolePermissions failed - using shipped defaults", err);
     return defaultPermissionMatrix();
   }
-}
+});
 
 /** The signed-in user, or null when there is no valid session (or the user is gone/inactive). */
 export async function currentUser(): Promise<CurrentUser | null> {
-  const id = await currentUserId();
-  if (!id) return null;
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: { id: true, name: true, role: true, active: true },
-    });
-    if (!user || !user.active) return null;
-    // A role string the app doesn't know (hand-edited row) gets viewer rights.
-    return { id: user.id, name: user.name, role: isRole(user.role) ? user.role : "viewer" };
-  } catch {
-    return null;
-  }
+  const { user } = await sessionUser();
+  if (!user || !user.active) return null;
+  return { id: user.id, name: user.name, role: isRole(user.role) ? user.role : "viewer" };
 }
 
 /**
@@ -58,9 +49,9 @@ export async function currentUser(): Promise<CurrentUser | null> {
  * team asked for everything open while the app beds in); an admin flips it
  * to "off" on Admin > Permissions to start enforcing the matrix.
  */
-export async function permissionsOpenMode(): Promise<boolean> {
+export const permissionsOpenMode = cache(async (): Promise<boolean> => {
   return (await getSetting("permissions.openMode")) !== "off";
-}
+});
 
 /**
  * Can the signed-in user do this?

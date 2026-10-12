@@ -8,10 +8,10 @@
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { logActivity } from "@/lib/log";
-import { plainMoney, roundCents, toMoney, type PlainMoney } from "@/lib/money";
+import type { PlainMoney } from "@/lib/money";
 import { OPEN_SERVICE_ISSUE_STATUSES } from "@/lib/constants";
-import { deriveOrderStatus, FLOW_ORDER_INCLUDE, MANUAL_STATUSES } from "@/lib/flowRules";
+import { reconcileOrderStatus } from "./workflows/orderState";
+import { FLOW_ORDER_INCLUDE } from "@/lib/flowRules";
 import type { OrderBallInput } from "@/lib/ballInCourt";
 
 export {
@@ -30,70 +30,9 @@ export type { PaymentGate } from "@/lib/flowRules";
  */
 export async function recomputeOrderStatus(orderId: string): Promise<string | null> {
   try {
-    const order = plainMoney(
-      await prisma.order.findUnique({
-        where: { id: orderId },
-        include: FLOW_ORDER_INCLUDE,
-      })
-    );
-    if (!order) return null;
-    if (MANUAL_STATUSES.has(order.status)) return order.status;
-
-    const derived = deriveOrderStatus(order);
-    if (derived !== order.status) {
-      await prisma.order.update({ where: { id: orderId }, data: { status: derived } });
-    }
-    return derived;
+    return await reconcileOrderStatus(prisma, orderId);
   } catch (err) {
     console.error("recomputeOrderStatus failed", err);
-    return null;
-  }
-}
-
-/**
- * Keep Order.orderValue honest after a line-item price change (Sep 3 QA #4: an
- * order read $11,194 while its items summed to far more). orderValue is
- * snapshotted from the Close panel at win time and nothing ever recomputed it,
- * so any post-win pricing edit drifted the displayed total - and, because the
- * payment gate's requiredTotal is derived from it, a too-low total asks the
- * customer for too little. Recompute-on-write, mirroring rfq/actions.ts's
- * syncOpportunityPricing for the pre-win side: only once EVERY live item
- * carries a price (a partial sum would understate the total and loosen the
- * gate), then re-derive status since the gate may have moved. Call after any
- * mutation of a line item's unitPrice/qty/rfqStatus on an order.
- * Never throws - a sync hiccup must not fail the pricing save that caused it.
- */
-export async function syncOrderValueFromLineItems(orderId: string): Promise<number | null> {
-  try {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        orderValue: true,
-        lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } },
-      },
-    });
-    if (!order) return null;
-    const orderValue = toMoney(order.orderValue);
-    const live = order.lineItems
-      .filter((li) => li.rfqStatus !== "removed")
-      .map((li) => ({ qty: li.qty, unitPrice: toMoney(li.unitPrice) }));
-    if (live.length === 0 || live.some((li) => li.unitPrice == null || li.unitPrice <= 0)) {
-      return orderValue;
-    }
-    const total = roundCents(live.reduce((sum, li) => sum + (li.unitPrice ?? 0) * li.qty, 0));
-    if (orderValue != null && Math.abs(orderValue - total) < 0.005) return orderValue;
-
-    await prisma.order.update({ where: { id: orderId }, data: { orderValue: total } });
-    await logActivity(
-      "order",
-      orderId,
-      "order_value_synced",
-      `Order value updated from $${orderValue ?? 0} to $${total} to match priced line items`
-    );
-    await recomputeOrderStatus(orderId);
-    return total;
-  } catch (err) {
-    console.error("syncOrderValueFromLineItems failed", err);
     return null;
   }
 }

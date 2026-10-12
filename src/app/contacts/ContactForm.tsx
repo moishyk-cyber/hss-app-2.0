@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { BackLink } from "@/lib/BackLink";
+import { FormFooter } from "@/lib/PageLayout";
 import { FormAlert, PendingButton } from "@/lib/ui";
 import { BusinessField } from "./BusinessField";
 import { CONTACT_STATUSES, Field, Select, TextArea, TitleField } from "./_ui";
@@ -89,14 +90,12 @@ export function ContactForm({
 
       <TextArea label="Notes" name="notes" defaultValue={contact?.notes} className="mt-4" />
 
-      <div className="mt-6 flex items-center gap-2 border-t border-border pt-5">
+      <FormFooter>
+        <BackLink href={cancelHref} label="Cancel" className="btn"/>
         <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Saving…">
           {submitLabel}
         </PendingButton>
-        <Link href={cancelHref} className="btn active:scale-[0.99]">
-          Cancel
-        </Link>
-      </div>
+      </FormFooter>
     </form>
   );
 }

@@ -8,11 +8,16 @@
 // hashes (same interaction language as the sales pipeline stepper).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useWorkflowSelection } from "@/lib/WorkflowSelection";
+import { highlightSection } from "@/lib/SectionLink";
 
 export type TabKey = "invoice" | "purchase-orders" | "delivery" | "files" | "service";
 
 const HASH_TO_TAB: Record<string, TabKey> = {
   "#invoice": "invoice",
+  "#order-terms": "invoice",
+  "#order-complete": "service",
+  "#quote-status": "invoice",
   "#payments": "invoice", // legacy anchor, kept working
   "#purchase-orders": "purchase-orders",
   "#delivery": "delivery",
@@ -43,7 +48,12 @@ export function OrderTabs({
   files: React.ReactNode;
   service: React.ReactNode;
 }) {
-  const [tab, setTab] = useState<TabKey>(defaultTab);
+  const [manualTab, setTab] = useState<TabKey>(defaultTab);
+  const selection = useWorkflowSelection();
+  const selectStep = selection?.select;
+  const selectedStep = selection?.selectedKey;
+  const stepTabs: Record<string, TabKey> = { quote: "invoice", terms: "invoice", deposit: "invoice", pos: "purchase-orders", delivery: "delivery", service: "service", files: "files" };
+  const tab = selection ? stepTabs[selection.selectedKey] ?? manualTab : manualTab;
 
   // Sep 3 QA #7: the header's "Record payment" (and the stepper's step links)
   // are plain <a href="#invoice">s. When their target tab was ALREADY showing,
@@ -72,11 +82,14 @@ export function OrderTabs({
     function syncFromHash() {
       const mapped = HASH_TO_TAB[window.location.hash];
       if (mapped) setTab(mapped);
+      const destinations: Record<string, string> = { "#quote-status": "quote", "#order-terms": "terms", "#payments": "deposit", "#purchase-orders": "pos", "#delivery": "delivery", "#service": "service", "#order-complete": "service", "#files": "files" };
+      const destination = destinations[window.location.hash];
+      if (destination) { selectStep?.(destination); requestAnimationFrame(() => highlightSection(window.location.hash, rootRef.current)); }
     }
     syncFromHash();
     window.addEventListener("hashchange", syncFromHash);
     return () => window.removeEventListener("hashchange", syncFromHash);
-  }, []);
+  }, [selectStep]);
 
   // Belt-and-suspenders: the FlowStepper's steps render as next/link <Link>s,
   // which navigate via history.pushState rather than a real hash assignment -
@@ -85,21 +98,29 @@ export function OrderTabs({
     function onClick(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
       const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
-      if (!anchor) return;
+      if (!anchor || !rootRef.current?.closest(".pipeline-detail")?.contains(anchor) || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const url = new URL(anchor.href);
+      if (url.origin !== location.origin || url.pathname !== location.pathname) return;
       const href = anchor.getAttribute("href") ?? "";
       const hashIdx = href.indexOf("#");
       if (hashIdx === -1) return;
       const mapped = HASH_TO_TAB[href.slice(hashIdx)];
       if (!mapped) return;
+      e.preventDefault();
+      const hash = href.slice(hashIdx);
+      if (hash === "#order-terms" || hash === "#payments") { selectStep?.(hash === "#order-terms" ? "terms" : "deposit"); setTab("invoice"); requestAnimationFrame(() => highlightSection(hash, rootRef.current)); return; }
+      if (href.slice(hashIdx) === "#quote-status") { selectStep?.("quote"); setTab("invoice"); requestAnimationFrame(() => highlightSection("#quote-status", rootRef.current)); return; }
+      if (selectStep) selectStep(mapped === "invoice" ? selectedStep && ["terms", "deposit"].includes(selectedStep) ? selectedStep : "quote" : mapped === "purchase-orders" ? "pos" : mapped);
       setTab(mapped);
-      drawAttention();
+      requestAnimationFrame(() => { if (!highlightSection(hash, rootRef.current)) drawAttention(); });
     }
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, [drawAttention]);
+  }, [drawAttention, selectStep, selectedStep]);
 
   function selectTab(next: TabKey, hash: string) {
     setTab(next);
+    selectStep?.(next === "invoice" ? "deposit" : next === "purchase-orders" ? "pos" : next);
     window.history.replaceState(null, "", hash);
   }
 
@@ -134,11 +155,11 @@ export function OrderTabs({
           (flash ? "bg-hover ring-2 ring-primary/60 ring-offset-4 ring-offset-panel" : "")
         }
       >
-        <div className={tab === "invoice" ? "" : "hidden"}>{invoice}</div>
-        <div className={tab === "purchase-orders" ? "" : "hidden"}>{purchaseOrders}</div>
-        <div className={tab === "delivery" ? "" : "hidden"}>{delivery}</div>
-        <div className={tab === "files" ? "" : "hidden"}>{files}</div>
-        <div className={tab === "service" ? "" : "hidden"}>{service}</div>
+        <div id="invoice" className={tab === "invoice" ? "" : "hidden"}>{invoice}</div>
+        <div id="purchase-orders" className={tab === "purchase-orders" ? "" : "hidden"}>{purchaseOrders}</div>
+        <div id="delivery" className={tab === "delivery" ? "" : "hidden"}>{delivery}</div>
+        <div id="files" className={tab === "files" ? "" : "hidden"}>{files}</div>
+        <div id="service" className={tab === "service" ? "" : "hidden"}>{service}</div>
       </div>
     </div>
   );

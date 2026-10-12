@@ -4,6 +4,15 @@
 // dropped into any detail page next to the fields it narrates.
 
 import { prisma } from "@/lib/prisma";
+import { cache } from "react";
+
+export const getActivityEntries = cache((linkedType: string, linkedId: string, limit = 20) =>
+  prisma.activityLog.findMany({
+    where: { linkedType, linkedId },
+    orderBy: { at: "desc" },
+    take: limit,
+  }).then(entries => entries)
+);
 
 function fmtDateTime(d: Date): string {
   return d.toLocaleString("en-US", {
@@ -20,17 +29,15 @@ export async function ActivityHistory({
   linkedId,
   limit = 20,
   title = "Activity",
+  entries: pendingEntries,
 }: {
   linkedType: string;
   linkedId: string;
   limit?: number;
   title?: string;
+  entries?: ReturnType<typeof getActivityEntries>;
 }) {
-  const entries = await prisma.activityLog.findMany({
-    where: { linkedType, linkedId },
-    orderBy: { at: "desc" },
-    take: limit,
-  });
+  const entries = await (pendingEntries ?? getActivityEntries(linkedType, linkedId, limit));
 
   if (entries.length === 0) {
     return (

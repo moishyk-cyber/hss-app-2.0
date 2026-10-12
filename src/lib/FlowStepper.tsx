@@ -43,7 +43,7 @@ function StepBody({ step }: { step: FlowStep }) {
     <>
       <span
         className={
-          "mt-1.5 text-[12px] leading-tight px-1 truncate max-w-full " +
+          "mt-1.5 text-[12px] leading-tight px-1 max-w-full " +
           (step.state === "current"
             ? "font-bold text-ink"
             : step.state === "done"
@@ -54,7 +54,7 @@ function StepBody({ step }: { step: FlowStep }) {
         {step.label}
       </span>
       {step.state === "current" && step.hint && (
-        <span className="mt-0.5 text-[10.5px] font-semibold text-primary px-1 truncate max-w-full">
+        <span className="mt-0.5 text-[10.5px] leading-tight font-semibold text-primary px-1 max-w-full">
           {step.hint}
         </span>
       )}
@@ -64,7 +64,7 @@ function StepBody({ step }: { step: FlowStep }) {
 
 export function FlowStepper({ steps }: { steps: FlowStep[] }) {
   return (
-    <ol className="flex items-start gap-0 overflow-x-auto py-1" aria-label="Progress">
+    <ol className="flow-stepper flex items-start gap-0 overflow-x-auto py-1" aria-label="Progress">
       {steps.map((step, i) => {
         const isLast = i === steps.length - 1;
         const clickable = Boolean(step.href || step.formAction);
@@ -93,7 +93,7 @@ export function FlowStepper({ steps }: { steps: FlowStep[] }) {
         );
 
         return (
-          <li key={step.label} className="flex items-start min-w-0 flex-1">
+          <li key={step.label} aria-current={step.state === "current" ? "step" : undefined} className="flex items-start min-w-24 flex-1">
             {step.formAction ? (
               <form action={step.formAction} className="w-full min-w-0">
                 <button type="submit" className="block w-full min-w-0">

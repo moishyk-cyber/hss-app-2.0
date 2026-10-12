@@ -77,7 +77,7 @@ export default function QuickAddTask() {
   }
 
   return (
-    <div className="card flex items-center gap-3 px-4 py-3">
+    <div className="task-quick-add flex flex-wrap items-center gap-2">
       <span
         aria-hidden
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-border text-sm text-gray"
@@ -95,11 +95,11 @@ export default function QuickAddTask() {
           }
         }}
         disabled={isPending}
-        placeholder="Add a task"
+        placeholder="Quick add a task — press Enter"
         aria-label="Add a task"
-        className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-gray focus:outline-none"
+        className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-gray "
       />
-      {isPending && <Spinner className="text-gray" />}
+      <button type="button" className="btn btn-sm" disabled={isPending || !title.trim()} onClick={submit}>{isPending ? <Spinner/> : "Add task"}</button>
       {error && (
         <span role="alert" className="text-xs text-red">
           {error}

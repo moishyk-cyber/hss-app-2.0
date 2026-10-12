@@ -43,13 +43,13 @@ export type PaymentGate = {
   reason: string;
 };
 
-/** Rounding tolerance so a $299.99 payment opens a $300 gate. */
-const GATE_TOLERANCE = 1;
+// Compare integer cents: every cent of the required payment must be received.
+const cents = (amount: number) => Math.round((amount + Number.EPSILON) * 100);
 
 export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   const paidTotal = order.payments
     .filter((p) => p.status === "paid")
-    .reduce((sum, p) => sum + p.amount, 0);
+    .reduce((sum, p) => sum + cents(p.amount), 0) / 100;
   const invoiced = order.payments.length > 0;
   const isProject = order.orderType === "project";
   const requiresDeposit = order.company?.requiresDeposit ?? true;
@@ -98,12 +98,12 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   // The close dialog's agreed deposit wins; otherwise the company-percent formula.
   const requiredTotal =
     agreed != null
-      ? Math.round(agreed)
+      ? cents(agreed) / 100
       : isProject
-        ? Math.round((value * depositPercent) / 100)
-        : Math.round(value);
-  const shortfall = Math.max(0, requiredTotal - paidTotal);
-  const open = shortfall <= GATE_TOLERANCE;
+        ? cents((value * depositPercent) / 100) / 100
+        : cents(value) / 100;
+  const shortfall = Math.max(0, cents(requiredTotal) - cents(paidTotal)) / 100;
+  const open = shortfall === 0;
   return {
     open,
     exempt: false,

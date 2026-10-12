@@ -1,10 +1,9 @@
 "use client";
 
-// Issue detail popup, same accessible-dialog pattern as tasks/TaskModal.tsx:
-// description, resolution, an assignee select, the status pill, and a Resolve
-// button that stamps resolvedAt and saves the resolution text in one step.
+// Issue record content: description, ownership, status, and resolution.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   SERVICE_ISSUE_STATUSES,
@@ -20,16 +19,14 @@ import { fmtDateUTC } from "@/lib/dates";
 import { assignServiceIssue, resolveServiceIssue, setServiceIssueStatus, updateServiceIssue } from "./actions";
 import type { IssueRowData } from "./IssueRow";
 
-export default function IssueModal({
+export default function IssueDetail({
   issue,
   users,
-  onClose,
 }: {
   issue: IssueRowData;
   users: { id: string; name: string }[];
-  onClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const [resolution, setResolution] = useState(issue.resolution ?? "");
   const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,22 +34,7 @@ export default function IssueModal({
 
   const isOpenIssue = issue.status === "open" || issue.status === "in_progress";
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
 
-  useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
 
   async function handleResolve() {
     setIsResolving(true);
@@ -64,7 +46,7 @@ export default function IssueModal({
       return;
     }
     toast({ kind: "success", message: "Issue resolved." });
-    onClose();
+    router.refresh();
   }
 
   /** Editing the resolution note on an already-resolved/closed issue - does not touch status. */
@@ -81,33 +63,8 @@ export default function IssueModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[8vh]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="issue-modal-title"
-        tabIndex={-1}
-        className="card w-full max-w-lg space-y-4 shadow-[var(--shadow-card-hover)] outline-none"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id="issue-modal-title" className="min-w-0 text-base font-semibold text-ink">
-            {issue.title}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray transition-colors hover:bg-hover hover:text-ink"
-          >
-            ✕
-          </button>
-        </div>
+    <div className="card space-y-6">
+
 
         <div className="flex flex-wrap items-center gap-1 text-xs text-gray">
           {issue.company ? (
@@ -115,7 +72,7 @@ export default function IssueModal({
               {issue.company.name}
             </Link>
           ) : (
-            <span className="empty-value">not linked to a company</span>
+            <span className="empty-value">not linked to a business</span>
           )}
           {issue.location && (
             <>
@@ -151,6 +108,7 @@ export default function IssueModal({
               options={SERVICE_ISSUE_STATUSES}
               action={(next) => setServiceIssueStatus(issue.id, next)}
               colorMap={SERVICE_ISSUE_STATUS_COLORS}
+              ariaLabel="Change issue status"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -176,6 +134,7 @@ export default function IssueModal({
           <textarea
             value={resolution}
             onChange={(e) => setResolution(e.target.value)}
+            aria-label="Resolution note"
             rows={3}
             placeholder="How was this resolved?"
             className="input-klyne w-full"
@@ -201,7 +160,6 @@ export default function IssueModal({
             </button>
           )}
         </div>
-      </div>
     </div>
   );
 }

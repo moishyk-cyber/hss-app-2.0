@@ -29,7 +29,7 @@ export function parseListQuery(
   fields: ReadonlyArray<ListField>,
   searchParams: Record<string, string | string[] | undefined>
 ): ParsedListQuery {
-  const known = new Set(fields.map((f) => f.key));
+  const known = new Set(fields.filter(f => f.sortable !== false).map((f) => f.key));
 
   const rawSort = typeof searchParams.sort === "string" ? searchParams.sort : "";
   const [sortKeyRaw, sortDirRaw] = rawSort.split(":");
@@ -40,7 +40,11 @@ export function parseListQuery(
   for (const field of fields) {
     if (field.filterable === false) continue;
     const raw = searchParams[`f_${field.key}`];
-    if (typeof raw === "string" && raw !== "") filters[field.key] = raw;
+    if (typeof raw !== "string" || raw === "") continue;
+    if (field.type === "date" && (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(raw)) || new Date(raw).toISOString().slice(0,10) !== raw)) continue;
+    if (field.type === "number" && !Number.isFinite(Number(raw))) continue;
+    if (field.type === "enum" && !field.options?.some(option => option.value === raw)) continue;
+    filters[field.key] = raw;
   }
 
   return { sortKey, sortDir, filters };

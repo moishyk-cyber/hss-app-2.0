@@ -83,6 +83,16 @@ export function parseMoney(raw: string): number | null {
   return Number.isFinite(n) ? roundCents(n) : NaN;
 }
 
+/** Currency while typing: preserve a trailing decimal and unfinished cents. */
+export function formatMoneyDraft(raw: string): string {
+  if (raw === "") return "";
+  const match = /^(-?)(\d*)(\.?)(\d*)$/.exec(raw);
+  if (!match) return raw;
+  const [, sign, whole, dot, fraction] = match;
+  const grouped = (whole || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}$${grouped}${dot}${fraction}`;
+}
+
 /** "$1,234.56" / "$1,234" - fixed locale so server and client render identically. */
 export function fmtUSD(n: number, opts?: { cents?: boolean }): string {
   const showCents = opts?.cents ?? !Number.isInteger(roundCents(n));

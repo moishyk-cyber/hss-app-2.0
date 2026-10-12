@@ -49,8 +49,8 @@ export function RangePicker() {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <label className="flex flex-col gap-1">
+    <div className="dashboard-range">
+      <label className="dashboard-range-field">
         <span className="text-xs font-medium text-gray-dark">Range</span>
         <select
           className="input-klyne"
@@ -66,7 +66,7 @@ export function RangePicker() {
         </select>
       </label>
 
-      <label className="flex flex-col gap-1">
+      <label className="dashboard-range-field">
         <span className="text-xs font-medium text-gray-dark">From</span>
         <input
           type="date"
@@ -76,7 +76,7 @@ export function RangePicker() {
         />
       </label>
 
-      <label className="flex flex-col gap-1">
+      <label className="dashboard-range-field">
         <span className="text-xs font-medium text-gray-dark">To</span>
         <input
           type="date"
@@ -91,7 +91,7 @@ export function RangePicker() {
           Clear dates
         </button>
       )}
-      {isPending && <Spinner className="mb-2.5 text-gray" />}
+      {isPending && <Spinner className="text-gray" />}
     </div>
   );
 }

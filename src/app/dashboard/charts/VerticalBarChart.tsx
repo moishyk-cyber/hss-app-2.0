@@ -14,8 +14,8 @@ export function VerticalBarChart({
   color?: string;
   ariaLabel?: string;
 }) {
-  const width = 560;
-  const height = 220;
+  const width = 400;
+  const height = 180;
   const padTop = 22;
   const padBottom = 26;
   const padX = 6;
@@ -23,7 +23,7 @@ export function VerticalBarChart({
   const plotH = height - padTop - padBottom;
   const n = Math.max(1, data.length);
   const bandW = plotW / n;
-  const barW = Math.max(2, bandW * 0.6);
+  const barW = Math.max(2, Math.min(24, bandW * 0.4));
   const max = Math.max(1, ...data.map((d) => d.value));
 
   const gridCount = 4;
@@ -34,7 +34,7 @@ export function VerticalBarChart({
     if (d.value > (data[peakIdx]?.value ?? -Infinity)) peakIdx = i;
   });
   const latestIdx = data.length - 1;
-  const tickStep = Math.max(1, Math.ceil(data.length / 8));
+  const tickStep = Math.max(1, Math.ceil(data.length / 6));
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={ariaLabel}>
@@ -46,7 +46,7 @@ export function VerticalBarChart({
         const barH = Math.max(0, (d.value / max) * plotH);
         const y = padTop + plotH - barH;
         const showLabel = data.length > 0 && (i === peakIdx || i === latestIdx);
-        const showTick = i % tickStep === 0 || i === latestIdx;
+        const showTick = (i % tickStep === 0 && latestIdx - i >= Math.ceil(tickStep / 2)) || i === latestIdx;
         return (
           <g key={i}>
             <title>{`${d.label}: ${formatValue(d.value)}`}</title>
@@ -61,13 +61,13 @@ export function VerticalBarChart({
                 x={x + barW / 2}
                 y={Math.max(10, y - 5)}
                 textAnchor="middle"
-                className="fill-ink text-[10px] font-medium"
+                className="fill-ink text-[12px] font-medium"
               >
                 {formatValue(d.value)}
               </text>
             )}
             {showTick && (
-              <text x={x + barW / 2} y={height - 8} textAnchor="middle" className="fill-gray text-[9.5px]">
+              <text x={x + barW / 2} y={height - 8} textAnchor="middle" className="fill-gray text-[11px]">
                 {d.label}
               </text>
             )}

@@ -89,6 +89,7 @@ export default function CommentThread({ taskId }: { taskId: string }) {
       <form ref={formRef} action={handleAdd} className="flex items-center gap-2 border-t border-border p-2">
         <input
           name="body"
+          aria-label="Task comment"
           className="input-klyne flex-1 rounded-full"
           placeholder="Write a message…"
           autoComplete="off"

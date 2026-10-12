@@ -11,8 +11,11 @@
 // - Drafts survive. Everything typed autosaves to this browser, a refresh
 //   offers to restore it, and a successful submit clears it silently.
 
+import { MoneyInput } from "@/lib/MoneyInput";
+
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { BackLink } from "@/lib/BackLink";
 import { FormAlert, PendingButton } from "@/lib/ui";
 import { readStoredUserId, storeUserId } from "@/lib/identityClient";
 import { BusinessCombobox } from "../companies/BusinessCombobox";
@@ -1252,13 +1255,11 @@ export function IntakeForm({
                       {/* Price it once, on the call, when the price is already known. */}
                       <label className="block w-24">
                         <span className="sr-only">Unit price</span>
-                        <input
+                        <MoneyInput
                           name="itemUnitPrice"
-                          type="number"
                           min="0"
-                          step="0.01"
                           value={row.unitPrice}
-                          onChange={(e) => updateItem(row.key, { unitPrice: e.target.value })}
+                          onValueChange={(unitPrice) => updateItem(row.key, { unitPrice })}
                           onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
                           aria-invalid={priceBad}
                           placeholder="$ each"
@@ -1345,35 +1346,37 @@ export function IntakeForm({
               unit. Either lands on the new record's Files tab (kind "drawing"
               for projects, "other" for orders - see saveDrawingAttachment).
             */}
-            <div className="mt-4">
-              <span className={labelClass}>
-                {orderType === "project" ? "Drawing or attachment" : "Attachment"}
-              </span>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="sr-only">
-                    {orderType === "project" ? "Link to the drawing" : "Link to the attachment"}
-                  </span>
+            <div className="intake-attachment mt-4" role="group" aria-labelledby="attachment-heading">
+              <div className="mb-3 flex items-baseline gap-2">
+                <span id="attachment-heading" className="text-xs font-medium text-ink">
+                  {orderType === "project" ? "Drawing or attachment" : "Attachment"}
+                </span>
+                <span className="text-xs text-gray">Optional</span>
+              </div>
+              <div className="intake-attachment-options">
+                <label className="block min-w-0">
+                  <span className={labelClass}>Paste a link</span>
                   <input
                     name="drawingLink"
                     type="url"
-                    placeholder="Paste a link (Google Drive, Dropbox, etc.)"
+                    placeholder="Google Drive, Dropbox, or another URL"
+                    aria-describedby="attachment-help"
                     className={inputClass}
                   />
                 </label>
-                <label className="block">
-                  <span className="sr-only">
-                    {orderType === "project" ? "Upload the drawing" : "Upload a file"}
-                  </span>
+                <span className="intake-attachment-or" aria-hidden="true">or</span>
+                <label className="block min-w-0">
+                  <span className={labelClass}>Upload a file</span>
                   <input
                     name="drawingFile"
                     type="file"
                     accept="application/pdf,image/*"
-                    className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-hover file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-ink`}
+                    aria-describedby="attachment-help"
+                    className={`${inputClass} intake-attachment-file`}
                   />
                 </label>
               </div>
-              <span className="mt-1 block text-xs text-gray">
+              <span id="attachment-help" className="mt-2 block text-xs text-gray">
                 {orderType === "project"
                   ? "A PDF or a link both work - leave blank if there’s no drawing yet."
                   : "A PDF or image (the client’s PO, a quote, a photo) or a link - leave blank if there’s nothing to attach."}
@@ -1591,6 +1594,8 @@ export function IntakeForm({
             <span className="mx-1.5 text-gray">·</span>
             <span className={clientReady ? "" : "text-gray"}>{clientLabel}</span>
           </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <BackLink href="/pipeline" label="Cancel" className="btn"/>
           {blockReason == null ? (
             <PendingButton
               className="btn btn-primary active:scale-[0.99]"
@@ -1614,6 +1619,7 @@ export function IntakeForm({
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
     </form>

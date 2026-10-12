@@ -2,14 +2,15 @@
 
 // Shared confirmation dialog for actions that are hard to reverse: marking a
 // payment paid, changing someone's role, deactivating a teammate, closing a
-// deal. Same accessible-dialog pattern as tasks/TaskModal.tsx (role=dialog,
-// Escape, click-outside, focus on open, body scroll lock).
+// deal. Keyboard containment, Escape, scroll lock, and return focus use the
+// shared useDialogAccessibility hook.
 //
 // Deliberately does NOT import from ./ui - ui.tsx imports this file for its
 // confirm-before-run selects, and a cycle between the two client bundles is
 // asking for trouble.
 
-import { useEffect, useId, useRef } from "react";
+import { useId, useRef } from "react";
+import { useDialogAccessibility } from "./useDialogAccessibility";
 import { createPortal } from "react-dom";
 
 export function ConfirmDialog({
@@ -38,20 +39,7 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, onClose]);
+  useDialogAccessibility(panelRef, open, onClose, pending);
 
   if (!open || typeof document === "undefined") return null;
 

@@ -13,8 +13,8 @@ export function GroupedBarChart({
   formatValue?: (v: number) => string;
   ariaLabel?: string;
 }) {
-  const width = 560;
-  const height = 220;
+  const width = 400;
+  const height = 180;
   const padTop = 22;
   const padBottom = 26;
   const padX = 6;
@@ -22,7 +22,7 @@ export function GroupedBarChart({
   const plotH = height - padTop - padBottom;
   const n = Math.max(1, data.length);
   const bandW = plotW / n;
-  const groupW = bandW * 0.6;
+  const groupW = Math.min(44, bandW * 0.5);
   const barW = Math.max(2, (groupW - 2) / 2);
   const max = Math.max(1, ...data.map((d) => Math.max(d.a, d.b)));
 
@@ -70,7 +70,7 @@ export function GroupedBarChart({
                 </>
               )}
               {showTick && (
-                <text x={groupX + barW + 1} y={height - 8} textAnchor="middle" className="fill-gray text-[9.5px]">
+                <text x={groupX + barW + 1} y={height - 8} textAnchor="middle" className="fill-gray text-[11px]">
                   {d.label}
                 </text>
               )}

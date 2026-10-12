@@ -37,7 +37,7 @@ export function linkedHref(type: string | null | undefined, id: string | null | 
     case "company":
       return `/companies/${id}`;
     case "contact":
-      return `/contacts/${id}/edit`;
+      return `/contacts/${id}`;
     case "line_item":
       return `/rfq#li-${id}`;
     default:

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/lib/IntentLink";
 import type { ReactNode } from "react";
 
 export type QueueRow = {

@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { getActiveUsers } from "@/lib/users";
+import { DetailHeader } from "@/lib/PageLayout";
 import { prisma } from "@/lib/prisma";
 import { IntakeForm } from "./IntakeForm";
 
@@ -36,30 +37,15 @@ export default async function IntakePage({
       select: { id: true, firstName: true, lastName: true, companyId: true },
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    getActiveUsers(),
   ]);
 
   const preselected = companyId ? companies.find((c) => c.id === companyId) : undefined;
 
   return (
     <div>
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="page-title">New Intake</h1>
-          <p className="page-sub">
-            {preselected
-              ? `New request for ${preselected.name}.`
-              : "Take the call and capture it here - projects and anything needing a price go to the pipeline, priced re-orders become orders."}
-          </p>
-        </div>
-        <Link href="/pipeline" className="btn active:scale-[0.99]">
-          View pipeline
-        </Link>
-      </div>
+      <DetailHeader backHref="/pipeline" backLabel="Back to Pipeline" title="New intake" subtitle={preselected ? `New request for ${preselected.name}.` : "Take the call and capture it here — projects and requests needing a price go to the pipeline; priced re-orders become orders."}/>
+      <div className="mb-6"/>
 
       <IntakeForm
         companies={companies}

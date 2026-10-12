@@ -11,6 +11,9 @@
 // in as initialCompanyId / initialOrderId).
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BackLink } from "@/lib/BackLink";
+import { FormFooter } from "@/lib/PageLayout";
 import { FormAlert, PendingButton } from "@/lib/ui";
 import { SearchCombobox, type ComboboxOption } from "@/lib/Combobox";
 import { TASK_PRIORITIES } from "@/lib/constants";
@@ -133,6 +136,7 @@ export default function LogIssueForm({
   initialCompanyId,
   initialOrderId,
   startOpen = false,
+  fullPage = false,
 }: {
   companies: ServiceCompanyOption[];
   users: { id: string; name: string }[];
@@ -141,7 +145,9 @@ export default function LogIssueForm({
   initialOrderId?: string | null;
   /** Force the form open on mount even with no prefill (used inline, e.g. OrderIssuesPanel). */
   startOpen?: boolean;
+  fullPage?: boolean;
 }) {
+  const router = useRouter();
   const initialCompany = useMemo(() => {
     if (initialCompanyId) return companies.find((c) => c.id === initialCompanyId) ?? null;
     if (initialOrderId) return companies.find((c) => c.orders.some((o) => o.id === initialOrderId)) ?? null;
@@ -245,6 +251,7 @@ export default function LogIssueForm({
       return;
     }
     toast({ kind: "success", message: "Issue logged." });
+    if (fullPage) { router.push("/service"); router.refresh(); return; }
     resetPickers();
     if (!startOpen) setOpen(false);
   }
@@ -263,8 +270,8 @@ export default function LogIssueForm({
 
   return (
     <div className="card space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="section-label">Log an issue</h2>
+      {!fullPage && <div className="flex items-center justify-between">
+        {!fullPage && <h2 className="section-label">Log an issue</h2>}
         {!startOpen && (
           <button
             type="button"
@@ -275,13 +282,57 @@ export default function LogIssueForm({
             ✕
           </button>
         )}
-      </div>
+      </div>}
 
       {error && <FormAlert>{error}</FormAlert>}
 
       <form key={formKey} action={handleSubmit} className="space-y-4">
+        {/* ---- 2. The issue itself ---- */}
+        <div className="space-y-3">
+          <label className="block">
+            <span className="field-label">Title *</span>
+            <input name="title" required className="input-klyne w-full" placeholder="What went wrong?" />
+          </label>
+
+          <label className="block">
+            <span className="field-label">Description</span>
+            <textarea name="description" rows={3} className="input-klyne w-full" />
+          </label>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="field-label">Priority</span>
+              <select name="priority" defaultValue="medium" className="input-klyne w-full">
+                {TASK_PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="field-label">Date</span>
+              <input type="date" name="reportedAt" defaultValue={ymdToday()} className="input-klyne w-full" />
+            </label>
+
+            <label className="block">
+              <span className="field-label">Assigned to</span>
+              <select name="assigneeId" defaultValue={defaultAssigneeId ?? ""} className="input-klyne w-full">
+                <option value="">Unassigned</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="text-xs text-gray-dark">Assignment starts with your team’s service default; change it here if someone else will handle the issue.</p>
+        </div>
+
         {/* ---- 1. Who is this about: business -> location -> order -> item ---- */}
-        <div key={pickersKey} className="space-y-2">
+        <details className="border-t border-border pt-4" open={Boolean(initialCompany)}><summary className="cursor-pointer font-medium">Link a business, order or item (optional)</summary><div key={pickersKey} className="space-y-2 mt-4">
           <p className="text-[13px] text-gray-dark">Who is this about? Search the business first.</p>
 
           <SearchLevel
@@ -345,52 +396,10 @@ export default function LogIssueForm({
               Can&rsquo;t find the business? You can still log the issue without linking it.
             </p>
           ) : null}
-        </div>
+        </div></details>
 
-        {/* ---- 2. The issue itself ---- */}
-        <div className="space-y-3 border-t border-border pt-4">
-          <label className="block">
-            <span className="field-label">Title *</span>
-            <input name="title" required className="input-klyne w-full" placeholder="What went wrong?" />
-          </label>
-
-          <label className="block">
-            <span className="field-label">Description</span>
-            <textarea name="description" rows={3} className="input-klyne w-full" />
-          </label>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="field-label">Priority</span>
-              <select name="priority" defaultValue="medium" className="input-klyne w-full">
-                {TASK_PRIORITIES.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="field-label">Date</span>
-              <input type="date" name="reportedAt" defaultValue={ymdToday()} className="input-klyne w-full" />
-            </label>
-
-            <label className="block">
-              <span className="field-label">Assigned to</span>
-              <select name="assigneeId" defaultValue={defaultAssigneeId ?? ""} className="input-klyne w-full">
-                <option value="">Unassigned</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 pt-1">
+        <FormFooter>
+          {fullPage && <BackLink href="/service" label="Cancel" className="btn"/>}
           {!startOpen && (
             <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>
               Cancel
@@ -399,7 +408,7 @@ export default function LogIssueForm({
           <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Logging…">
             Log issue
           </PendingButton>
-        </div>
+        </FormFooter>
       </form>
     </div>
   );

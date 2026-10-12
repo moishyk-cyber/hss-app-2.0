@@ -1,10 +1,10 @@
+import { getActiveUsers } from "@/lib/users";
 import { can } from "@/lib/permissionsServer";
 import { notFound } from "next/navigation";
 import { BadgeSelect } from "@/lib/ui";
 import { UserSelect } from "@/lib/UserSelect";
 import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements";
 import { getSettings } from "@/lib/settings";
-import { prisma } from "@/lib/prisma";
 import { FLOW_STEPS } from "@/lib/ballInCourt";
 import { getStageHolders } from "@/lib/courtHolders";
 import { setFieldRequired, setServiceDefaultAssignee } from "./actions";
@@ -28,7 +28,7 @@ export default async function AdminSettingsPage() {
   const [requirements, settings, users, stageHolders] = await Promise.all([
     getFieldRequirements(),
     getSettings(["service.defaultAssigneeId"]),
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getActiveUsers(),
     getStageHolders(),
   ]);
   const byEntity = new Map<string, typeof REQUIRABLE_FIELDS[number][]>();

@@ -9,11 +9,15 @@
 // from them, and the invoices below are added by hand.
 
 import { useState } from "react";
-import { PAYMENT_TERMS, QUOTE_STATUSES, QUOTE_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { updateOrderTermsText, setOrderQuote } from "../actions";
-import { BadgeSelect, PendingButton } from "@/lib/ui";
+import { PAYMENT_TERMS, labelFor } from "@/lib/constants";
+import { updateOrderTermsText } from "@/lib/workflowActions";
+import { PendingButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { fmtDate } from "../utils";
+import { QuoteStatusControl, requestQuote, type SavedQuote } from "./QuoteStatusControl";
+import { ValidationDialog } from "@/lib/ValidationDialog";
+import { highlightSection } from "@/lib/SectionLink";
+import { useWorkflowSelection } from "@/lib/WorkflowSelection";
 
 type TermsCardProps = {
   orderId: string;
@@ -23,25 +27,41 @@ type TermsCardProps = {
   quoteStatus: string;
   quoteUrl: string | null;
   quoteSentAt: Date | null;
+  showQuote?: boolean;
+  showTerms?: boolean;
 };
 
 export default function TermsCard({
   orderId,
   termsNotes,
   paymentTerms,
-  quoteStatus,
-  quoteUrl,
-  quoteSentAt,
+  quoteStatus: savedStatus,
+  quoteUrl: savedUrl,
+  quoteSentAt: savedSentAt,
+  showQuote = true,
+  showTerms = true,
 }: TermsCardProps) {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const selection = useWorkflowSelection();
+  const signature = JSON.stringify([savedStatus, savedUrl, savedSentAt]);
+  const [localQuote, setLocalQuote] = useState<{ base: string; quote: SavedQuote } | null>(null);
+  const current = localQuote?.base === signature ? localQuote.quote : null;
+  const quoteStatus = current?.quoteStatus ?? savedStatus;
+  const quoteUrl = current ? current.quoteUrl : savedUrl;
+  const quoteSentAt = current ? current.quoteSentAt ? new Date(current.quoteSentAt) : null : savedSentAt;
+  function applyQuote(quote: SavedQuote) { setLocalQuote({ base: signature, quote }); selection?.recordQuoteStatus(quote.quoteStatus); }
 
   // Orders closed before terms became free text carry a PAYMENT_TERMS value
   // instead - show its label so nothing old reads as "not set".
   const initialText = termsNotes || (paymentTerms ? labelFor(PAYMENT_TERMS, paymentTerms) : "");
+  const [text, setText] = useState(initialText);
+  const [missingTerms, setMissingTerms] = useState(false);
 
   async function handleSave(formData: FormData) {
-    const result = await updateOrderTermsText(orderId, String(formData.get("termsNotes") ?? ""));
+    const terms = String(formData.get("termsNotes") ?? "");
+    if (!terms.trim()) { setMissingTerms(true); return; }
+    const result = await updateOrderTermsText(orderId, terms);
     if (result.ok) {
       setError(null);
       toast({ kind: "success", message: "Terms saved" });
@@ -50,20 +70,46 @@ export default function TermsCard({
     }
   }
 
-  async function handleQuoteStatusChange(next: string) {
-    return setOrderQuote(orderId, { quoteStatus: next, quoteUrl: quoteUrl ?? "" });
-  }
-
   async function handleQuoteLinkSave(formData: FormData) {
     const url = String(formData.get("quoteUrl") ?? "");
-    const result = await setOrderQuote(orderId, { quoteStatus, quoteUrl: url });
-    if (!result.ok) toast({ kind: "error", message: result.message });
-    else toast({ kind: "success", message: "Quote link saved" });
+    try {
+      const quote = await requestQuote(orderId, { quoteStatus, quoteUrl: url });
+      applyQuote(quote);
+      toast({ kind: "success", message: "Quote link saved" });
+    } catch (error) { toast({ kind: "error", message: error instanceof Error ? error.message : "Could not save the quote link." }); }
   }
 
   return (
-    <div className="card space-y-4">
-      <form action={handleSave} className="space-y-3">
+    <div hidden={!showQuote && !showTerms} className="space-y-4">
+      <section hidden={!showQuote} aria-label="Customer quote" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Customer quote</h3>
+        </div>
+        <QuoteStatusControl orderId={orderId} value={quoteStatus} quoteUrl={quoteUrl} onSaved={applyQuote} />
+        <p className="text-sm text-gray-dark">
+          {quoteStatus === "not_needed" ? "No customer quote is required for this order. Continue to the agreed terms and invoices." : quoteStatus === "accepted" ? "Customer approval is recorded. This step is complete." : quoteStatus === "sent" ? "Waiting for customer approval. When they approve, change the status above to Quote Accepted to complete this step." : "Prepare the quote in your quoting tool and send it to the customer. Save a link below, then change the status above to Quote Sent. Once the customer approves, select Quote Accepted."}
+        </p>
+        {!["not_needed", "accepted"].includes(quoteStatus) ? <p className="text-xs text-gray-dark">These statuses record what happened. This app does not create or email the quote; saving a link alone does not complete the step.</p> : null}
+        {quoteSentAt && <span className="text-xs text-gray-dark">Sent {fmtDate(quoteSentAt)}</span>}
+        <form action={handleQuoteLinkSave} className="flex flex-wrap items-end gap-2">
+          <label className="min-w-0 flex-1">
+          <span className="field-label">Quote document link (optional)</span>
+          <input
+            type="url"
+            name="quoteUrl"
+            defaultValue={quoteUrl ?? ""}
+            placeholder="https://…"
+            className="input-klyne w-full text-sm"
+          />
+          </label>
+          <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
+            Save link
+          </PendingButton>
+        </form>
+      </section>
+
+      {missingTerms ? <ValidationDialog issues={[{ field: "termsNotes", message: "Enter the terms agreed with the customer." }]} onClose={() => setMissingTerms(false)} onFix={() => { setMissingTerms(false); requestAnimationFrame(() => highlightSection("#order-terms")); }} /> : null}
+      <form id="order-terms" hidden={!showTerms} action={handleSave} className={`space-y-3 ${showQuote ? "border-t border-border pt-4" : ""}`}>
         <div className="section-label">Terms</div>
         {error && (
           <div role="alert" className="banner-alert">
@@ -71,9 +117,12 @@ export default function TermsCard({
           </div>
         )}
         <textarea
+          id="terms-notes"
+          aria-label="Agreed order terms"
           name="termsNotes"
           rows={3}
-          defaultValue={initialText}
+          value={text}
+          onChange={event => setText(event.target.value)}
           placeholder="e.g. 50% deposit, balance before delivery. Net 30 for the balance."
           className="input-klyne w-full"
         />
@@ -84,28 +133,7 @@ export default function TermsCard({
         </div>
       </form>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
-        <span className="field-label">Quote</span>
-        <BadgeSelect
-          value={quoteStatus}
-          options={QUOTE_STATUSES}
-          colorMap={QUOTE_STATUS_COLORS}
-          action={handleQuoteStatusChange}
-        />
-        {quoteSentAt && <span className="text-xs text-gray-dark">Sent {fmtDate(quoteSentAt)}</span>}
-        <form action={handleQuoteLinkSave} className="flex items-center gap-2">
-          <input
-            type="url"
-            name="quoteUrl"
-            defaultValue={quoteUrl ?? ""}
-            placeholder="https://… quote link"
-            className="input-klyne w-56 px-2 py-1 text-xs"
-          />
-          <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
-            Save link
-          </PendingButton>
-        </form>
-      </div>
+
     </div>
   );
 }

@@ -1,126 +1,117 @@
 "use client";
-
-import { useState, useSyncExternalStore } from "react";
-import { TASK_STATUSES, labelFor } from "@/lib/constants";
-import TaskRow, { type TaskRowData } from "./TaskRow";
-
-const IDENTITY_KEY = "hss.salespersonId";
-
-function subscribeIdentity(callback: () => void) {
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
-}
-function getIdentitySnapshot() {
-  return window.localStorage.getItem(IDENTITY_KEY);
-}
-function getIdentityServerSnapshot() {
-  return null;
-}
-
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { TASK_STATUSES, TASK_PRIORITIES, labelFor } from "@/lib/constants";
+import { SortHeader, TableRows } from "@/lib/CollectionViews";
+import { BadgeSelect } from "@/lib/ui";
+import { fmtDateUTC } from "@/lib/dates";
+import { TaskCheckbox } from "./TaskCheckbox";
+import { setTaskStatus } from "./actions";
+import { linkedHref, TYPE_LABELS, isOverdue } from "./lib";
+import type { TaskRowData } from "./TaskRow";
 export default function TaskListClient({
   tasks,
   statusFilter,
-  users,
+  currentUserId,
 }: {
   tasks: TaskRowData[];
-  /** A specific status chip selected up top (e.g. "in_progress"), or null for "All". */
   statusFilter: string | null;
   users: { id: string; name: string }[];
+  currentUserId: string | null;
 }) {
-  const [mineOnly, setMineOnly] = useState(false);
-  // Google Tasks-style: completed items collapse out of the way, expanded on click.
-  // Filtering straight to "Done" up top is the one case where seeing them right
-  // away makes more sense than making the user open the section themselves.
-  const [showCompleted, setShowCompleted] = useState(statusFilter === "done");
-  // Reads localStorage without the effect+setState anti-pattern; automatically
-  // reconciles the SSR (null) snapshot with the real client value after hydration.
-  const salespersonId = useSyncExternalStore(subscribeIdentity, getIdentitySnapshot, getIdentityServerSnapshot);
-
-  const hasIdentity = !!salespersonId;
-  const applyMine = mineOnly && hasIdentity;
-
-  const filtered = tasks
-    .filter((t) => (applyMine ? t.assigneeId === salespersonId : true))
-    .filter((t) => (statusFilter ? t.status === statusFilter : true));
-
-  const activeTasks = filtered.filter((t) => t.status !== "done");
-  const completedTasks = filtered.filter((t) => t.status === "done");
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {/* The hint only appears once it's relevant: "My tasks" was clicked but
-            nobody is signed in via the sidebar (Sep 2 QA: it used to lecture
-            before a task was even opened). */}
-        {mineOnly && !hasIdentity && (
-          <span id="mine-tasks-hint" className="text-xs text-gray">
-            Pick your name under &ldquo;Working as&rdquo; in the sidebar to see just your tasks
-          </span>
-        )}
-        <button type="button" className={!mineOnly ? "chip chip-active" : "chip"} onClick={() => setMineOnly(false)}>
-          All tasks
-        </button>
-        <button
-          type="button"
-          className={mineOnly ? "chip chip-active" : "chip"}
-          aria-describedby={mineOnly && !hasIdentity ? "mine-tasks-hint" : undefined}
-          onClick={() => setMineOnly(true)}
-        >
-          My tasks
-        </button>
+  const params = useSearchParams();
+  const rows = tasks.filter(
+    (t) =>
+      (params.get("mine") !== "1" ||
+        !currentUserId ||
+        t.assigneeId === currentUserId) &&
+      (!statusFilter || t.status === statusFilter),
+  );
+  if (!rows.length)
+    return (
+      <div className="empty-state">
+        No tasks match this view. Adjust the filters or add a task above.
       </div>
-
-      {filtered.length === 0 ? (
-        <div className="empty-state">
-          {applyMine
-            ? "No tasks assigned to you right now."
-            : "No tasks yet. Add one above - tasks also get added automatically as orders and customer requests move through fulfillment."}
-        </div>
-      ) : (
-        <div className="card card-flush overflow-hidden">
-          {activeTasks.length === 0 ? (
-            <div className="p-5">
-              <div className="empty-state">
-                {statusFilter
-                  ? `Nothing ${labelFor(TASK_STATUSES, statusFilter).toLowerCase()} right now.`
-                  : "Nothing active - everything's done."}
-              </div>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {activeTasks.map((task) => (
-                <TaskRow key={task.id} task={task} users={users} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {completedTasks.length > 0 && (
-        <div className="card card-flush overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowCompleted((s) => !s)}
-            className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-hover"
-            aria-expanded={showCompleted}
-          >
-            <span className="section-label !mb-0 flex items-center gap-2">
-              Completed
-              <span className="badge badge-gray">{completedTasks.length}</span>
-            </span>
-            <span className={`text-gray transition-transform ${showCompleted ? "rotate-180" : ""}`} aria-hidden>
-              ▾
-            </span>
-          </button>
-          {showCompleted && (
-            <div className="divide-y divide-border border-t border-border">
-              {completedTasks.map((task) => (
-                <TaskRow key={task.id} task={task} users={users} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+    );
+  return (
+    <div className="table-scroll">
+      <table className="table-klyne min-w-[950px]">
+        <thead>
+          <tr>
+            <SortHeader field="title">Task</SortHeader>
+            <SortHeader field="status">Status</SortHeader>
+            <SortHeader field="priority">Priority</SortHeader>
+            <SortHeader field="assignee">Assignee</SortHeader>
+            <SortHeader field="dueDate">Due date</SortHeader>
+            <SortHeader field="type">Type / related record</SortHeader>
+            <th scope="col">Details</th>
+          </tr>
+        </thead>
+        <TableRows columns={7}>
+          {rows.map((task) => {
+            const href = linkedHref(task.linkedType, task.linkedId);
+            return (
+              <tr key={task.id}>
+                <td>
+                  <div className="flex items-center gap-2">
+                    <TaskCheckbox
+                      taskId={task.id}
+                      done={task.status === "done"}
+                      undoStatus={task.status}
+                    />
+                    <Link
+                      className={`font-medium hover:underline ${task.status === "done" ? "line-through text-gray-dark" : ""}`}
+                      href={`/tasks/${task.id}`}
+                    >
+                      {task.title}
+                    </Link>
+                    {task.subtasks.length > 0 && (
+                      <span className="group-count">
+                        {
+                          task.subtasks.filter((t) => t.status === "done")
+                            .length
+                        }
+                        /{task.subtasks.length}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <BadgeSelect
+                    value={task.status}
+                    colorMap={{
+                      not_started: "badge-gray",
+                      in_progress: "badge-blue",
+                      done: "badge-green",
+                      stuck: "badge-red",
+                    }}
+                    options={TASK_STATUSES}
+                    action={(status) => setTaskStatus(task.id, status)}
+                    ariaLabel={`Status for ${task.title}`}
+                  />
+                </td>
+                <td>{labelFor(TASK_PRIORITIES, task.priority)}</td>
+                <td>{task.assigneeName ?? "Unassigned"}</td>
+                <td
+                  className={`whitespace-nowrap ${isOverdue(task.dueDate, task.status) ? "text-red" : ""}`}
+                >
+                  {task.dueDate ? fmtDateUTC(task.dueDate) : "—"}
+                </td>
+                <td>
+                  {href ? (
+                    <Link href={href} className="hover:underline">
+                      {task.linkedLabel ?? TYPE_LABELS[task.linkedType ?? ""]}
+                    </Link>
+                  ) : (
+                    task.type.replaceAll("_", " ")
+                  )}
+                </td>
+                <td><Link href={`/tasks/${task.id}`} className="btn btn-sm whitespace-nowrap" aria-label={`View details for ${task.title}`}>View details</Link></td>
+              </tr>
+            );
+          })}
+        </TableRows>
+      </table>
     </div>
   );
 }

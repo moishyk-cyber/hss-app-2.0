@@ -1,30 +1,30 @@
+import { Suspense } from "react";
+import { getActiveUsers } from "@/lib/users";
+import { DetailHeader } from "@/lib/PageLayout";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { CloseoutControl } from "./CloseoutControl";
 import { StatusOwnerControls } from "./OrderHeaderControls";
 import PaymentsSection from "./PaymentsSection";
-import PurchaseOrdersSection from "./PurchaseOrdersSection";
-import DeliverySection from "./DeliverySection";
-import FilesSection, { type FileDocData } from "./FilesSection";
 import ItemStatusChips from "./ItemStatusChips";
 import { OverviewStrip } from "./OverviewStrip";
-import OrderIssuesPanel from "./OrderIssuesPanel";
 import { OrderTabs, type TabKey } from "./OrderTabs";
 import { OrderLocationField } from "./OrderLocationField";
-import { EditableCompanyField, EditableContactField } from "./OrderPartyFields";
-import type { IssueRowData } from "../../service/IssueRow";
-import { FlowStepper } from "@/lib/FlowStepper";
-import { BackLink } from "@/lib/BackLink";
+import { DealProgress } from "@/app/pipeline/DealProgress";
+import { PricingItems } from "@/app/pipeline/PricingItems";
+import { WorkflowSelectionProvider, WorkflowPanel } from "@/lib/WorkflowSelection";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { fullFlowSteps, hasOrderTerms, orderBall } from "@/lib/ballInCourt";
+import { hasOrderTerms, orderBall } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder } from "@/lib/courtHolders";
-import { ActivityHistory } from "@/lib/ActivityHistory";
-import { evaluatePaymentGate, canCompleteOrder, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
+import { ActivityHistory, getActivityEntries } from "@/lib/ActivityHistory";
+import { startOrderSupportingReads } from "./supportingData";
+import { OrderFiles, OrderService, OrderPurchasing, OrderDelivery, OrderCompanyEditor, OrderContactEditor, SectionLoading } from "./SupportingSections";
+import { evaluatePaymentGate, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
+import { dealJourney, orderCanClose } from "@/lib/dealWorkflow";
 import { plainMoney } from "@/lib/money";
-import { uploadsConfigured } from "@/lib/storage";
-import { ActionButton, InlineEditField } from "@/lib/ui";
+import { InlineEditField } from "@/lib/ui";
 import {
-  markOrderComplete,
   setOrderClientPoNumber,
   setOrderDeliveryAddress,
   setOrderJobId,
@@ -37,7 +37,8 @@ export const dynamic = "force-dynamic";
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [orderRow, vendors, users, companies, contacts] = await Promise.all([
+  // Start the essential record first, ahead of supporting reads in the pool.
+  const core = Promise.all([
     prisma.order.findUnique({
       where: { id },
       include: {
@@ -61,27 +62,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         contact: true,
         owner: true,
         payments: true,
-        // Delivery legs drive the Delivery tab, and the status/complete rules
-        // read them too (see @/lib/flowRules).
-        deliveries: {
-          include: {
-            lineItems: {
-              select: { id: true, name: true, qty: true, deliveryStatus: true },
-              orderBy: { createdAt: "asc" },
-            },
-            purchaseOrder: {
-              select: {
-                id: true,
-                poNumber: true,
-                supplier: { select: { name: true, deliveryAddress: true } },
-              },
-            },
-          },
-          orderBy: { createdAt: "asc" },
-        },
+        deliveries: { orderBy: { createdAt: "asc" } },
         lineItems: {
           include: {
-            assignee: { select: { id: true, name: true } },
             // Both feed the item-status drill-down: which PO an item sits on,
             // and which delivery leg is carrying it.
             purchaseOrder: { select: { id: true, poNumber: true } },
@@ -89,101 +72,27 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           },
           orderBy: { createdAt: "asc" },
         },
-        purchaseOrders: {
-          include: {
-            supplier: { select: { name: true, deliveryAddress: true } },
-            lineItems: { select: { id: true, name: true, qty: true } },
-            // The PO's delivery: read-only on this tab, except through the
-            // acknowledge dialog that creates (or re-edits) it.
-            deliveries: {
-              select: {
-                id: true,
-                mode: true,
-                status: true,
-                trackingCarrier: true,
-                trackingUrl: true,
-                expectedDelivery: true,
-                trucker: true,
-                pickupAddress: true,
-                scheduledDeliveryDate: true,
-                shipCost: true,
-                chargedToCustomer: true,
-                deliveryContactPhone: true,
-                notes: true,
-              },
-              orderBy: { createdAt: "asc" },
-            },
-          },
-          orderBy: { createdAt: "asc" },
-        },
+        purchaseOrders: { orderBy: { createdAt: "asc" } },
       },
-    }),
-    prisma.company.findMany({
-      where: { type: { in: ["supplier", "vendor"] } },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    // For the Business/Contact/Location pencil-edit fields: loaded whole and
-    // filtered/searched client-side, same approach as the intake form.
-    prisma.company.findMany({
-      where: { type: { in: ["customer", "lead"] } },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.contact.findMany({
-      select: { id: true, firstName: true, lastName: true, companyId: true },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    }),
+    }).then(row => row),
+    getActiveUsers(),
+    getStageHolders(),
   ]);
+  const supporting = startOrderSupportingReads(id);
+  const activity = getActivityEntries("order", id);
+  void activity.catch(() => {}); // ActivityHistory still surfaces a rejected read.
+  const [orderRow, users, holders] = await core;
 
   // Money columns are Decimal; this row (and slices of it) is handed to the
   // client sections below, which only take plain numbers.
   const order = plainMoney(orderRow);
   if (!order) notFound();
 
-  // Document is polymorphic (no Prisma relation to PurchaseOrder), so its POs'
-  // attached AutoQuotes PDFs are a separate lookup by linkedId, grouped below.
-  const poIds = order.purchaseOrders.map((po) => po.id);
-
-  // The Service tab's rows (same shape /service builds) and the Files tab's
-  // documents - this order's own plus the deal's, since drawings and quotes
-  // arrive during sales and nobody should have to go hunting for them.
-  const [issues, documents, poDocuments] = await Promise.all([
-    prisma.serviceIssue.findMany({
-      where: { orderId: order.id },
-      include: {
-        company: { select: { id: true, name: true } },
-        location: { select: { id: true, name: true } },
-        order: { select: { id: true, title: true } },
-        lineItem: { select: { id: true, name: true } },
-        assignee: { select: { id: true, name: true } },
-      },
-      orderBy: { reportedAt: "desc" },
-    }),
-    prisma.document.findMany({
-      where: {
-        OR: [
-          { linkedType: "order", linkedId: order.id },
-          ...(order.opportunityId
-            ? [{ linkedType: "opportunity", linkedId: order.opportunityId }]
-            : []),
-        ],
-      },
-      orderBy: { uploadedAt: "desc" },
-    }),
-    poIds.length > 0
-      ? prisma.document.findMany({
-          where: { linkedType: "purchase_order", linkedId: { in: poIds } },
-          orderBy: { uploadedAt: "desc" },
-        })
-      : Promise.resolve([]),
-  ]);
-
   const gate = evaluatePaymentGate(order);
   // One source of truth for "what happens next" - the header stepper, the badge,
   // the primary action and the opening tab all read this (see @/lib/ballInCourt).
-  const ball = withHolder(orderBall(orderBallInput(order)), await getStageHolders());
+  const ballFacts = orderBallInput(order);
+  const ball = withHolder(orderBall(order.status === "complete" && !orderCanClose(ballFacts) ? { ...ballFacts, status: "delivered" } : ballFacts), holders);
 
   // Terms are free text (Sep 4 client decision) - the header grid shows the
   // first line, the Invoice tab holds the whole thing.
@@ -200,13 +109,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const anySent = order.purchaseOrders.some((po) => po.status === "sent");
 
-  // The nine-step journey (sales through customer service), replacing the order
-  // module's own five-step read of the same facts. Sales-side steps link back to
-  // the deal, order-side steps open the matching tab.
-  const steps = fullFlowSteps(ball.step, {
-    dealHref: order.opportunityId ? `/pipeline/${order.opportunityId}` : undefined,
-    orderHref: `/orders/${order.id}`,
-    hint: ball.hint,
+  // Both record pages use the same journey and step labels.
+  // Completed sales work is reviewed in place; order work opens its local tab.
+  const steps = dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }).map((step, index) => {
+    // Sales-side work is historical once the order exists. Review it in place.
+    if (index < 3) return { ...step, state: "complete" as const, action: undefined, checks: [{ label: index === 0 ? "Request captured and carried into this order" : index === 1 ? "Deal pricing confirmed before order creation" : "Deal won and order created", complete: true, href: index === 0 ? "#order-intake" : index === 1 ? "#line-items" : "#order-summary" }], description: index === 0 ? "Review the intake details below. Changes to the customer, delivery address and needed-by date are saved on this order." : index === 1 ? "Review the item prices below. Price changes save when you leave the field or press Enter." : "The customer decision is recorded and this order was created. Continue with the remaining order steps." };
+    const localHref = (href: string) => href === `/orders/${order.id}` ? "#order-summary" : href.replace(`/orders/${order.id}`, "");
+    return { ...step, action: step.action ? { ...step.action, href: localHref(step.action.href) } : undefined, checks: step.checks.map(check => ({ ...check, href: check.href ? localHref(check.href) : undefined })) };
   });
 
   // ---- Header pattern (spec §H): ONE contextual primary action ----
@@ -214,21 +123,21 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   // POs, then completion.
   const isOpen = order.status !== "complete";
   let primaryAction: React.ReactNode = null;
-  if (isOpen && order.quoteStatus === "needed") {
+  if (isOpen && ["needed", "sent"].includes(order.quoteStatus)) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
-        Set quote status
+      <a href="#quote-status" className="btn btn-primary active:scale-[0.99]">
+        {order.quoteStatus === "sent" ? "Record customer approval" : "Review customer quote"}
       </a>
     );
   } else if (isOpen && !hasOrderTerms(order)) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
+      <a href="#order-terms" className="btn btn-primary active:scale-[0.99]">
         Set terms
       </a>
     );
   } else if (isOpen && !gate.open) {
     primaryAction = (
-      <a href="#invoice" className="btn btn-primary active:scale-[0.99]">
+      <a href="#payments" className="btn btn-primary active:scale-[0.99]">
         Record payment
       </a>
     );
@@ -246,13 +155,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         Acknowledge POs
       </a>
     );
-  } else if (isOpen && canCompleteOrder(order)) {
+  } else if (isOpen && orderCanClose(orderBallInput(order))) {
     // canCompleteOrder is vacuously true when there are no POs at all (a direct
     // intake order with no purchasing leg) - don't gate this on purchaseOrders.length.
     primaryAction = (
-      <ActionButton action={markOrderComplete.bind(null, order.id)} className="btn btn-primary active:scale-[0.99]">
-        Mark complete
-      </ActionButton>
+      <a href="#order-complete" className="btn btn-primary active:scale-[0.99]">
+        Review closeout
+      </a>
     );
   }
 
@@ -287,75 +196,67 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   }));
   const hasLiveItems = chipItems.some((i) => i.rfqStatus !== "removed");
 
-  const issueRows: IssueRowData[] = issues.map((r) => ({
-    id: r.id,
-    title: r.title,
-    description: r.description,
-    status: r.status,
-    priority: r.priority,
-    reportedAt: r.reportedAt,
-    resolvedAt: r.resolvedAt,
-    resolution: r.resolution,
-    assigneeId: r.assigneeId,
-    assigneeName: r.assignee?.name ?? null,
-    company: r.company,
-    location: r.location,
-    order: r.order,
-    lineItem: r.lineItem,
-  }));
-
-  const toDoc = (d: (typeof documents)[number]): FileDocData => ({
-    id: d.id,
-    kind: d.kind,
-    fileUrl: d.fileUrl,
-    fileName: d.fileName,
-    source: d.source,
-    mimeType: d.mimeType,
-    sizeBytes: d.sizeBytes,
-    storagePath: d.storagePath,
-    uploadedBy: d.uploadedBy,
-    note: d.note,
-    uploadedAt: d.uploadedAt,
-  });
-  const orderDocs = documents.filter((d) => d.linkedType === "order").map(toDoc);
-  const dealDocs = documents.filter((d) => d.linkedType === "opportunity").map(toDoc);
-  const documentsByPoId: Record<string, FileDocData[]> = {};
-  for (const d of poDocuments) {
-    (documentsByPoId[d.linkedId] ??= []).push(toDoc(d));
-  }
-
   return (
-    <div className="space-y-8">
-      <div>
-        <BackLink href="/orders" label="Back to Orders" />
+    <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={steps.map(step => step.key)} initialKey={steps.find(step => !["complete", "not_required", "stopped"].includes(step.state))?.key ?? "close"}>
+    <div className="pipeline-detail space-y-8">
+      <DetailHeader backHref="/orders" backLabel="Back to Orders" title={order.title}
+        subtitle={<>{order.company ? <Link href={`/companies/${order.company.id}`}>{order.company.name}</Link> : "No linked business"}{order.contact && <> · {order.contact.firstName} {order.contact.lastName ?? ""}</>}</>}
+        badges={<><span className="badge badge-gray capitalize">{order.orderType}</span><BallInCourtBadge ball={ball}/></>}
+        action={primaryAction}/>
+      <DealProgress steps={steps} lost={false} />
+      <WorkflowPanel when={["pricing"]}>
+        <PricingItems items={order.lineItems} editable={isOpen} />
+      </WorkflowPanel>
+      <WorkflowPanel when={["quote", "terms", "deposit", "pos", "delivery", "service", "files"]}>
+      <div className="card">
+        <OrderTabs
+          defaultTab={defaultTab}
+          invoice={
+            <PaymentsSection
+              orderId={order.id}
+              payments={order.payments}
+              gate={gate}
+              terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms }}
+              quote={{
+                quoteStatus: order.quoteStatus,
+                quoteUrl: order.quoteUrl,
+                quoteSentAt: order.quoteSentAt,
+              }}
+            />
+          }
+          purchaseOrders={
+            <Suspense fallback={<SectionLoading name="purchase orders" />}>
+              <OrderPurchasing orderId={order.id} data={supporting}
+                purchaseOrderIds={order.purchaseOrders.map(po => po.id)}
+                unassignedLineItems={unassignedLineItems} gate={gate} />
+            </Suspense>
+          }
+          delivery={
+            <Suspense fallback={<SectionLoading name="deliveries" />}>
+              <OrderDelivery orderId={order.id} data={supporting} users={users} />
+            </Suspense>
+          }
+          files={
+            <Suspense fallback={<SectionLoading name="files" />}>
+              <OrderFiles orderId={order.id} opportunityId={order.opportunityId} />
+            </Suspense>
+          }
+          service={<>
+            <Suspense fallback={<SectionLoading name="service issues" />}>
+              <OrderService orderId={order.id} companyId={order.companyId}
+                locationId={order.locationId} issues={supporting.issues} users={users}
+                items={order.lineItems.filter(li => li.rfqStatus !== "removed")
+                  .map(li => ({ id: li.id, name: li.name }))} />
+            </Suspense>
+            <CloseoutControl orderId={order.id} step={steps.find(step => step.key === "service")!} />
+          </>}
+        />
       </div>
+      </WorkflowPanel>
 
       <div className="card">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="page-title">{order.title}</h1>
-            <div className="mt-1 text-sm text-gray-dark">
-              {order.company ? (
-                <Link href={`/companies/${order.company.id}`} className="text-blue transition-colors hover:underline">
-                  {order.company.name}
-                </Link>
-              ) : (
-                <span className="empty-value">no company</span>
-              )}
-              {order.contact && <span> · {order.contact.firstName} {order.contact.lastName ?? ""}</span>}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="badge badge-gray capitalize">{order.orderType}</span>
-              <BallInCourtBadge ball={ball} />
-            </div>
-          </div>
-          {primaryAction}
-        </div>
 
-        <div className="mt-4 border-t border-border pt-4">
-          <FlowStepper steps={steps} />
-        </div>
-
+        <details className="mt-4 border-t border-border pt-4"><summary className="cursor-pointer text-sm font-medium">Fulfillment summary</summary>
         {hasLiveItems ? (
           <div className="mt-4 border-t border-border pt-4">
             <ItemStatusChips items={chipItems} />
@@ -372,7 +273,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           />
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        </details>
+
+        <div id="order-summary" className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-4">
           <StatusOwnerControls
             orderId={order.id}
             status={order.status}
@@ -381,22 +284,27 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm md:grid-cols-3">
+        <WorkflowPanel when={["sales"]}>
+        <section id="order-intake" aria-label="Intake details" className="mt-4 border-t border-border pt-4"><h2 className="text-sm font-medium">Intake details</h2>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
           <div>
             <div className="field-label">Business</div>
             <div className="text-ink">
-              <EditableCompanyField
+              <Suspense fallback={<span>{order.company?.name ?? "No linked business"}</span>}>
+              <OrderCompanyEditor
                 orderId={order.id}
                 companyId={order.companyId}
                 companyName={order.company?.name ?? null}
-                companies={companies}
+                companies={supporting.companies}
               />
+              </Suspense>
             </div>
           </div>
           <div>
             <div className="field-label">Contact</div>
             <div className="text-ink">
-              <EditableContactField
+              <Suspense fallback={<span>{order.contact ? [order.contact.firstName, order.contact.lastName].filter(Boolean).join(" ") : "No linked contact"}</span>}>
+              <OrderContactEditor
                 // Remounts on business change so a Contact edit box left open
                 // (with the old business's typed name still in it) doesn't
                 // keep showing stale text after the business is switched -
@@ -410,8 +318,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     ? [order.contact.firstName, order.contact.lastName].filter(Boolean).join(" ")
                     : null
                 }
-                contacts={contacts}
+                contacts={supporting.contacts}
               />
+              </Suspense>
             </div>
           </div>
           <div>
@@ -510,70 +419,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
         </div>
+        </section>
+        </WorkflowPanel>
       </div>
 
-      <div className="card">
-        <OrderTabs
-          defaultTab={defaultTab}
-          invoice={
-            <PaymentsSection
-              orderId={order.id}
-              payments={order.payments}
-              gate={gate}
-              terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms }}
-              quote={{
-                quoteStatus: order.quoteStatus,
-                quoteUrl: order.quoteUrl,
-                quoteSentAt: order.quoteSentAt,
-              }}
-            />
-          }
-          purchaseOrders={
-            <PurchaseOrdersSection
-              orderId={order.id}
-              purchaseOrders={order.purchaseOrders}
-              unassignedLineItems={unassignedLineItems}
-              vendors={vendors}
-              gate={gate}
-              documentsByPoId={documentsByPoId}
-              uploadsEnabled={uploadsConfigured()}
-            />
-          }
-          delivery={
-            <DeliverySection
-              orderId={order.id}
-              items={order.lineItems}
-              users={users}
-              deliveries={order.deliveries}
-            />
-          }
-          files={
-            <FilesSection
-              linkedType="order"
-              linkedId={order.id}
-              docs={orderDocs}
-              ownLabel="On this order"
-              inheritedDocs={dealDocs}
-              inheritedLabel="From the deal"
-              uploadsEnabled={uploadsConfigured()}
-            />
-          }
-          service={
-            <OrderIssuesPanel
-              orderId={order.id}
-              companyId={order.companyId}
-              locationId={order.locationId}
-              issues={issueRows}
-              users={users}
-              items={order.lineItems
-                .filter((li) => li.rfqStatus !== "removed")
-                .map((li) => ({ id: li.id, name: li.name }))}
-            />
-          }
-        />
-      </div>
 
-      <ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" />
+      <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} /></Suspense>
     </div>
+    </WorkflowSelectionProvider>
   );
 }

@@ -77,7 +77,7 @@ export default async function CompanyDetailPage({
             href={`/intake?companyId=${company.id}`}
             className="btn btn-primary active:scale-[0.99]"
           >
-            New intake for this company
+            New intake for this business
           </Link>
         }
       />
@@ -312,7 +312,7 @@ export default async function CompanyDetailPage({
                     className="relative flex items-center gap-3 px-5 py-2 transition-colors hover:bg-hover"
                   >
                     <Link
-                      href="/service"
+                      href={`/service/${issue.id}`}
                       className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink after:absolute after:inset-0 after:content-['']"
                     >
                       {issue.title}
