@@ -1,11 +1,13 @@
 import { compileFilterTree } from "@/lib/nestedFilters";
-import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
+import { collectionLimit } from "@/lib/CollectionWindow";
 import { CollectionGroup, SortHeader, TableRows } from "@/lib/CollectionViews";
-import { PageHeader } from "@/lib/PageLayout";
 import Link from "@/lib/IntentLink";
-import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { can } from "@/lib/permissionsServer";
+import DeliveryCollection from "./DeliveryCollection";
+import { deliveryLane, deliveryLanes } from "./boardConfig";
+import { loadDeliveryCollection } from "./collectionData";
 import {
   DELIVERY_MODES,
   DELIVERY_MODE_COLORS,
@@ -13,13 +15,11 @@ import {
   labelFor,
 } from "@/lib/constants";
 import { isPastDay } from "@/lib/dates";
-import { Avatar } from "@/lib/Avatar";
-import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import { fmtDate, isLikelyTrackingUrl } from "../orders/utils";
+import { fmtDate, isLikelyTrackingUrl, paymentState } from "../orders/utils";
 import { DeliveryStatusPill } from "./DeliveryStatusPill";
 import { TruckerSelect } from "./TruckerSelect";
-import { hasTruckerLeg } from "./_ui";
+import { hasTruckerLeg, manufacturerShipmentStatus } from "./_ui";
 
 export const dynamic = "force-dynamic";
 
@@ -66,11 +66,11 @@ const LEG_SELECT = {
   trackingCarrier: true,
   createdAt: true,
   orderId: true,
-  order: { select: { id: true, title: true, neededByDate: true } },
+  order: { select: { id: true, title: true, neededByDate: true, payments: { select: { status: true } } } },
   purchaseOrder: {
     select: { poNumber: true, supplier: { select: { name: true } } },
   },
-  _count: { select: { lineItems: true } },
+  lineItems: { where: { rfqStatus: { not: "removed" } }, select: { deliveryStatus: true } },
 } satisfies Prisma.DeliverySelect;
 
 type DeliveryLeg = Prisma.DeliveryGetPayload<{ select: typeof LEG_SELECT }>;
@@ -140,7 +140,7 @@ function sortLegsBy(
 
 /** Overdue: the order's neededByDate has passed and this leg hasn't delivered. */
 function isOverdueLeg(leg: DeliveryLeg): boolean {
-  return isPastDay(leg.order.neededByDate) && !DELIVERED.includes(leg.status);
+  return paymentState(leg.order.payments) !== "paid" && isPastDay(leg.order.neededByDate) && !DELIVERED.includes(leg.status);
 }
 
 /**
@@ -161,23 +161,21 @@ function LegTable({
 }) {
   return (
     <div className="table-scroll">
-      <table className="table-klyne min-w-[1180px]">
+      <table className="table-klyne min-w-[1100px]">
         <thead>
           <tr>
-            <th className="sticky left-0 z-20 bg-surface">Order / PO</th>
-            <SortHeader field="supplier">Vendor</SortHeader>
+            <SortHeader field="supplier">Delivery / vendor</SortHeader>
             <SortHeader field="mode">Mode</SortHeader>
             <SortHeader field="trucker">Trucker</SortHeader>
             <SortHeader field="scheduledDate">Scheduled</SortHeader>
             <SortHeader field="expectedDate">Expected</SortHeader>
-            <SortHeader field="status">Status</SortHeader>
-            <th>Tracking</th>
+            <th>Shipment / tracking</th>
+            <SortHeader field="status">Delivery status</SortHeader>
           </tr>
         </thead>
-        <TableRows columns={8}>
+        <TableRows columns={7}>
           {legs.map((leg) => {
             const vendor = supplierName(leg);
-            const itemCount = leg._count.lineItems;
             const overdue = isOverdueLeg(leg);
             const identifier = `${leg.purchaseOrder?.poNumber ?? "HSS stock"} - ${leg.order.title}`;
             return (
@@ -185,7 +183,7 @@ function LegTable({
                 key={leg.id}
                 className="group align-top transition-colors hover:bg-hover"
               >
-                <td className="sticky left-0 z-10 min-w-[260px] max-w-[320px] bg-surface align-top group-hover:bg-hover">
+                <td className="sticky left-0 z-10 min-w-[220px] max-w-[280px] bg-surface align-top group-hover:bg-hover">
                   <Link
                     href={`/deliveries/${leg.id}`}
                     className="block min-w-0"
@@ -196,34 +194,18 @@ function LegTable({
                     >
                       {identifier}
                     </div>
+                    <div className="mt-0.5 truncate text-xs text-gray-dark" title={vendor ?? undefined}>{vendor ?? "HSS stock"}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-dark">
-                      {overdue ? (
-                        <span className="badge badge-red">overdue</span>
-                      ) : leg.order.neededByDate ? (
-                        <span>due {fmtDate(leg.order.neededByDate)}</span>
+                      {leg.order.neededByDate ? (
+                        <span className={overdue ? "font-medium text-red" : undefined}>due {fmtDate(leg.order.neededByDate)}</span>
                       ) : (
                         <span className="empty-value">no due date</span>
                       )}
-                      <span>
-                        {itemCount} item{itemCount === 1 ? "" : "s"}
-                      </span>
                     </div>
                   </Link>
                 </td>
 
-                <td className="min-w-[160px] align-top">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Avatar name={vendor ?? "HSS"} kind="business" size="sm" />
-                    <span
-                      className="min-w-0 truncate text-[12px] text-gray-dark"
-                      title={vendor ?? undefined}
-                    >
-                      {vendor ?? <span className="empty-value">HSS stock</span>}
-                    </span>
-                  </span>
-                </td>
-
-                <td className="min-w-[150px] align-top">
+                <td className="min-w-[130px] align-top">
                   <span
                     className={`badge ${DELIVERY_MODE_COLORS[leg.mode] ?? "badge-gray"}`}
                   >
@@ -231,7 +213,7 @@ function LegTable({
                   </span>
                 </td>
 
-                <td className="min-w-[170px] align-top">
+                <td className="min-w-[130px] align-top">
                   {hasTruckerLeg(leg.mode) ? (
                     <TruckerSelect
                       deliveryId={leg.id}
@@ -245,7 +227,7 @@ function LegTable({
                   )}
                 </td>
 
-                <td className="min-w-[120px] whitespace-nowrap align-top text-[12px] text-gray-dark">
+                <td className="min-w-[100px] whitespace-nowrap align-top text-[12px] text-gray-dark">
                   {leg.scheduledDeliveryDate ? (
                     fmtDate(leg.scheduledDeliveryDate)
                   ) : (
@@ -253,7 +235,7 @@ function LegTable({
                   )}
                 </td>
 
-                <td className="min-w-[110px] whitespace-nowrap align-top text-[12px] text-gray-dark">
+                <td className="min-w-[100px] whitespace-nowrap align-top text-[12px] text-gray-dark">
                   {leg.expectedDelivery ? (
                     fmtDate(leg.expectedDelivery)
                   ) : (
@@ -261,30 +243,19 @@ function LegTable({
                   )}
                 </td>
 
-                <td className="min-w-[150px] align-top">
-                  <DeliveryStatusPill deliveryId={leg.id} value={leg.status} />
-                </td>
-
-                <td className="min-w-[90px] max-w-[140px] truncate align-top text-[12px]">
+                <td className="min-w-[160px] align-top text-[12px] text-gray-dark">
+                  <div>{manufacturerShipmentStatus(leg) ?? <span className="empty-value">HSS delivery</span>}</div>
                   {leg.trackingUrl && isLikelyTrackingUrl(leg.trackingUrl) ? (
-                    <a
-                      href={leg.trackingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue transition-colors hover:underline"
-                      title={leg.trackingCarrier ?? undefined}
-                    >
-                      Track
+                    <a href={leg.trackingUrl} target="_blank" rel="noreferrer" className="mt-1 block text-blue hover:underline">
+                      Track{leg.trackingCarrier ? ` · ${leg.trackingCarrier}` : " shipment"}
                     </a>
                   ) : (
-                    // Junk on file (not a carrier link) reads as missing, per Sep 2 QA.
-                    <span
-                      className="empty-value"
-                      title={leg.trackingUrl ?? undefined}
-                    >
-                      no link
-                    </span>
+                    <div className="mt-1 empty-value" title={leg.trackingUrl ?? undefined}>{leg.trackingCarrier ?? "No tracking link"}</div>
                   )}
+                </td>
+
+                <td className="min-w-[130px] align-top">
+                  <DeliveryStatusPill deliveryId={leg.id} value={leg.status} />
                 </td>
               </tr>
             );
@@ -372,79 +343,34 @@ export default async function DeliveriesPage({
     { createdAt: "asc" },
     { id: "asc" },
   ];
-  const recentOrder: Prisma.DeliveryOrderByWithRelationInput[] = [
-    (sortKey ? ORDER_BY[sortKey] : undefined) ?? {
-      deliveredAt: { sort: "desc", nulls: "last" },
-    },
-    { id: "asc" },
-  ];
-
-  const [truckerRows, openRaw, deliveredRaw] = await Promise.all([
-    prisma.delivery.findMany({
-      where: { trucker: { not: null } },
-      select: { trucker: true },
-      distinct: ["trucker"],
-    }),
-    prisma.delivery.findMany({
-      take: limit + 1,
-      orderBy: openOrder,
-      where: { AND: [{ status: { in: OPEN_STATUSES } }, ...filterAnd] },
-      select: LEG_SELECT,
-    }),
-    prisma.delivery.findMany({
-      take: limit + 1,
-      orderBy: recentOrder,
-      where: {
-        AND: [
-          {
-            status: { in: DELIVERED },
-            OR: [
-              { deliveredAt: { gte: fourteenDaysAgo } },
-              {
-                deliveredAt: null,
-                scheduledDeliveryDate: { gte: fourteenDaysAgo },
-              },
-              {
-                deliveredAt: null,
-                scheduledDeliveryDate: null,
-                createdAt: { gte: fourteenDaysAgo },
-              },
-            ],
-          },
-          ...filterAnd,
-        ],
-      },
-      select: LEG_SELECT,
-    }),
+  const where: Prisma.DeliveryWhereInput = { AND: [
+    ...filterAnd,
+    { OR: [
+      { status: { in: OPEN_STATUSES } },
+      { status: { in: DELIVERED }, OR: [
+        { deliveredAt: { gte: fourteenDaysAgo } },
+        { deliveredAt: null, scheduledDeliveryDate: { gte: fourteenDaysAgo } },
+        { deliveredAt: null, scheduledDeliveryDate: null, createdAt: { gte: fourteenDaysAgo } },
+      ] },
+    ] },
+  ] };
+  const [truckerRows, collection, canEdit] = await Promise.all([
+    prisma.delivery.findMany({ where: { trucker: { not: null } }, select: { trucker: true }, distinct: ["trucker"] }),
+    loadDeliveryCollection(
+      (where, take) => prisma.delivery.findMany({ where, take, orderBy: openOrder, select: LEG_SELECT }),
+      where, limit,
+      (where, take) => prisma.delivery.findMany({ where, take, orderBy: openOrder, select: { id: true } }),
+    ),
+    can("deliveries.edit"),
   ]);
+  const knownTruckers = truckerRows.map(row => row.trucker as string);
+  const { hasMore } = collection;
+  const openRaw = collection.rows.filter(row => OPEN_STATUSES.includes(row.status));
+  const deliveredRaw = collection.rows.filter(row => DELIVERED.includes(row.status));
 
-  const knownTruckers = truckerRows.map((t) => t.trucker as string);
-
-  const hasMore = openRaw.length > limit || deliveredRaw.length > limit;
-  if (openRaw.length > limit) openRaw.pop();
-  if (deliveredRaw.length > limit) deliveredRaw.pop();
-
-  // A leg whose own status pill already reads "scheduled" must land in the
-  // Scheduled section even if its calendar date is missing or in the past -
-  // otherwise the section list and the leg's own badge visibly disagree. Every
-  // other open leg is judged by its date: a trucker slot when it has one, the
-  // carrier ETA on a drop-ship that never gets one.
-  const isScheduledStatus = (l: DeliveryLeg) => l.status === "scheduled";
-  const needsAttentionRaw = openRaw.filter((l) => {
-    const date = targetDate(l);
-    return !isScheduledStatus(l) && (!date || date < startOfToday);
-  });
-  const scheduledRaw = openRaw.filter((l) => {
-    const date = targetDate(l);
-    return isScheduledStatus(l) || (date != null && date >= startOfToday);
-  });
-
-  const needsAttention = sortKey
-    ? sortLegsBy(needsAttentionRaw, sortKey, sortDir)
-    : sortLegs(needsAttentionRaw, (l) => targetDate(l) ?? l.order.neededByDate);
-  const scheduled = sortKey
-    ? sortLegsBy(scheduledRaw, sortKey, sortDir)
-    : sortLegs(scheduledRaw, targetDate);
+  const open = sortKey
+    ? sortLegsBy(openRaw, sortKey, sortDir)
+    : sortLegs(openRaw, targetDate);
   const delivered = sortKey
     ? sortLegsBy(deliveredRaw, sortKey, sortDir)
     : sortLegs(
@@ -452,47 +378,14 @@ export default async function DeliveriesPage({
         (l) => l.deliveredAt ?? targetDate(l) ?? l.createdAt,
       ).reverse();
 
-  const totalOpen = needsAttention.length + scheduled.length;
   const groupKey = typeof sp.group === "string" ? sp.group : "stage";
-  const defaultGroups = [
-    { label: "Needs scheduling / Overdue", legs: needsAttention },
-    { label: "Scheduled", legs: scheduled },
-    { label: "Recently delivered", legs: delivered },
-  ];
-  const grouped = new Map<string, DeliveryLeg[]>();
-  if (groupKey !== "stage")
-    for (const leg of [...needsAttention, ...scheduled, ...delivered]) {
-      const key =
-        groupKey === "none"
-          ? "All deliveries"
-          : groupKey === "mode"
-            ? labelFor(DELIVERY_MODES, leg.mode)
-            : labelFor(DELIVERY_LEG_STATUSES, leg.status);
-      const group = grouped.get(key);
-      if (group) group.push(leg);
-      else grouped.set(key, [leg]);
-    }
-  const groups =
-    groupKey === "stage"
-      ? defaultGroups
-      : Array.from(grouped, ([label, legs]) => ({ label, legs }));
+  const rows = [...open, ...delivered];
+  const group = groupKey === "mode" ? "mode" : "stage";
+  const groups = groupKey === "none" ? [{ label: "All deliveries", legs: rows }] :
+    deliveryLanes(group).map(lane => ({ label: lane.label, legs: rows.filter(row => deliveryLane(row, group) === lane.value) }));
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Deliveries"
-        subtitle="Every delivery leg in flight — vendor, trucker, and the date it lands."
-        toolbar={
-          <Suspense>
-            <ListControls
-              hasMore={hasMore}
-              fields={FIELDS}
-              count={totalOpen + delivered.length}
-            />
-          </Suspense>
-        }
-      />
-
+    <DeliveryCollection rows={rows} fields={FIELDS} canEdit={canEdit} hasMore={hasMore} limit={limit}>
       {groups.map((group) => (
         <CollectionGroup
           flat={groupKey === "none"}
@@ -507,7 +400,6 @@ export default async function DeliveriesPage({
           )}
         </CollectionGroup>
       ))}
-      <MoreRecords href="/deliveries" limit={limit} hasMore={hasMore} />
-    </div>
+    </DeliveryCollection>
   );
 }

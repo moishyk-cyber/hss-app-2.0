@@ -11,11 +11,10 @@ export function InvoiceDueDate({ payment, canEdit, today = billingToday() }: {
   today?: string;
 }) {
   const overdue = invoiceOverdue(payment.status, payment.dueDate, today);
-  const display = payment.dueDate ? fmtDateUTC(payment.dueDate) : <span className="empty-value">No due date</span>;
+  const display = payment.dueDate ? <span className={overdue ? "font-medium text-red" : undefined}>{fmtDateUTC(payment.dueDate)}</span> : <span className="empty-value">No due date</span>;
   return <span className="inline-flex flex-wrap items-center gap-2">
     {canEdit ? <InlineEditField type="date" ariaLabel="Edit invoice due date"
       value={payment.dueDate ? new Date(payment.dueDate).toISOString().slice(0, 10) : ""}
       displayValue={display} save={value => setPaymentDueDate(payment.id, value)} /> : display}
-    {overdue && <span className="badge badge-red">Overdue</span>}
   </span>;
 }

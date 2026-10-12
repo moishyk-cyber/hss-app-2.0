@@ -1,7 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { billingToday, invoiceOverdue, parseInvoiceDueDate } from "../src/lib/invoices";
-import { invoiceQuery } from "../src/app/invoices/data";
+import { invoiceQuery, loadInvoiceCollection } from "../src/app/invoices/data";
+import type { Prisma } from "@prisma/client";
+
+test("invoice status windows preserve filters and include paid records beyond a busy pending queue", async () => {
+  const where: Prisma.PaymentWhereInput = { type: "deposit" };
+  const statuses: string[] = [];
+  const result = await loadInvoiceCollection(async condition => {
+    if (condition === where) return [{ id: "pending-1" }, { id: "pending-2" }];
+    const clauses = condition.AND as Prisma.PaymentWhereInput[];
+    assert.deepEqual(clauses[0], where);
+    return (clauses[1].id as { in: string[] }).in.map(id => ({ id }));
+  }, where, 1, async condition => {
+    const clauses = condition.AND as Prisma.PaymentWhereInput[];
+    assert.deepEqual(clauses[0], where);
+    const status = String(clauses[1].status);
+    statuses.push(status);
+    return [{ id: status }, { id: `${status}-older` }];
+  });
+  assert.deepEqual(new Set(statuses), new Set(["pending", "invoiced", "paid"]));
+  assert.equal(result.rows.length, 3);
+  assert.equal(result.hasMore, true);
+});
 
 test("due dates reject invalid calendar days and support clearing", () => {
   assert.equal(parseInvoiceDueDate("2026-02-30"), undefined);

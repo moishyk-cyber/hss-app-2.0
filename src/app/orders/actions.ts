@@ -255,6 +255,21 @@ export async function markPaymentInvoiced(paymentId: string): Promise<ActionResu
   }, "Could not mark the payment invoiced. Please try again.");
 }
 
+export async function markPaymentPending(paymentId: string, expectedStatus: string): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit");
+  if (denied) return denied;
+  if (!["invoiced", "paid"].includes(expectedStatus)) return { ok: false, message: "Refresh the payment before changing its status." };
+  return safeAction(async () => {
+    const payment = await prisma.payment.update({
+      where: { id: paymentId, status: expectedStatus },
+      data: { status: "pending", date: null },
+    });
+    await log(payment.orderId, "payment_pending", `Payment (${payment.type}) moved back to pending${expectedStatus === "paid" ? "; paid date cleared" : ""}`);
+    await recomputeOrderStatus(payment.orderId);
+    revalidateOrder(payment.orderId);
+  }, "Could not move the payment back to pending. Please try again.");
+}
+
 /**
  * Marks a payment paid. No longer a bare one-click write (Sep 2 QA P0: a
  * $2,500 payment got fired off by a single stray click): the UI fronts this

@@ -46,8 +46,10 @@ export type Payment = {
 };
 
 /** The review-then-confirm flow behind the "Mark paid" button on one payment row. */
-export function MarkPaidControl({ payment }: { payment: Payment }) {
-  const [open, setOpen] = useState(false);
+export function MarkPaidControl({ payment, initialOpen = false, hideTrigger = false, onClose, onSaved }: {
+  payment: Payment; initialOpen?: boolean; hideTrigger?: boolean; onClose?: () => void; onSaved?: () => void;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const [pending, setPending] = useState(false);
   const [receivedDate, setReceivedDate] = useState(ymdToday);
   const [method, setMethod] = useState("check");
@@ -64,6 +66,7 @@ export function MarkPaidControl({ payment }: { payment: Payment }) {
         return;
       }
       setOpen(false);
+      onSaved?.();
       toast({
         kind: "success",
         message: `${fmtUSD(payment.amount, { cents: true })} ${payment.type} payment marked paid`,
@@ -77,7 +80,7 @@ export function MarkPaidControl({ payment }: { payment: Payment }) {
 
   return (
     <>
-      <button
+      {!hideTrigger && <button
         type="button"
         className="btn btn-primary btn-sm active:scale-[0.99]"
         onClick={() => {
@@ -87,14 +90,14 @@ export function MarkPaidControl({ payment }: { payment: Payment }) {
         aria-haspopup="dialog"
       >
         Mark paid…
-      </button>
+      </button>}
       <ConfirmDialog
         open={open}
         title={`Mark this ${payment.type} payment paid?`}
         confirmLabel={`Record ${fmtUSD(payment.amount, { cents: true })} as paid`}
         pending={pending}
         onConfirm={handleConfirm}
-        onClose={() => setOpen(false)}
+        onClose={() => { setOpen(false); onClose?.(); }}
       >
         <div className="space-y-3">
           <dl className="space-y-1 text-[13px]">

@@ -8,13 +8,13 @@ import { fmtDateUTC } from "@/lib/dates";
 import { TaskCheckbox } from "./TaskCheckbox";
 import { setTaskStatus } from "./actions";
 import { linkedHref, TYPE_LABELS, isOverdue } from "./lib";
-import type { TaskRowData } from "./TaskRow";
+import type { TaskListData } from "./TaskRow";
 export default function TaskListClient({
   tasks,
   statusFilter,
   currentUserId,
 }: {
-  tasks: TaskRowData[];
+  tasks: TaskListData[];
   statusFilter: string | null;
   users: { id: string; name: string }[];
   currentUserId: string | null;

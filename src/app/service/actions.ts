@@ -1,5 +1,6 @@
 "use server";
 
+import { validateServiceIssueLinks } from "@/lib/serviceIssueLinks";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -44,34 +45,8 @@ export async function createServiceIssue(formData: FormData): Promise<ActionResu
   const inactive = await requireActiveAssignee(assigneeId);
   if (inactive) return inactive;
 
-  if (companyId) {
-    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
-    if (!company) return { ok: false, message: "That business could not be found." };
-  }
-  if (locationId) {
-    const location = await prisma.location.findUnique({
-      where: { id: locationId },
-      select: { id: true, companyId: true },
-    });
-    if (!location) return { ok: false, message: "That location could not be found." };
-    if (companyId && location.companyId !== companyId) {
-      return { ok: false, message: "That location belongs to a different business." };
-    }
-  }
-  if (orderId) {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
-    if (!order) return { ok: false, message: "That order could not be found." };
-  }
-  if (lineItemId) {
-    const lineItem = await prisma.lineItem.findUnique({
-      where: { id: lineItemId },
-      select: { id: true, orderId: true },
-    });
-    if (!lineItem) return { ok: false, message: "That line item could not be found." };
-    if (orderId && lineItem.orderId !== orderId) {
-      return { ok: false, message: "That line item belongs to a different order." };
-    }
-  }
+  const linkError = await validateServiceIssueLinks({ companyId, locationId, orderId, lineItemId }, prisma);
+  if (linkError) return { ok: false, message: linkError };
 
   return safeAction(async () => {
     const issue = await prisma.serviceIssue.create({

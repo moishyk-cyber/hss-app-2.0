@@ -53,7 +53,8 @@ export function startOrderSupportingReads(orderId: string, db = prisma) {
       where: { orderId },
       include: {
         lineItems: {
-          select: { id: true, name: true, qty: true, deliveryStatus: true },
+          where: { rfqStatus: { not: "removed" } },
+          select: { deliveryStatus: true },
           orderBy: { createdAt: "asc" },
         },
         purchaseOrder: {

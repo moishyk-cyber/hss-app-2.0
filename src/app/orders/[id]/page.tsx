@@ -231,7 +231,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           }
           delivery={
             <Suspense fallback={<SectionLoading name="deliveries" />}>
-              <OrderDelivery orderId={order.id} data={supporting} users={users} />
+              <OrderDelivery orderId={order.id} data={supporting} />
             </Suspense>
           }
           files={
@@ -429,7 +429,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       </div>
 
 
-      <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} /></Suspense>
+      <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} collapsible /></Suspense>
     </div>
     </WorkflowSelectionProvider>
   );

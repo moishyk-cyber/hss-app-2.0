@@ -1606,7 +1606,7 @@ textarea.input-klyne { height:auto; min-height:96px; resize:vertical; }
   border-radius: 7px;
   background: var(--panel);
 }
-.collection-view-controls a:has(svg), .toolbar-icon-button {
+.collection-view-controls :is(a, button):has(svg), .toolbar-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1620,9 +1620,9 @@ textarea.input-klyne { height:auto; min-height:96px; resize:vertical; }
   background: transparent;
   cursor: pointer;
 }
-.collection-view-controls a:has(svg):hover, .toolbar-icon-button:hover { color: var(--ink); background: var(--hover); }
-.collection-view-controls a.chip-active:has(svg) { color: var(--ink); background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
-.collection-view-controls a:focus-visible, .toolbar-icon-button:focus-visible, .toolbar-display summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.collection-view-controls :is(a, button):has(svg):hover, .toolbar-icon-button:hover { color: var(--ink); background: var(--hover); }
+.collection-view-controls :is(a, button).chip-active:has(svg) { color: var(--ink); background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
+.collection-view-controls :is(a, button):focus-visible, .toolbar-icon-button:focus-visible, .toolbar-display summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .collection-header .toolbar-search { position: relative; flex: 0 1 180px; min-width: 120px; }
 .toolbar-search > svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--gray-dark); pointer-events: none; }
 .collection-toolbar .toolbar-search .input-klyne { padding-left: 34px; }
@@ -1894,3 +1894,43 @@ input.input-klyne[type="date"]::-webkit-calendar-picker-indicator { margin: 0 0 
 }
 [data-view-tooltip]:hover::after,
 [data-view-tooltip]:focus-visible::after { visibility: visible; }
+
+/* Collection scope shares the compact, quiet view-control treatment. */
+.toolbar-segmented {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.toolbar-segmented .scope-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  color: var(--gray-dark);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.toolbar-segmented .scope-option:hover { background: var(--hover); color: var(--ink); }
+.toolbar-segmented .scope-option.is-active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
+.toolbar-segmented .scope-option:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Phone Book CSV actions use the existing top-bar menu surface. */
+.phonebook-csv-options { padding: 6px; }
+.phonebook-csv-options button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; font-size: 13px; border-radius: 4px; cursor: pointer; }
+.phonebook-csv-options button:hover:not(:disabled) { background: var(--bg); }
+.phonebook-csv-options button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.phonebook-csv-options button:disabled { opacity: .5; cursor: not-allowed; }
+.phonebook-csv-options p { padding: 8px 12px; }
+
+@media (max-width: 640px) {
+  .phonebook-page .collection-header { grid-template-columns: auto minmax(0, 1fr); }
+  .phonebook-page .collection-header .page-actions { grid-column: 1 / -1; grid-row: 2; justify-content: flex-end; flex-wrap: nowrap; }
+  .phonebook-page .collection-header .toolbar-row { grid-column: 1 / -1; grid-row: 3; }
+  .phonebook-page .collection-header .collection-filter-row { grid-row: 4; }
+}

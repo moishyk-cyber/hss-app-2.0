@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { COMPANY_TYPES } from "@/lib/constants";
 import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
+import { can } from "@/lib/permissionsServer";
+import { PhonebookCsvMenu } from "./PhonebookCsvMenu";
 import { AssignCompanySelect } from "./AssignCompanySelect";
 import { Avatar, EmailLink, PageHeader, PhoneLink, TypeBadge } from "./_ui";
 
@@ -89,6 +91,7 @@ export default async function PhoneBookPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const canImport = await can("phonebook.edit");
   const search = typeof params.q === "string" ? params.q.trim() : "";
   const { sortKey, sortDir, filters } = parseListQuery(
     PHONEBOOK_FIELDS,
@@ -284,7 +287,7 @@ export default async function PhoneBookPage({
           }),
         );
   return (
-    <div>
+    <div className="phonebook-page">
       <PageHeader
         title="Phone Book"
         subtitle="Every business and every person - one directory."
@@ -304,6 +307,7 @@ export default async function PhoneBookPage({
         <Link href="/contacts/new" className="btn btn-primary">
           New contact
         </Link>
+        <PhonebookCsvMenu canImport={canImport} />
       </PageHeader>
 
       {sortedRows.length === 0 ? (

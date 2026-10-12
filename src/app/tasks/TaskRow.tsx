@@ -27,6 +27,10 @@ export type TaskRowData = {
   subtasks: TaskRowData[];
 };
 
+export type TaskListData = Omit<TaskRowData, "notes" | "subtasks"> & {
+  subtasks: { id: string; status: string }[];
+};
+
 export default function TaskRow({
   task,
 }: {

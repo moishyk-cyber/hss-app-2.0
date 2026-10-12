@@ -31,3 +31,26 @@ export function modeForShipTo(shipTo: string): string {
 export function inTransitItemStatus(mode: string): string {
   return mode === "manufacturer_to_hss_to_customer" ? "in_transit_to_hss" : "in_transit_to_client";
 }
+
+/** Summarize recorded shipment progress without exposing an item breakdown. */
+export function manufacturerShipmentStatus(delivery: {
+  mode: string;
+  status: string;
+  lineItems: { deliveryStatus: string }[];
+}): string | null {
+  if (!hasCarrierLeg(delivery.mode)) return null;
+  if (delivery.status === "delivered_full") return "Shipment complete";
+  const statuses = delivery.lineItems.map(item => item.deliveryStatus);
+  const viaHss = delivery.mode === "manufacturer_to_hss_to_customer";
+  if (!viaHss && delivery.status === "delivered_partial") return "Partially delivered";
+  const passedManufacturer = (status: string) => status === "arrived_complete" || (viaHss && status === "in_transit_to_client");
+  if (statuses.length && statuses.every(passedManufacturer)) return viaHss ? "Arrived at HSS" : "Shipment complete";
+  const inTransit = (status: string) => status === "in_transit_to_hss" || (!viaHss && status === "in_transit_to_client");
+  if (statuses.some(inTransit)) return statuses.every(status => inTransit(status) || passedManufacturer(status)) ? "Manufacturer in transit" : "Partially shipped";
+  if (statuses.some(passedManufacturer)) return "Partially received";
+  if (statuses.length && statuses.every(status => status === "backordered")) return "Backordered";
+  if (delivery.status === "delivered_partial") return "Delivery partially complete";
+  // A delivery may be advanced without item-level tracking; keep that ambiguity visible.
+  if (delivery.status === "in_transit") return "In transit";
+  return "Awaiting shipment";
+}

@@ -1,21 +1,17 @@
+import TaskCollection from "./TaskCollection";
+import { loadTaskCollection } from "./collectionData";
+import { can } from "@/lib/permissionsServer";
+import { collectionLimit } from "@/lib/CollectionWindow";
 import { getActiveUsers } from "@/lib/users";
 import { compileFilterTree } from "@/lib/nestedFilters";
-import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
 import { resolveLinkedLabels } from "./data";
-import { QueryLink } from "@/lib/QueryLink";
 import { currentUserId } from "@/lib/identityServer";
-import { PageHeader } from "@/lib/PageLayout";
-import Link from "next/link";
-import { Suspense } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { TASK_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
-import { ListControls } from "@/lib/ListControls";
 import { parseListQuery, type ListField } from "@/lib/listQuery";
-import QuickAddTask from "./QuickAddTask";
-import TaskListClient from "./TaskListClient";
 import { TASK_TYPE_LABELS } from "./lib";
-import type { TaskRowData } from "./TaskRow";
+import type { TaskListData } from "./TaskRow";
 
 export const dynamic = "force-dynamic";
 
@@ -33,21 +29,6 @@ type TasksSearchParams = { status?: string } & Record<
   string | string[] | undefined
 >;
 
-type TaskWithRelations = {
-  id: string;
-  title: string;
-  notes: string | null;
-  assigneeId: string | null;
-  assignee: { id: string; name: string } | null;
-  dueDate: Date | null;
-  status: string;
-  priority: string;
-  type: string;
-  linkedType: string | null;
-  linkedId: string | null;
-  _count: { comments: number };
-};
-
 export default async function TasksPage({
   searchParams,
 }: {
@@ -55,7 +36,10 @@ export default async function TasksPage({
 }) {
   const sp = await searchParams;
   const limit = collectionLimit(sp);
-  const signedInUserId = await currentUserId();
+  const currentUserPromise = currentUserId();
+  const canEditPromise = can("tasks.edit");
+  const usersPromise = getActiveUsers();
+  const signedInUserId = sp.mine === "1" ? await currentUserPromise : null;
   const status =
     typeof sp.f_status === "string"
       ? sp.f_status
@@ -63,7 +47,7 @@ export default async function TasksPage({
         ? sp.status
         : undefined;
 
-  const users = await getActiveUsers();
+  const queryUsers = sp.f_assignee || sp.filter_tree ? await usersPromise : [];
 
   // Sort by / Filter by (Aug 31 feedback: "select by any field" on every list).
   // Status keeps its own chips + the client-side Completed split - not part of
@@ -77,7 +61,7 @@ export default async function TasksPage({
       type: "enum",
       options: [
         { value: UNASSIGNED_FILTER_VALUE, label: "Unassigned" },
-        ...users.map((u) => ({ value: u.id, label: u.name })),
+        ...queryUsers.map((u) => ({ value: u.id, label: u.name })),
       ],
     },
     {
@@ -132,40 +116,33 @@ export default async function TasksPage({
     },
   );
 
-  const tasks = await prisma.task.findMany({
-    take: limit + 1,
-    where: { AND: [where, nestedWhere ?? {}] },
-    include: {
-      assignee: { select: { id: true, name: true } },
-      _count: { select: { comments: true } },
-      subtasks: {
-        include: {
-          assignee: { select: { id: true, name: true } },
-          _count: { select: { comments: true } },
-        },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-    orderBy: orderBy ?? { createdAt: "asc" },
+  const select = {
+    id: true, title: true, assigneeId: true, dueDate: true, status: true, priority: true,
+    type: true, linkedType: true, linkedId: true,
+    assignee: { select: { id: true, name: true } },
+    _count: { select: { comments: true } },
+    subtasks: { select: { id: true, status: true } },
+  } satisfies Prisma.TaskSelect;
+  const ordering: Prisma.TaskOrderByWithRelationInput[] = [orderBy ?? { createdAt: "asc" }, { id: "asc" }];
+  const query = (where: Prisma.TaskWhereInput, take = limit + 1) => prisma.task.findMany({
+    take, where, select, relationLoadStrategy: "join", orderBy: ordering,
   });
+  const queryIds = (where: Prisma.TaskWhereInput, take = limit + 1) => prisma.task.findMany({
+    take, where, select: { id: true }, orderBy: ordering,
+  });
+  const { rows: tasks, hasMore } = await loadTaskCollection(query, { AND: [where, nestedWhere ?? {}] }, limit, queryIds);
+  const labelPromise = resolveLinkedLabels(tasks.filter(task => task.linkedType && task.linkedId)
+    .map(task => ({ type: task.linkedType!, id: task.linkedId! })));
+  const [labelMap, users, resolvedUserId] = await Promise.all([labelPromise, usersPromise, currentUserPromise]);
+  const fields = FIELDS.map(field => field.key === "assignee" ? { ...field, options: [
+    { value: UNASSIGNED_FILTER_VALUE, label: "Unassigned" },
+    ...users.map(user => ({ value: user.id, label: user.name })),
+  ] } : field);
 
-  const hasMore = tasks.length > limit;
-  if (hasMore) tasks.pop();
-
-  const allTasksFlat = tasks.flatMap((t) => [
-    t as TaskWithRelations,
-    ...(t.subtasks as TaskWithRelations[]),
-  ]);
-  const linkPairs = allTasksFlat
-    .filter((t) => t.linkedType && t.linkedId)
-    .map((t) => ({ type: t.linkedType as string, id: t.linkedId as string }));
-  const labelMap = await resolveLinkedLabels(linkPairs);
-
-  function toRowData(t: TaskWithRelations): TaskRowData {
+  function toRowData(t: (typeof tasks)[number]): TaskListData {
     return {
       id: t.id,
       title: t.title,
-      notes: t.notes,
       assigneeId: t.assigneeId,
       assigneeName: t.assignee?.name ?? null,
       dueDate: t.dueDate,
@@ -179,65 +156,15 @@ export default async function TasksPage({
           ? (labelMap.get(`${t.linkedType}:${t.linkedId}`) ?? null)
           : null,
       commentCount: t._count.comments,
-      subtasks: [],
+      subtasks: t.subtasks,
     };
   }
 
-  const rows: TaskRowData[] = tasks.map((t) => ({
-    ...toRowData(t as TaskWithRelations),
-    subtasks: t.subtasks.map((s) => toRowData(s as TaskWithRelations)),
-  }));
+  const rows = tasks.map(toRowData);
 
   const validStatus =
     status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
 
-  return (
-    <div className="space-y-6 pb-12">
-      <PageHeader
-        title="Tasks"
-        subtitle="Internal, customer-service, and external follow-ups."
-        toolbar={
-          <Suspense>
-            <ListControls
-              hasMore={hasMore}
-              fields={FIELDS}
-              count={
-                rows.filter((t) => !validStatus || t.status === validStatus)
-                  .length
-              }
-            >
-              <QueryLink
-                href="/tasks"
-                clear={["mine"]}
-                className={sp.mine === "1" ? "chip" : "chip chip-active"}
-              >
-                All tasks
-              </QueryLink>
-              <QueryLink
-                href="/tasks?mine=1"
-                className={sp.mine === "1" ? "chip chip-active" : "chip"}
-              >
-                My tasks
-              </QueryLink>
-            </ListControls>
-          </Suspense>
-        }
-      >
-        <Link href="/tasks/new" className="btn btn-primary">
-          New task
-        </Link>
-      </PageHeader>
-
-      <QuickAddTask />
-
-      <TaskListClient
-        tasks={rows}
-        statusFilter={validStatus}
-        users={users}
-        currentUserId={signedInUserId}
-      />
-
-      <MoreRecords href="/tasks" limit={limit} hasMore={hasMore} />
-    </div>
-  );
+  return <TaskCollection rows={rows} users={users} fields={fields} currentUserId={resolvedUserId}
+    canEdit={await canEditPromise} hasMore={hasMore} limit={limit} statusFilter={validStatus} />;
 }
