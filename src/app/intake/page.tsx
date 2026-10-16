@@ -1,6 +1,7 @@
 import { getActiveUsers } from "@/lib/users";
 import { DetailHeader } from "@/lib/PageLayout";
 import { prisma } from "@/lib/prisma";
+import { uploadsConfigured } from "@/lib/storage";
 import { IntakeForm } from "./IntakeForm";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export default async function IntakePage({
       <div className="mb-6"/>
 
       <IntakeForm
+        uploadsEnabled={uploadsConfigured()}
         companies={companies}
         contacts={contacts}
         salespeople={salespeople}

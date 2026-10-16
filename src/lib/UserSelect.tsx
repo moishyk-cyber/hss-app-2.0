@@ -20,6 +20,7 @@ export function UserSelect({
   action,
   allowUnassigned = true,
   className = "",
+  ariaLabel = "Change assignee",
 }: {
   /** Current user id, or "" for unassigned. */
   value: string;
@@ -27,6 +28,7 @@ export function UserSelect({
   action: (next: string) => Promise<ActionResult | void>;
   allowUnassigned?: boolean;
   className?: string;
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -69,7 +71,7 @@ export function UserSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Change assignee"
+        aria-label={ariaLabel}
         disabled={isPending}
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1.5 rounded-full border border-border bg-panel py-0.5 pl-0.5 pr-2 text-xs font-medium text-gray-dark transition-colors hover:bg-hover hover:text-ink ${

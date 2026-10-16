@@ -1,5 +1,7 @@
 import { ToolbarIcon } from "@/lib/ToolbarIcon";
 import { ORDER_BALL_SELECT, PIPELINE_CARD_SELECT } from "./data";
+import { intakeIssues } from "@/lib/dealWorkflow";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { getActiveUsers } from "@/lib/users";
 import { compileFilterTree } from "@/lib/nestedFilters";
 import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
@@ -76,9 +78,10 @@ export default async function PipelinePage({
       CLOSED_STAGES.includes(params.f_stage));
 
   // Both board and list use the same salesperson filters.
-  const [users, holders] = await Promise.all([
+  const [users, holders, requirements] = await Promise.all([
     getActiveUsers(),
     getStageHolders(),
+    getFieldRequirements(),
   ]);
 
   // Sort by / Filter by columns for the list view (Aug 31 feedback: every list,
@@ -196,6 +199,8 @@ export default async function PipelinePage({
     ball: withHolder(
       opportunityBall({
         stage: o.stage,
+        salesperson: o.salesperson,
+        intakeComplete: intakeIssues(o, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }).length === 0,
         lineItems: o.lineItems,
         order: o.orders[0] ? toOrderBallInput(o.orders[0]) : null,
       }),

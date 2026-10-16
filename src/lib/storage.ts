@@ -1,10 +1,10 @@
 // Supabase Storage wrapper for file uploads (order/deal documents).
 //
-// Server-only: it uses the SERVICE ROLE key, which must never reach the
+// Server-only: it uses a Supabase secret key, which must never reach the
 // browser. The browser never talks to Supabase directly with a key - it only
 // PUTs the file bytes to a short-lived signed upload URL minted here.
 //
-// Uploads are OPTIONAL. When SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not
+// Uploads are OPTIONAL. When SUPABASE_URL / SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) are not
 // set (local dev, preview deploys), uploadsConfigured() is false and the UI
 // falls back to pasting a link - which always works.
 
@@ -14,24 +14,28 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const UPLOAD_BUCKET = "order-files";
 
 /** Hard cap on a single upload (matches the file input's client-side check). */
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export { MAX_UPLOAD_BYTES } from "./uploadPolicy";
 
 /** How long a download link stays valid (seconds). */
 const DOWNLOAD_URL_TTL = 3600;
 
 export function uploadsConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(process.env.SUPABASE_URL && storageKey());
 }
 
 // Created on first use, then reused - building a client per call would open a
 // fresh fetch/agent pipeline on every upload.
 let cached: SupabaseClient | null = null;
 
+function storageKey(): string | undefined {
+  return process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+}
+
 function serviceClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = storageKey();
   if (!url || !key) {
-    throw new Error("Supabase storage is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)");
+    throw new Error("Supabase storage is not configured (SUPABASE_URL / SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY))");
   }
   if (!cached) {
     cached = createClient(url, key, {
@@ -74,8 +78,8 @@ export async function createSignedUploadUrl(path: string): Promise<SignedUpload>
 }
 
 /**
- * Upload bytes straight from the server (used by intake, which already has the
- * file in hand from a plain form POST - no signed-URL round trip needed).
+ * Upload bytes from server-side integrations. Browser forms use signed URLs
+ * so their file bytes bypass the app server request-size limit.
  */
 export async function uploadObject(
   path: string,

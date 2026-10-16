@@ -46,6 +46,7 @@ export const setPaymentDueDate = workflowAction("setPaymentDueDate");
 export const createPurchaseOrder = workflowAction("createPurchaseOrder");
 export const advancePoStatus = workflowAction("advancePoStatus");
 export const acknowledgePo = workflowAction("acknowledgePo");
+export const setPoExpectedDate = workflowAction("setPoExpectedDate");
 export const setPoAutoQuotesNumber = workflowAction("setPoAutoQuotesNumber");
 export const createDelivery = workflowAction("createDelivery");
 export const updateDelivery = workflowAction("updateDelivery");

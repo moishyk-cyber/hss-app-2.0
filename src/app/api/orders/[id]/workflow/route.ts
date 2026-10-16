@@ -15,7 +15,7 @@ const targets = {
   reopenOrder: "order", unstickOrder: "order", setOrderOwner: "order", updateOrderTermsText: "order", addInvoice: "order", createPurchaseOrder: "order",
   createDelivery: "order", addOrderLineItem: "order", markOrderComplete: "order",
   markPaymentInvoiced: "payment", markPaymentPaid: "payment", undoMarkPaymentPaid: "payment", setPaymentQuickbooksRef: "payment", setPaymentDueDate: "payment",
-  acknowledgePo: "po", advancePoStatus: "po", setPoAutoQuotesNumber: "po",
+  acknowledgePo: "po", advancePoStatus: "po", setPoAutoQuotesNumber: "po", setPoExpectedDate: "po",
   setServiceIssueStatus: "service",
   updateDelivery: "delivery", setDeliveryStatus: "delivery", deleteEmptyDelivery: "delivery", splitDelivery: "delivery", moveItemsToDelivery: "delivery",
   setLineItemDeliveryStatus: "item", setLineItemBackorderExpected: "item", setLineItemAssignee: "item",
@@ -49,9 +49,9 @@ export const POST = createOrderWorkflowEndpoint({
   },
   save: (action, args) => (actions[action as keyof typeof targets] as (...args: unknown[]) => Promise<ActionResult>)(...args),
   snapshot: async id => {
-    const order = plainMoney(await prisma.order.findUnique({ where: { id }, include: ORDER_BALL_INCLUDE }));
+    const order = plainMoney(await prisma.order.findUnique({ where: { id }, include: { ...ORDER_BALL_INCLUDE, owner: { select: { name: true, active: true } }, opportunity: { select: { salesperson: { select: { name: true, active: true } } } } } }));
     if (!order) throw new Error("Order not found after save");
-    const steps = dealJourney({ id, title: order.title, stage: "won", companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id });
+    const steps = dealJourney({ id, title: order.title, stage: "won", salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id });
     return { steps, payments: order.payments, gate: evaluatePaymentGate(order) };
   },
 });

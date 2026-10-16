@@ -127,7 +127,10 @@ export function TruckerSelect({
               <li role="option" aria-selected={false}>
                 <button
                   type="button"
-                  onClick={() => pick(trimmed)}
+                  onClick={() => {
+                    setOpen(false);
+                    router.push(`/carriers-truckers/new?${new URLSearchParams({ name: trimmed, deliveryId })}`);
+                  }}
                   className="w-full border-t border-border px-3 py-2 text-left text-[13px] font-medium text-primary transition-colors hover:bg-hover"
                 >
                   ＋ Add “{trimmed}”

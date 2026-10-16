@@ -67,7 +67,6 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     "service.assign",
   ],
   billing: ["payments.edit", "terms.edit", "files.edit", "tasks.edit"],
-  design: ["files.edit", "tasks.edit", "deals.edit"],
   viewer: [],
 };
 

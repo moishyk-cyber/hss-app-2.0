@@ -1,10 +1,9 @@
 "use server";
 
+import { confirmSalesOrder, salesOrderRequired } from "@/lib/workflows/salesOrder";
 import { hasOrderTerms } from "@/lib/ballInCourt";
 import { fulfillment, lineItemPricing } from "@/lib/workflows";
-import { reconcileOrderStatus } from "@/lib/workflows/orderState";
-import { serialTransaction } from "@/lib/workflows/transaction";
-import { Prisma } from "@prisma/client";
+import { logPurchaseOrder, renamePurchaseOrder, poExpectedDate, savePoExpectedDate, poNumberProblem, isDuplicatePoNumber, duplicatePoNumberMessage } from "@/lib/workflows/purchaseOrders";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
@@ -425,22 +424,15 @@ async function resolveVendor(
  * goods travel is decided later, when the vendor acknowledges the PO - see
  * acknowledgePo, which is what actually creates the delivery leg.
  *
- * PO numbers are PO-<jobId or last 6 of the order id>-<n>, where n comes from
- * atomically incrementing Order.poSequence (the UPDATE row-locks the order, so
- * two people creating a PO on the same order at once get different numbers).
- * poNumber is globally unique in the schema; a legacy number can still collide
- * when two orders share a jobId, so a taken number is skipped (the sequence
- * moves on again) and a race that only surfaces at insert time (P2002) retries
- * the whole allocation a bounded number of times. `supplierId` picks an
- * existing vendor; `newVendorName` creates (or links to a normalized-name
- * match for) one instead - exactly one of the two should be set.
+ * The AutoQuotes number is the primary PO number throughout the app.
  */
 export async function createPurchaseOrder(
   orderId: string,
   supplierId: string,
   lineItemIds: string[],
   newVendorName: string = "",
-  autoQuotesPoNumber: string = ""
+  autoQuotesPoNumber: string = "",
+  expectedDate: string = ""
 ): Promise<ActionResult> {
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
@@ -448,12 +440,15 @@ export async function createPurchaseOrder(
     return { ok: false, message: "Pick or create a vendor, and at least one item." };
   }
   const aqNumber = autoQuotesPoNumber.trim();
-  if (aqNumber.length > 40) {
-    return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
-  }
-  return safeAction(async () => {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
+  const problem = poNumberProblem(aqNumber);
+  if (problem) return { ok: false, message: problem };
+  try { poExpectedDate(expectedDate); } catch { return { ok: false, message: "Enter a valid expected date." }; }
+  try {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { payments: true, company: true } });
     if (!order) throw new Error("Order not found");
+    const gate = evaluatePaymentGate(plainMoney(order));
+    if (!gate.open) return { ok: false, message: gate.reason };
+    if (!order.salesOrderSentAt) return { ok: false, message: salesOrderRequired };
 
     const vendor = await resolveVendor(supplierId, newVendorName);
     if (!vendor) throw new Error("Vendor not found");
@@ -461,62 +456,18 @@ export async function createPurchaseOrder(
       await log(orderId, "vendor_created", `Vendor "${vendor.name}" created while creating a PO`);
     }
 
-    let po = null;
-    const MAX_ATTEMPTS = 5;
-    const MAX_SKIPS = 20;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      try {
-        po = await serialTransaction(prisma, async (tx) => {
-          for (let skip = 0; skip < MAX_SKIPS; skip += 1) {
-            // Atomic allocation: each call hands out the next number, and a
-            // number already taken (a legacy PO on another order with the same
-            // jobId) is skipped by incrementing again, never recomputed.
-            const seq = await tx.order.update({
-              where: { id: orderId },
-              data: { poSequence: { increment: 1 } },
-              select: { poSequence: true, jobId: true, id: true },
-            });
-            const base = seq.jobId || seq.id.slice(-6).toUpperCase();
-            const poNumber = `PO-${base}-${seq.poSequence}`;
-            const taken = await tx.purchaseOrder.findUnique({ where: { poNumber }, select: { id: true } });
-            if (taken) continue;
-            const created = await tx.purchaseOrder.create({
-              data: {
-                orderId,
-                supplierId: vendor.id,
-                poNumber,
-                status: "draft",
-                autoQuotesPoNumber: aqNumber || null,
-                // Provisional until the delivery mode is picked at acknowledgment.
-                shipTo: "hss",
-              },
-            });
-            // No delivery leg yet on purpose: the PO has to come back acknowledged
-            // before anyone knows how it is travelling. acknowledgePo creates it.
-            await tx.lineItem.updateMany({
-              where: { id: { in: lineItemIds }, orderId, purchaseOrderId: null, rfqStatus: { not: "removed" } },
-              data: { purchaseOrderId: created.id },
-            });
-            await reconcileOrderStatus(tx, orderId);
-            return created;
-          }
-          throw new Error("Could not allocate a PO number");
-        });
-        break;
-      } catch (err) {
-        // Another order sharing this jobId inserted the same number between our
-        // check and our insert: the transaction rolled back, so allocate again
-        // (the other PO now exists and is skipped).
-        const isNumberCollision =
-          err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-        if (!isNumberCollision || attempt === MAX_ATTEMPTS - 1) throw err;
-      }
-    }
-    if (!po) throw new Error("Could not allocate a PO number");
+    const po = await logPurchaseOrder(prisma, {
+      orderId, supplierId: vendor.id, lineItemIds, number: aqNumber, expectedDate,
+    });
 
     await log(orderId, "po_created", `PO ${po.poNumber} created for ${vendor.name} (${lineItemIds.length} item(s))`);
     revalidateOrder(orderId);
-  }, "Could not create the purchase order. Please try again.");
+    return { ok: true };
+  } catch (error) {
+    if (isDuplicatePoNumber(error)) return { ok: false, message: duplicatePoNumberMessage };
+    console.error(error);
+    return { ok: false, message: "Could not log the purchase order. Refresh and check the selected items, then try again." };
+  }
 }
 
 export async function advancePoStatus(poId: string): Promise<ActionResult> {
@@ -860,21 +811,21 @@ export async function setPoAutoQuotesNumber(poId: string, value: string): Promis
   const denied = await requirePermission("pos.edit");
   if (denied) return denied;
   const trimmed = value.trim();
-  if (trimmed.length > 40) {
-    return { ok: false, message: "AutoQuotes PO # is too long (max 40 characters)." };
-  }
-  return safeAction(async () => {
-    const po = await prisma.purchaseOrder.update({
-      where: { id: poId },
-      data: { autoQuotesPoNumber: trimmed || null },
-    });
-    await log(
-      po.orderId,
-      "po_autoquotes_number_set",
-      `PO ${po.poNumber ?? po.id} AutoQuotes PO # set to ${trimmed || "none"}`
-    );
+  const problem = poNumberProblem(trimmed);
+  if (problem) return { ok: false, message: problem };
+  try {
+    const po = await renamePurchaseOrder(prisma, poId, trimmed);
+    await log(po.orderId, "po_autoquotes_number_set", `PO number set to ${po.poNumber} from AutoQuotes`);
     revalidateOrder(po.orderId);
-  }, "Could not save the AutoQuotes PO #. Please try again.");
+    revalidatePath(`/purchase-orders/${po.id}`);
+    revalidatePath("/deliveries");
+    revalidatePath("/dashboard");
+    return { ok: true };
+  } catch (error) {
+    if (isDuplicatePoNumber(error)) return { ok: false, message: duplicatePoNumberMessage };
+    console.error(error);
+    return { ok: false, message: "Could not save the AutoQuotes PO #. Please try again." };
+  }
 }
 
 /**
@@ -958,4 +909,30 @@ export async function setPaymentQuickbooksRef(paymentId: string, link: string): 
     );
     revalidateOrder(payment.orderId);
   }, "Could not save the QuickBooks link. Please try again.");
+}
+
+/** PO vendor availability is independent of item dates and delivery scheduling. */
+export async function setPoExpectedDate(poId: string, value: string): Promise<ActionResult> {
+  const denied = await requirePermission("pos.edit");
+  if (denied) return denied;
+  try { poExpectedDate(value); } catch { return { ok: false, message: "Enter a valid expected date." }; }
+  return safeAction(async () => {
+    const po = await savePoExpectedDate(prisma, poId, value);
+    await log(po.orderId, "po_expected_date_set", `PO ${po.poNumber} expected date ${value.trim() ? `set to ${value.trim()}` : "cleared"}`);
+    revalidateOrder(po.orderId);
+  }, "Could not save the PO expected date. Please try again.");
+}
+
+export async function setSalesOrderSent(orderId: string, sent: boolean): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  try {
+    await confirmSalesOrder(prisma, orderId, sent);
+    await log(orderId, "sales_order_sent_set", sent ? "Sales order confirmed sent to customer" : "Sales order sent confirmation cleared");
+    revalidateOrder(orderId);
+    revalidatePath("/pipeline");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Could not save the sales order confirmation." };
+  }
 }

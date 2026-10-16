@@ -6,12 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { logActivity } from "@/lib/log";
 import { recomputeOrderStatus } from "@/lib/flow";
 import { currentUserId, currentUserName } from "@/lib/identityServer";
-import { roundCents } from "@/lib/money";
 import { findCompanyByNormalizedName } from "../companies/nameMatch";
 import { requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, TEXT_LIMITS } from "@/lib/input";
 import { attachments } from "@/lib/workflows";
+import { getDefaultPricingAssignee } from "@/lib/workflows/pricingAssignee";
 
 function str(formData: FormData, key: string): string | null {
   const raw = formData.get(key);
@@ -37,25 +37,23 @@ function all(formData: FormData, key: string): string[] {
   return formData.getAll(key).map((v) => (typeof v === "string" ? v : ""));
 }
 
-/** Optional attachments never undo a successful intake; transports share Document policy. */
-async function saveDrawingAttachment(
+/** Link failures never undo a saved intake and must remain visible to the caller. */
+async function saveDrawingLink(
   formData: FormData,
   linkedType: "order" | "opportunity",
   linkedId: string,
   orderType: "project" | "order"
-): Promise<void> {
-  const kind = orderType === "project" ? "drawing" : "other";
+): Promise<string | null> {
   const link = str(formData, "drawingLink");
-  if (link) {
-    try {
-      await attachments.link({ linkedType, linkedId, uploadedBy: await currentUserName() }, { url: link, kind });
-    } catch (error) { console.error("intake attachment link failed", error); }
-  }
-  const file = formData.get("drawingFile");
-  if (file instanceof File && file.size > 0) {
-    try {
-      await attachments.upload({ linkedType, linkedId, uploadedBy: await currentUserName() }, file, { kind });
-    } catch (error) { console.error("intake attachment upload failed", error); }
+  if (!link) return null;
+  try {
+    await attachments.link({ linkedType, linkedId, uploadedBy: await currentUserName() }, {
+      url: link, kind: orderType === "project" ? "drawing" : "other",
+    });
+    return null;
+  } catch (error) {
+    console.error("intake attachment link failed", error);
+    return "Your intake was saved, but the attachment link could not be saved. Add it from the record’s Files section.";
   }
 }
 
@@ -76,7 +74,7 @@ type ParsedItem = {
   name: string;
   moreDetails: string | null;
   qty: number;
-  /** Optional price typed on the call (Sep 3 plan A1.3) - null means "needs quoting". */
+  /** Prices are entered later, when the deal is closed. */
   unitPrice: number | null;
 };
 
@@ -84,7 +82,6 @@ function parseItems(formData: FormData): ParsedItem[] {
   const names = all(formData, "itemName");
   const details = all(formData, "itemDetails");
   const qtys = all(formData, "itemQty");
-  const prices = all(formData, "itemUnitPrice");
 
   const items: ParsedItem[] = [];
   for (let i = 0; i < names.length; i += 1) {
@@ -92,13 +89,11 @@ function parseItems(formData: FormData): ParsedItem[] {
     if (!name) continue;
     const detail = (details[i] ?? "").trim();
     const qty = Number.parseInt((qtys[i] ?? "1").trim(), 10);
-    const rawPrice = (prices[i] ?? "").trim();
-    const price = rawPrice === "" ? null : Number(rawPrice.replace(/[^0-9.]/g, ""));
     items.push({
       name,
       moreDetails: detail === "" ? null : detail,
       qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
-      unitPrice: price != null && Number.isFinite(price) && price > 0 ? roundCents(price) : null,
+      unitPrice: null,
     });
   }
   return items;
@@ -217,7 +212,7 @@ export async function submitIntake(formData: FormData) {
 
   // After the commit too, same reasoning: an attachment is a nice-to-have
   // add-on, not something that should ever undo an otherwise-successful intake.
-  await saveDrawingAttachment(formData, result.type, result.id, orderType);
+  const attachmentWarning = await saveDrawingLink(formData, result.type, result.id, orderType);
 
   // Logged after the commit: logActivity uses the global prisma client (so it can
   // attribute to the signed-in identity) and never throws, so it cannot roll the
@@ -227,10 +222,8 @@ export async function submitIntake(formData: FormData) {
     result.id,
     "intake_submitted",
     result.type === "opportunity"
-      ? `Intake form created opportunity "${result.title}" with ${items.length} item(s)${
-          items.some((i) => i.unitPrice != null) ? " (some already priced)" : " needing pricing"
-        }`
-      : `Intake form created order "${result.title}" with ${items.length} pre-priced item(s)${
+      ? `Intake form created opportunity "${result.title}" with ${items.length} item(s) awaiting supplier quotes`
+      : `Intake form created order "${result.title}" with ${items.length} item(s)${
           termsNotes ? ` - terms: ${termsNotes}` : " - no terms written yet"
         }`
   );
@@ -241,9 +234,13 @@ export async function submitIntake(formData: FormData) {
   revalidatePath("/pipeline");
   revalidatePath("/orders");
   revalidatePath("/companies");
-  redirect(
-    result.type === "opportunity" ? `/pipeline/${result.id}` : `/orders/${result.id}`
-  );
+  // The client uploads the optional file after the record exists. No file bytes
+  // pass through this action (Next's default request limit is 1 MB).
+  return {
+    ...result,
+    href: result.type === "opportunity" ? `/pipeline/${result.id}` : `/orders/${result.id}`,
+    attachmentWarning,
+  };
 
   async function runIntakeTransaction() {
     return prisma.$transaction(async (tx) => {
@@ -359,6 +356,7 @@ export async function submitIntake(formData: FormData) {
 
     // --- opportunity or order --------------------------------------------
     if (goesToPipeline) {
+      const pricingAssigneeId = await getDefaultPricingAssignee(tx);
       const opportunity = await tx.opportunity.create({
         data: {
           title,
@@ -370,8 +368,7 @@ export async function submitIntake(formData: FormData) {
           // Carry the form's real answer. Hard-coding true told the RFQ queue every
           // deal needed quoting, including ones the salesperson had already priced.
           needsPricing,
-          // The price is agreed at close, not at intake (the Close panel asks
-          // for it). Item prices typed here still roll up via the RFQ pricing sync.
+          // The agreed total is entered in the Close panel.
           value: null,
           neededByDate,
           estDueDate,
@@ -401,7 +398,8 @@ export async function submitIntake(formData: FormData) {
               unitPrice: item.unitPrice,
               // A price typed on the call is a quote in hand; everything else
               // still has to go through the RFQ queue.
-              rfqStatus: item.unitPrice != null ? "quote_received" : "needs_pricing",
+              rfqStatus: "needs_pricing",
+              assigneeId: pricingAssigneeId,
             })),
           },
         },
@@ -419,12 +417,6 @@ export async function submitIntake(formData: FormData) {
       return { type: "opportunity" as const, id: opportunity.id, title };
     }
 
-    // Priced on the call: the order is worth what its item prices add up to.
-    const itemsTotal = roundCents(
-      items.reduce((sum, item) => sum + (item.unitPrice ?? 0) * item.qty, 0)
-    );
-    const orderValue = itemsTotal > 0 ? itemsTotal : null;
-
     const order = await tx.order.create({
       data: {
         title,
@@ -433,7 +425,7 @@ export async function submitIntake(formData: FormData) {
         ownerId: salespersonId,
         orderType,
         status: "new",
-        orderValue,
+        orderValue: null,
         neededByDate,
         locationId,
         deliveryAddress,

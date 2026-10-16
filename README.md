@@ -40,9 +40,10 @@ Create `.env` with:
 | `DATABASE_URL` | Postgres connection (pooled) used by the app |
 | `DIRECT_URL` | Direct Postgres connection used by Prisma for schema work |
 | `SUPABASE_URL` | Supabase project URL, for file uploads |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service key, for file uploads |
+| `SUPABASE_SECRET_KEY` | Supabase secret API key (`sb_secret_...`), for server-side file storage |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional legacy fallback when `SUPABASE_SECRET_KEY` is not set |
 
-The Supabase pair is optional. Without it the app runs normally and the file
+The Supabase URL and one server key are optional. Prefer the modern `SUPABASE_SECRET_KEY`; an existing legacy service-role key remains supported. Without it the app runs normally and the file
 upload panels report that uploads are not configured; link-only documents still
 work.
 
@@ -122,3 +123,9 @@ nobody needs the old values anymore.
 | `prisma/sql/` | SQL applied by hand to production, kept as migration history |
 | `scripts/` | Maintenance and verification scripts |
 | `docs/` | Data model, UX flow, design and build notes |
+
+### In-app notifications
+
+For each database/environment, apply the additive `prisma/sql/20261015_notifications.sql` manually, run `npx prisma generate`, then run `npm run notifications:init` **before starting the updated app**. Initialization is idempotent and baselines existing workflow records so deployment does not send historical handoff alerts. It leaves existing inbox messages untouched. The command uses `.env` when present, or the environment's existing database variables.
+
+Notifications are private to the signed-in user. Workflow changes are delivered through the activity log; unprocessed entries are retried when the app polls. Task reminders are generated once per due date and assignee for tasks due today or overdue, using the app's UTC date-only convention. While an authenticated app is visible, it polls every 30 seconds and on focus. Email, browser push, and closed-app/background scheduling are outside this initial in-app version. Sound is opt-in for the current browser session.

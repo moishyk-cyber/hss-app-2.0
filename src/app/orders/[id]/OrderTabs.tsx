@@ -52,7 +52,7 @@ export function OrderTabs({
   const selection = useWorkflowSelection();
   const selectStep = selection?.select;
   const selectedStep = selection?.selectedKey;
-  const stepTabs: Record<string, TabKey> = { quote: "invoice", terms: "invoice", deposit: "invoice", pos: "purchase-orders", delivery: "delivery", service: "service", files: "files" };
+  const stepTabs: Record<string, TabKey> = { salesOrder: "purchase-orders", quote: "invoice", terms: "invoice", deposit: "invoice", pos: "purchase-orders", delivery: "delivery", service: "service", files: "files" };
   const tab = selection ? stepTabs[selection.selectedKey] ?? manualTab : manualTab;
 
   // Sep 3 QA #7: the header's "Record payment" (and the stepper's step links)

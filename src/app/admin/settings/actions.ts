@@ -63,6 +63,7 @@ const STEP_SETTING_KEYS: Record<FlowStepKey, { role: SettingKey; userIds: Settin
   quote: { role: "court.quote.role", userIds: "court.quote.userIds" },
   terms: { role: "court.terms.role", userIds: "court.terms.userIds" },
   deposit: { role: "court.deposit.role", userIds: "court.deposit.userIds" },
+  salesOrder: { role: "court.salesOrder.role", userIds: "court.salesOrder.userIds" },
   pos: { role: "court.pos.role", userIds: "court.pos.userIds" },
   delivery: { role: "court.delivery.role", userIds: "court.delivery.userIds" },
   service: { role: "court.service.role", userIds: "court.service.userIds" },
@@ -78,6 +79,7 @@ export async function setStageHolder(
   if (denied) return denied;
 
   if (!(step in STEP_SETTING_KEYS)) return { ok: false, message: "Not a recognised stage." };
+  if (step === "close") return { ok: false, message: "Closing follows the salesperson assigned to each deal. Update the deal’s salesperson instead." };
   const s = step as FlowStepKey;
   if (!isRole(role)) return { ok: false, message: "Not a valid role." };
 
@@ -125,4 +127,23 @@ export async function setServiceDefaultAssignee(userId: string): Promise<ActionR
     );
     revalidatePath("/admin/settings");
   }, "Could not save the default assignee. Please try again.");
+}
+
+/** Default teammate for new quote/pricing line items. Existing assignments stay intact. */
+export async function setPricingDefaultAssignee(userId: string): Promise<ActionResult> {
+  const denied = await requirePermission("admin.manage");
+  if (denied) return denied;
+  if (userId) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, active: true } });
+    if (!user?.active) return { ok: false, message: "Pick an active teammate." };
+  }
+  return safeAction(async () => {
+    const before = await prisma.appSetting.findUnique({ where: { key: "pricing.defaultAssigneeId" } });
+    await setSetting("pricing.defaultAssigneeId", userId);
+    await logActivity("setting", "pricing.defaultAssigneeId", "setting_changed",
+      `Default pricing assignee set to ${userId || "unassigned"}`,
+      { previousValue: before?.value ?? null, newValue: userId || null });
+    revalidatePath("/admin/settings");
+    revalidatePath("/intake");
+  }, "Could not save the default pricing assignee. Please try again.");
 }

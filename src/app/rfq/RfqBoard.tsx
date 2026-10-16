@@ -117,7 +117,7 @@ export function RfqBoard({
                       </Link>
                     )}
                     <div className="kanban-card-facts flex items-center justify-between gap-2">
-                      <PriceCell item={item} />
+                      {item.order ? <PriceCell item={item} /> : null}
                       <span className="kanban-card-assignee text-xs text-gray-dark" title={item.assignee?.name ?? "Unassigned"}>
                         {item.assignee?.name ?? "Unassigned"}
                       </span>

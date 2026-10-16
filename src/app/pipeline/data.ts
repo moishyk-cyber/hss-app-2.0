@@ -8,6 +8,7 @@ export const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  salesOrderSentAt: true,
   termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
@@ -28,13 +29,16 @@ export const ORDER_BALL_SELECT = {
 
 export const PIPELINE_CARD_SELECT = {
   id: true,
+  companyId: true,
+  neededByDate: true,
   title: true,
   stage: true,
   value: true,
   createdAt: true,
   nextFollowUp: true,
   company: { select: { id: true, name: true } },
-  lineItems: { select: { rfqStatus: true } },
+  salesperson: { select: { name: true, active: true } },
+  lineItems: { select: { id: true, name: true, rfqStatus: true, unitPrice: true } },
   orders: { select: ORDER_BALL_SELECT, orderBy: { createdAt: "asc" }, take: 1 },
 } satisfies Prisma.OpportunitySelect;
 
@@ -51,7 +55,7 @@ export const PIPELINE_DETAIL_INCLUDE = {
   },
   location: { select: { id: true, name: true, address: true } },
   primaryContact: { select: { firstName: true, lastName: true } },
-  salesperson: { select: { name: true } },
+  salesperson: { select: { name: true, active: true } },
   lineItems: { orderBy: { createdAt: "asc" } },
   orders: { select: { id: true, title: true, ...ORDER_BALL_SELECT }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.OpportunityInclude;

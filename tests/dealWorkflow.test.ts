@@ -4,7 +4,7 @@ import { closeIssues, dealJourney, stageIssues, orderCanClose, type DealFacts } 
 import type { OrderBallInput } from "../src/lib/ballInCourt";
 
 const required = { company: true, neededBy: true };
-const deal: DealFacts = { id: "deal", title: "Kitchen equipment", stage: "estimating", companyId: "company", neededByDate: "2026-10-10", lineItems: [{ id: "oven", name: "Oven", rfqStatus: "quote_received", unitPrice: 2000 }] };
+const deal: DealFacts = { id: "deal", title: "Kitchen equipment", stage: "estimating", companyId: "company", neededByDate: "2026-10-10", lineItems: [{ id: "oven", name: "Oven", rfqStatus: "quote_received", unitPrice: null }] };
 const order: OrderBallInput & { id: string } = { id: "order", status: "delivered", orderType: "project", orderValue: 2000, quoteStatus: "accepted", termsNotes: "30% deposit", paymentTerms: null, company: { requiresDeposit: true, depositPercent: 30 }, payments: [{ status: "paid", amount: 600 }], purchaseOrders: [{ status: "shipped" }], deliveries: [{ status: "delivered_full" }], lineItems: [{ rfqStatus: "approved", deliveryStatus: "arrived_complete", purchaseOrderId: "po" }], openIssueCount: 0 };
 
 test("Mark Won reports all missing fields and rejects invalid dates and nonfinite totals", () => {
@@ -19,9 +19,9 @@ test("Losing a deal requires a real reason, without pricing or delivery requirem
   assert.deepEqual(closeIssues({ value: null, address: "", neededBy: "", lostReason: "Customer cancelled" }, "lost"), []);
 });
 
-test("Later stage changes cannot bypass missing intake or unset prices", () => {
+test("Later stage changes require intake and supplier quotes, without item prices", () => {
   const incomplete = { ...deal, companyId: null, neededByDate: null, lineItems: [{ ...deal.lineItems[0], rfqStatus: "approved", unitPrice: null }] };
-  assert.deepEqual(stageIssues(incomplete, "won", required).map(i => i.field), ["companyId", "neededByDate", "lineItems"]);
+  assert.deepEqual(stageIssues(incomplete, "won", required).map(i => i.field), ["companyId", "neededByDate"]);
   assert.deepEqual(stageIssues(incomplete, "info_missing", required), []);
   assert.equal(stageIssues({ ...deal, lineItems: [] }, "won", required).length, 1);
 });
@@ -63,7 +63,7 @@ test("Independent checks expose missing quote even after payment and delivery", 
 test("Exempt quote steps are hidden while exempt payment stays visible", () => {
   const journey = dealJourney({ ...deal, stage: "won" }, required, { ...order, quoteStatus: "not_needed", payments: [], company: { requiresDeposit: false, depositPercent: 30 } });
   assert.equal(journey.some(s => s.key === "quote"), false);
-  assert.equal(journey.length, 8);
+  assert.equal(journey.length, 9);
   assert.equal(journey.find(s => s.key === "deposit")?.state, "not_required");
 });
 

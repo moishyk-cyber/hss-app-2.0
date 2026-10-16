@@ -20,6 +20,7 @@ import { uploadsConfigured } from "@/lib/storage";
 import FilesSection, { type FileDocData } from "../../orders/[id]/FilesSection";
 import { addLineItem } from "../actions";
 import { ClosePanel } from "../ClosePanel";
+import { DeleteIntakeButton } from "@/app/intake/DeleteIntakeButton";
 import { LineItemRow } from "../LineItemRow";
 import {
   Card,
@@ -54,7 +55,7 @@ export default async function OpportunityDetailPage({
 }) {
   const [{ id }, { error }] = await Promise.all([params, searchParams]);
 
-  const [opportunityRow, users, canClose, documents, requirements, companies] = await Promise.all([
+  const [opportunityRow, users, canClose, documents, requirements, companies, canEditIntake] = await Promise.all([
     prisma.opportunity.findUnique({
       where: { id },
       include: PIPELINE_DETAIL_INCLUDE,
@@ -67,6 +68,7 @@ export default async function OpportunityDetailPage({
     }),
     getFieldRequirements(),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    can("deals.edit"),
   ]);
   // Money columns are Decimal; plain numbers from here on (line items and the
   // deal value go to client components below).
@@ -145,7 +147,7 @@ export default async function OpportunityDetailPage({
           </>
         }
         secondary={
-          <IntentLink href={`/pipeline/${opportunity.id}/edit`} className="btn">Edit deal</IntentLink>
+          <div className="flex gap-2"><IntentLink href={`/pipeline/${opportunity.id}/edit`} className="btn">Edit deal</IntentLink>{canEditIntake && !linkedOrder && stage !== "won" && <DeleteIntakeButton id={opportunity.id} kind="opportunity" name={opportunity.title} />}</div>
         }
       />
 
@@ -312,20 +314,18 @@ export default async function OpportunityDetailPage({
               <div className="overflow-x-auto">
                 <table className="deal-line-items table-klyne">
                   <thead>
-                    {/* Pricing uses the RFQ's existing save control and server action. */}
                     <tr>
                       <th>Item</th>
                       <th>Qty</th>
-                      {!closed ? <th>Price</th> : null}
                       <th>Lead time</th>
                       <th>Assignee</th>
                       <th>RFQ status</th>
-                      <th>Stock</th>
+                      <th>Stock</th><th><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     {opportunity.lineItems.map((li) => (
-                      <LineItemRow key={li.id} item={li} users={users} showPricing={!closed} />
+                      <LineItemRow key={li.id} item={li} users={users} deletable={canEditIntake && !closed && !linkedOrder} />
                     ))}
                   </tbody>
                 </table>

@@ -14,8 +14,9 @@ export const FLOW_STEPS = [
   { key: "pricing", label: "Pricing", court: "office" },
   { key: "close", label: "Close", court: "sales" },
   { key: "quote", label: "Quote", court: "office" },
-  { key: "terms", label: "Sales Order + Terms", court: "sales" },
+  { key: "terms", label: "Terms", court: "sales" },
   { key: "deposit", label: "Deposit", court: "billing" },
+  { key: "salesOrder", label: "Sales Order", court: "sales" },
   { key: "pos", label: "POs", court: "purchasing" },
   { key: "delivery", label: "Delivery", court: "purchasing" },
   { key: "service", label: "Customer Service", court: "service" },
@@ -48,14 +49,15 @@ export type Ball = {
   /** Short next-action text, e.g. "Price 3 items" or the payment gate reason. */
   hint: string;
   /** Who actually holds the ball right now - a person's name, a role label, or
-   *  the court name. Filled in server-side by @/lib/courtHolders (withHolder);
-   *  left unset here since this module is pure and doesn't touch the DB. */
+   *  the court name. Closing uses the deal salesperson; other stages resolve
+   *  their configured holder through @/lib/courtHolders (withHolder). */
   holder?: string;
 };
 
 /** What orderBall() needs: the flow-engine order plus quote/terms/PO-link/issue facts. */
 export type OrderBallInput = Omit<FlowOrder, "lineItems"> & {
   quoteStatus: string;
+  salesOrderSentAt?: Date | null;
   /** Free-text terms written on the order (the Sales Order + Terms step). */
   termsNotes: string | null;
   /** Legacy PAYMENT_TERMS value on orders closed before terms became free text. */
@@ -67,10 +69,28 @@ export type OrderBallInput = Omit<FlowOrder, "lineItems"> & {
 
 export type OpportunityBallInput = {
   stage: string;
-  lineItems: { rfqStatus: string }[];
+  /** Current intake evidence, rather than the manually selected stage. */
+  intakeComplete?: boolean;
+  salesperson?: { name: string; active?: boolean } | null;
+  lineItems: { rfqStatus: string; unitPrice: number | null }[];
   /** The won order, when there is one (opportunityBall delegates to orderBall). */
   order?: OrderBallInput | null;
 };
+
+export function closingHolder(salesperson: OpportunityBallInput["salesperson"]): string {
+  return salesperson?.active !== false && salesperson?.name.trim()
+    ? salesperson.name.trim() : "Sales (unassigned)";
+}
+
+/** Supplier quote readiness is tracked independently of dollar amounts. */
+export function itemHasQuote(item: { rfqStatus: string }): boolean {
+  return ["quote_received", "priced_in_autoquotes", "approved"].includes(item.rfqStatus);
+}
+
+export function itemIsPriced(item: { rfqStatus: string; unitPrice: number | null }): boolean {
+  return item.unitPrice != null && Number.isFinite(item.unitPrice) && item.unitPrice > 0 &&
+    !["needs_pricing", "rfq_sent", "removed"].includes(item.rfqStatus);
+}
 
 function stepFor(key: FlowStepKey) {
   // FLOW_STEPS covers every key, so the lookup cannot miss.
@@ -111,6 +131,7 @@ export function orderBall(order: OrderBallInput): Ball {
 
   const items = liveLineItems(order.lineItems);
   const notOnPo = items.filter((i) => !i.purchaseOrderId).length;
+  if (notOnPo > 0 && !order.salesOrderSentAt) return ball("salesOrder", "Confirm sales order sent");
   if (notOnPo > 0) return ball("pos", `${plural(notOnPo, "item")} not on a PO`);
   const openPos = order.purchaseOrders.filter((p) => PO_OPEN_STATUSES.has(p.status)).length;
   if (openPos > 0) return ball("pos", `${plural(openPos, "PO")} in progress`);
@@ -121,25 +142,24 @@ export function orderBall(order: OrderBallInput): Ball {
   if (notArrived > 0) return ball("delivery", `${plural(notArrived, "item")} not yet arrived`);
 
   if (order.openIssueCount > 0) return ball("service", plural(order.openIssueCount, "open issue"));
-  return ball("service", "No open issues - mark complete");
+  return { step: null, court: null, hint: "Ready to complete" };
 }
 
 /** Where the ball sits on a deal; a won deal hands over to its order. */
 export function opportunityBall(opp: OpportunityBallInput): Ball {
+  const closeBall = (hint: string): Ball => ({ ...ball("close", hint), holder: closingHolder(opp.salesperson) });
   if (opp.stage === "lost") return { step: null, court: null, hint: "Lost" };
   if (opp.stage === "won") {
-    return opp.order ? orderBall(opp.order) : ball("close", "Create the order");
+    return opp.order ? orderBall(opp.order) : closeBall("Create the order");
   }
-  if (opp.stage === "new" || opp.stage === "info_missing") return ball("sales", "Complete intake");
+  if (opp.intakeComplete === false || (opp.intakeComplete === undefined &&
+    (opp.stage === "new" || opp.stage === "info_missing"))) return ball("sales", "Complete intake");
 
   const items = liveLineItems(opp.lineItems);
-  const unpriced = items.filter(
-    (i) => i.rfqStatus === "needs_pricing" || i.rfqStatus === "rfq_sent"
-  ).length;
-  if (unpriced > 0) return ball("pricing", `Price ${plural(unpriced, "item")}`);
-  if (opp.stage === "estimating") return ball("pricing", "Finish pricing");
-  // proposal_sent / revisions_needed / negotiation, or every item is priced.
-  return ball("close", "Close the deal");
+  if (!items.length) return ball("sales", "Add requested items");
+  const unpriced = items.filter((item) => !itemHasQuote(item)).length;
+  if (unpriced > 0) return ball("pricing", `Get quotes for ${plural(unpriced, "item")}`);
+  return closeBall("Close the deal");
 }
 
 export type FullFlowOptions = {
@@ -162,6 +182,7 @@ function stepHref(key: FlowStepKey, opts: FullFlowOptions): string | undefined {
     case "terms":
     case "deposit":
       return opts.orderHref ? `${opts.orderHref}#invoice` : undefined;
+    case "salesOrder":
     case "pos":
       return opts.orderHref ? `${opts.orderHref}#purchase-orders` : undefined;
     case "delivery":

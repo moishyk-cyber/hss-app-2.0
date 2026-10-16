@@ -1,3 +1,4 @@
+import { processNotificationActivity } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { currentUserId, currentUserName } from "@/lib/identityServer";
 
@@ -22,7 +23,7 @@ export async function logActivity(
 ): Promise<void> {
   try {
     const [userName, userId] = await Promise.all([currentUserName(), currentUserId()]);
-    await prisma.activityLog.create({
+    const entry = await prisma.activityLog.create({
       data: {
         userName,
         userId,
@@ -35,6 +36,8 @@ export async function logActivity(
         sourceScreen: meta?.sourceScreen ?? null,
       },
     });
+    try { await processNotificationActivity(prisma, entry); }
+    catch (error) { console.error("notification delivery queued for retry", error); }
   } catch (err) {
     console.error("activity log write failed", err);
   }

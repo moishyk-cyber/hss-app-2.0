@@ -7,7 +7,8 @@ import { revalidatePath } from "next/cache";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { isValidValue, SERVICE_ISSUE_STATUSES, TASK_PRIORITIES } from "@/lib/constants";
-import { requirePermission } from "@/lib/permissionsServer";
+import { addServiceNote, serviceNoteProblem } from "@/lib/workflows/serviceNotes";
+import { currentUser, requirePermission } from "@/lib/permissionsServer";
 import { requireActiveAssignee } from "@/lib/ownership";
 import { cleanText, parseDateOnly, TEXT_LIMITS } from "@/lib/input";
 
@@ -141,4 +142,18 @@ export async function resolveServiceIssue(id: string, resolution: string): Promi
     await log(id, "service_issue_resolved", `Issue "${issue.title}" resolved`);
     revalidateIssue(issue);
   }, "Could not resolve the issue. Please try again.");
+}
+
+/** Append an update using the signed-in user's identity, never form-supplied attribution. */
+export async function addServiceIssueNote(issueId: string, body: string): Promise<ActionResult> {
+  const denied = await requirePermission("service.edit");
+  if (denied) return denied;
+  const author = await currentUser();
+  if (!author) return { ok: false, message: "Sign in before adding a note." };
+  const problem = serviceNoteProblem(body);
+  if (problem) return { ok: false, message: problem };
+  return safeAction(async () => {
+    const { issue } = await addServiceNote(prisma, issueId, body, author);
+    revalidateIssue(issue);
+  }, "Could not save your update. Please try again.");
 }

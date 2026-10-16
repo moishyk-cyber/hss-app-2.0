@@ -11,9 +11,11 @@
 // - Drafts survive. Everything typed autosaves to this browser, a refresh
 //   offers to restore it, and a successful submit clears it silently.
 
-import { MoneyInput } from "@/lib/MoneyInput";
-
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createSignedUpload, finalizeUpload } from "../files/actions";
+import { uploadFile, type UploadAttempt } from "@/lib/uploadFile";
+import { UPLOAD_ACCEPT, uploadProblem } from "@/lib/uploadPolicy";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BackLink } from "@/lib/BackLink";
 import { FormAlert, PendingButton } from "@/lib/ui";
@@ -65,7 +67,7 @@ type IntakeCompany = {
   locations: IntakeLocation[];
 };
 
-type ItemRow = { key: number; name: string; details: string; qty: string; unitPrice: string };
+type ItemRow = { key: number; name: string; details: string; qty: string };
 
 /** Everything a saved draft needs to rebuild the form. */
 type IntakeDraft = {
@@ -192,19 +194,6 @@ const FIELD_VALIDATORS: Record<string, (v: string) => string | null> = {
 function rowQtyValid(row: ItemRow): boolean {
   const qty = Number.parseInt(row.qty.trim(), 10);
   return Number.isFinite(qty) && qty >= 1;
-}
-
-/** Prices are optional; a typed one has to be real money. */
-function priceProblem(raw: string): boolean {
-  const t = raw.trim();
-  if (t === "") return false;
-  const n = Number(t);
-  return !Number.isFinite(n) || n <= 0;
-}
-
-function priceValue(raw: string): number {
-  const n = Number(raw.trim());
-  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -362,7 +351,9 @@ export function IntakeForm({
   initialCompanyId,
   error,
   duplicateCompany,
+  uploadsEnabled,
 }: {
+  uploadsEnabled: boolean;
   companies: IntakeCompany[];
   /** Every contact, filtered to the picked business client-side. */
   contacts: IntakeContact[];
@@ -405,7 +396,7 @@ export function IntakeForm({
   const [neededByDate, setNeededByDate] = useState("");
   const [quoteDueDate, setQuoteDueDate] = useState("");
   const [items, setItems] = useState<ItemRow[]>([
-    { key: 1, name: "", details: "", qty: "1", unitPrice: "" },
+    { key: 1, name: "", details: "", qty: "1" },
   ]);
   const [nextKey, setNextKey] = useState(2);
   // Newly-added rows mount with autoFocus, which lands the caret in their name field.
@@ -414,6 +405,50 @@ export function IntakeForm({
   // Phone/email fields are validated inline, on the field itself.
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  const router = useRouter();
+  const drawingFileRef = useRef<HTMLInputElement>(null);
+  const uploadAttempt = useRef<UploadAttempt | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [savedIntake, setSavedIntake] = useState<{
+    result: Awaited<ReturnType<typeof submitIntake>>;
+    file: File | null;
+    kind: string;
+  } | null>(null);
+
+  async function attachFile(saved: NonNullable<typeof savedIntake>) {
+    if (saved.file) {
+      const file = saved.file;
+      const result = await uploadFile(file, uploadAttempt, {
+        start: () => createSignedUpload(saved.result.type, saved.result.id, file.name, file.type, file.size),
+        finish: signed => finalizeUpload(saved.result.type, saved.result.id, {
+          storagePath: signed.storagePath, fileName: file.name, mimeType: file.type,
+          sizeBytes: file.size, kind: saved.kind,
+        }),
+      });
+      if (!result.ok) { setUploadError(result.message); return; }
+    }
+    if (saved.result.attachmentWarning) {
+      setSavedIntake({ ...saved, file: null });
+      setUploadError(saved.result.attachmentWarning);
+      return;
+    }
+    router.push(saved.result.href);
+  }
+
+  async function createIntake(formData: FormData) {
+    const file = drawingFileRef.current?.files?.[0] ?? null;
+    const problem = file ? uploadProblem(file) : null;
+    if (problem) { setUploadError(problem); saveDraftNow(false); return; }
+    setUploadError(null);
+    // The picker has no name so React never serializes its bytes into an action.
+    formData.delete("drawingFile");
+    const result = await submitIntake(formData);
+    const saved = { result, file, kind: orderType === "project" ? "drawing" : "other" };
+    clearDraft();
+    setSavedIntake(saved);
+    await attachFile(saved);
+  }
 
   // ---------------- draft autosave / restore ----------------
   const formRef = useRef<HTMLFormElement>(null);
@@ -553,8 +588,8 @@ export function IntakeForm({
     setNeededByDate(ui.neededByDate ?? "");
     setQuoteDueDate(ui.quoteDueDate ?? "");
     if (ui.items.length > 0) {
-      // Older drafts have no per-item price field.
-      setItems(ui.items.map((r) => ({ ...r, unitPrice: r.unitPrice ?? "" })));
+      // Restore request details only; discard prices from older drafts.
+      setItems(ui.items.map(({ key, name, details, qty }) => ({ key, name, details, qty })));
       setNextKey(Math.max(...ui.items.map((r) => r.key)) + 1);
     }
     setFieldValues(ui.fieldValues ?? {});
@@ -652,15 +687,7 @@ export function IntakeForm({
   // ---------------- validation ----------------
   const validItems = items.filter((r) => r.name.trim() !== "" && rowQtyValid(r));
   const badQtyRows = items.filter((r) => r.name.trim() !== "" && !rowQtyValid(r));
-  const badPriceRows = items.filter((r) => priceProblem(r.unitPrice));
-  const pricesReady = badPriceRows.length === 0;
-  const itemsReady = validItems.length > 0 && badQtyRows.length === 0 && pricesReady;
-  /** What the typed item prices add up to - the fallback order value. */
-  const itemsTotal = validItems.reduce(
-    (sum, r) => sum + priceValue(r.unitPrice) * Number.parseInt(r.qty.trim(), 10),
-    0
-  );
-  const agreedTotal = itemsTotal;
+  const itemsReady = validItems.length > 0 && badQtyRows.length === 0;
 
   /** Which validated fields are actually on screen right now? */
   const activeValidatedFields = [
@@ -689,19 +716,17 @@ export function IntakeForm({
       ? "Every item needs a quantity of at least 1"
       : validItems.length === 0
         ? "Add at least one item with a name"
-        : !pricesReady
-          ? "A typed price has to be more than $0"
-          : !fieldsReady
-            ? "Fix the highlighted phone/email fields"
-            : goesToPipeline && !quoteDueDate.trim()
-              ? "Add a quote due date"
-              : !neededByDate.trim()
-                ? "Add a delivery due date"
-                : quoteAfterDelivery
-                  ? "The quote due date has to be on or before the delivery due date"
-                  : openSection < 3
-                    ? "Work through the steps above"
-                    : null;
+        : !fieldsReady
+          ? "Fix the highlighted phone/email fields"
+          : goesToPipeline && !quoteDueDate.trim()
+            ? "Add a quote due date"
+            : !neededByDate.trim()
+              ? "Add a delivery due date"
+              : quoteAfterDelivery
+                ? "The quote due date has to be on or before the delivery due date"
+                : openSection < 3
+                  ? "Work through the steps above"
+                  : null;
 
   const clientLabel =
     clientMode === "new"
@@ -730,7 +755,7 @@ export function IntakeForm({
   function addItem() {
     setItems((rows) => [
       ...rows,
-      { key: nextKey, name: "", details: "", qty: "1", unitPrice: "" },
+      { key: nextKey, name: "", details: "", qty: "1" },
     ]);
     setAutoFocusKey(nextKey);
     setNextKey((k) => k + 1);
@@ -754,11 +779,30 @@ export function IntakeForm({
         ? (contactOptions.find((o) => o.id === contactId)?.name ?? "contact")
         : "no contact";
 
+  if (savedIntake) {
+    return <form action={async () => { setUploadError(null); await attachFile(savedIntake); }} className="card mx-auto max-w-3xl space-y-4">
+      <p role="status" className="text-sm font-medium">Your {savedIntake.result.type === "opportunity" ? "opportunity" : "order"} has been created.</p>
+      {uploadError ? <FormAlert>{uploadError}</FormAlert> : <p role="status">Saving attachment…</p>}
+      <div className="flex flex-wrap gap-2">
+        {savedIntake.file && uploadError && <PendingButton className="btn btn-primary" pendingText="Retrying upload…">Retry upload</PendingButton>}
+        {uploadError && <Link href={savedIntake.result.href} className="btn">Open saved record</Link>}
+      </div>
+    </form>;
+  }
+
   return (
     <form
       ref={formRef}
-      action={submitIntake}
-      onSubmit={() => {
+      action={createIntake}
+      onSubmit={event => {
+        const file = drawingFileRef.current?.files?.[0];
+        const problem = file ? uploadProblem(file) : null;
+        if (problem) {
+          event.preventDefault();
+          setUploadError(problem);
+          saveDraftNow(false);
+          return;
+        }
         rememberSalesperson(salespersonId);
         // Snapshot as "submitting": if the server bounces back with an error,
         // the draft is still here; if it succeeds, the next visit clears it.
@@ -767,6 +811,7 @@ export function IntakeForm({
       onChange={scheduleDraftSave}
       className="mx-auto max-w-3xl pb-4"
     >
+      {uploadError && <FormAlert>{uploadError}</FormAlert>}
       {error === "duplicate_company" ? (
         <FormAlert>
           <strong>{duplicateCompany ?? "That business"}</strong> is already on file - nothing was
@@ -1212,7 +1257,6 @@ export function IntakeForm({
               {items.map((row, index) => {
                 const isLastRow = index === items.length - 1;
                 const qtyBad = row.name.trim() !== "" && !rowQtyValid(row);
-                const priceBad = priceProblem(row.unitPrice);
                 return (
                   <div key={row.key}>
                     <div className="flex items-end gap-2">
@@ -1252,20 +1296,6 @@ export function IntakeForm({
                           className={`${inputClass} ${qtyBad ? "!border-red" : ""}`}
                         />
                       </label>
-                      {/* Price it once, on the call, when the price is already known. */}
-                      <label className="block w-24">
-                        <span className="sr-only">Unit price</span>
-                        <MoneyInput
-                          name="itemUnitPrice"
-                          min="0"
-                          value={row.unitPrice}
-                          onValueChange={(unitPrice) => updateItem(row.key, { unitPrice })}
-                          onKeyDown={(e) => onItemKeyDown(e, isLastRow)}
-                          aria-invalid={priceBad}
-                          placeholder="$ each"
-                          className={`${inputClass} ${priceBad ? "!border-red" : ""}`}
-                        />
-                      </label>
                       <button
                         type="button"
                         onClick={() => removeItem(row.key)}
@@ -1281,11 +1311,6 @@ export function IntakeForm({
                         Quantity has to be at least 1.
                       </p>
                     ) : null}
-                    {priceBad ? (
-                      <p role="alert" className="mt-1 text-xs text-red">
-                        A price has to be more than $0 - leave it blank if it needs quoting.
-                      </p>
-                    ) : null}
                   </div>
                 );
               })}
@@ -1299,39 +1324,17 @@ export function IntakeForm({
               + Add item
             </button>
 
-            {/*
-              The total price is NOT asked here - it is agreed when the deal is
-              closed (the Close panel on the deal). An order that is already
-              priced only needs its terms written down; its value is what the
-              item prices add up to.
-            */}
             {goesToPipeline ? null : (
-              <div className="mt-4 rounded-[10px] border border-border bg-panel p-3">
-                <div className="flex flex-wrap items-start gap-3">
-                  <label className="block min-w-56 flex-1">
-                    <span className={labelClass}>Customer terms</span>
-                    <textarea
-                      name="termsNotes"
-                      rows={3}
-                      placeholder="Enter the terms agreed with this customer in your own words…"
-                      className={inputClass}
-                    />
-                  </label>
-                  <div className="block w-44">
-                    <span className={labelClass}>Order total</span>
-                    <div className="text-[15px] font-semibold tabular-nums text-ink">
-                      {itemsTotal > 0 ? (
-                        `$${itemsTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      ) : (
-                        <span className="empty-value">add item prices above</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-gray">
-                  The total is what the item prices add up to. Invoices are added by hand on the
-                  order&rsquo;s Invoice tab.
-                </p>
+              <div className="mt-4">
+                <label className="block min-w-56 flex-1">
+                  <span className={labelClass}>Customer terms</span>
+                  <textarea
+                    name="termsNotes"
+                    rows={3}
+                    placeholder="Enter the terms agreed with this customer in your own words…"
+                    className={inputClass}
+                  />
+                </label>
               </div>
             )}
 
@@ -1344,7 +1347,7 @@ export function IntakeForm({
               Attachments are for BOTH types. A project usually has a drawing; a
               straight order has the client's PO, a quote, or a photo of the old
               unit. Either lands on the new record's Files tab (kind "drawing"
-              for projects, "other" for orders - see saveDrawingAttachment).
+              for projects, "other" for orders).
             */}
             <div className="intake-attachment mt-4" role="group" aria-labelledby="attachment-heading">
               <div className="mb-3 flex items-baseline gap-2">
@@ -1368,18 +1371,25 @@ export function IntakeForm({
                 <label className="block min-w-0">
                   <span className={labelClass}>Upload a file</span>
                   <input
-                    name="drawingFile"
+                    ref={drawingFileRef}
                     type="file"
-                    accept="application/pdf,image/*"
+                    disabled={!uploadsEnabled}
+                    accept={UPLOAD_ACCEPT}
+                    onChange={event => {
+                      uploadAttempt.current = null;
+                      const file = event.target.files?.[0];
+                      setUploadError(file ? uploadProblem(file) : null);
+                    }}
                     aria-describedby="attachment-help"
                     className={`${inputClass} intake-attachment-file`}
                   />
                 </label>
               </div>
+              {!uploadsEnabled && <p role="status" className="mt-2 text-xs text-gray">File uploads are not configured. Paste a link instead.</p>}
               <span id="attachment-help" className="mt-2 block text-xs text-gray">
                 {orderType === "project"
-                  ? "A PDF or a link both work - leave blank if there’s no drawing yet."
-                  : "A PDF or image (the client’s PO, a quote, a photo) or a link - leave blank if there’s nothing to attach."}
+                  ? "PDF or image · maximum 25 MB. You can also paste a link, or leave this blank."
+                  : "PDF or image (the client’s PO, a quote, a photo) · maximum 25 MB. You can also paste a link, or leave this blank."}
               </span>
             </div>
           </div>
@@ -1463,9 +1473,7 @@ export function IntakeForm({
               disabledReason={
                 badQtyRows.length > 0
                   ? "Every item needs a quantity of at least 1"
-                  : !pricesReady
-                    ? "A typed price has to be more than $0"
-                    : "Add at least one item with a name"
+                  : "Add at least one item with a name"
               }
             >
               Next - when do they need it?
@@ -1569,12 +1577,6 @@ export function IntakeForm({
               {orderType === "project" ? "Project" : "Order"}
               <span className="mx-1.5 text-gray">·</span>
               {validItems.length} item{validItems.length === 1 ? "" : "s"}
-              {agreedTotal > 0 ? (
-                <>
-                  <span className="mx-1.5 text-gray">·</span>
-                  {`$${agreedTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}
-                </>
-              ) : null}
               <span className="mx-1.5 text-gray">·</span>
               {goesToPipeline ? "goes to the pipeline" : "becomes an order straight away"}
             </p>

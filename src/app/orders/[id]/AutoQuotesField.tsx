@@ -7,7 +7,7 @@ import { PendingButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 
 /** Inline edit for the AutoQuotes PO # - same 40-char validation as create. */
-export function AutoQuotesField({ po }: { po: { id: string; autoQuotesPoNumber: string | null } }) {
+export function AutoQuotesField({ po }: { po: { id: string; autoQuotesPoNumber: string | null; poNumber: string | null } }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -15,6 +15,10 @@ export function AutoQuotesField({ po }: { po: { id: string; autoQuotesPoNumber: 
 
   async function handleSave(formData: FormData) {
     const value = String(formData.get("autoQuotesPoNumber") ?? "");
+    if (!value.trim()) {
+      setError("Enter the PO number from AutoQuotes.");
+      return;
+    }
     if (value.trim().length > 40) {
       setError("AutoQuotes PO # is too long (max 40 characters).");
       return;
@@ -33,7 +37,7 @@ export function AutoQuotesField({ po }: { po: { id: string; autoQuotesPoNumber: 
   if (!editing) {
     return (
       <span className="flex flex-wrap items-center gap-2 text-xs text-gray-dark">
-        AQ#: {po.autoQuotesPoNumber || <span className="empty-value">not set</span>}
+        PO #: {po.autoQuotesPoNumber || po.poNumber || <span className="empty-value">not set</span>}
         <button
           type="button"
           className="text-gray transition-colors hover:text-ink hover:underline"
@@ -50,8 +54,9 @@ export function AutoQuotesField({ po }: { po: { id: string; autoQuotesPoNumber: 
       <input
         aria-label="AutoQuotes PO number"
         name="autoQuotesPoNumber"
+        required
         maxLength={40}
-        defaultValue={po.autoQuotesPoNumber ?? ""}
+        defaultValue={po.autoQuotesPoNumber ?? po.poNumber ?? ""}
         placeholder="AutoQuotes PO #"
         autoFocus
         className="input-klyne w-40 px-2 py-1 text-xs"
