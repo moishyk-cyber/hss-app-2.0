@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
 import { BadgeSelect, Spinner } from "@/lib/ui";
+import { DeleteIntakeButton } from "@/app/intake/DeleteIntakeButton";
 import { UserSelect } from "@/lib/UserSelect";
 import type { ActionResult } from "@/lib/actionResult";
 import {
@@ -10,7 +11,6 @@ import {
   updateLineItemQty,
   updateLineItemRfqStatus,
 } from "./actions";
-import { PriceCell } from "../rfq/RfqRow";
 import { LeadTimeCell, StockStatusCell } from "../rfq/StockCells";
 
 export type EditableLineItem = {
@@ -94,11 +94,11 @@ function InlineNumber({
 export function LineItemRow({
   item,
   users,
-  showPricing = false,
+  deletable = false,
 }: {
   item: EditableLineItem;
+  deletable?: boolean;
   users: { id: string; name: string }[];
-  showPricing?: boolean;
 }) {
   return (
     <tr id={`pricing-${item.id}`}>
@@ -118,8 +118,6 @@ export function LineItemRow({
           onSave={(raw) => updateLineItemQty(item.id, Number.parseInt(raw, 10))}
         />
       </td>
-
-      {showPricing ? <td><PriceCell item={{ ...item, brand: null, assignee: null }} /></td> : null}
 
       {/* Lead time and stock edit here as well as in the RFQ queue - same controls, same saves. */}
       <td>
@@ -146,6 +144,7 @@ export function LineItemRow({
       <td>
         <StockStatusCell item={item} />
       </td>
+      <td>{deletable && <DeleteIntakeButton id={item.id} kind="item" name={item.name} />}</td>
     </tr>
   );
 }

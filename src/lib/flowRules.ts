@@ -191,7 +191,6 @@ const PHASE_BY_STATUS: Record<string, string> = {
   pos_in_progress: "pos",
   in_transit: "delivery",
   delivery_scheduled: "delivery",
-  delivered: "customer_service",
 };
 
 /**
@@ -206,10 +205,15 @@ const PHASE_BY_STATUS: Record<string, string> = {
  * Stuck badge on top. Sep 8 2026 client call: "mark it stuck, and the stage
  * that it's stuck in".
  */
-export function orderPhase(order: FlowOrder): string | null {
+export function orderPhase(order: FlowOrder & { openIssueCount?: number }): string | null {
   if (order.status === "complete") return null;
   // deriveOrderStatus never returns "complete" or "stuck", so this resolves in one hop.
   const status = order.status === "stuck" ? deriveOrderStatus(order) : order.status;
+  if (status === "delivered") {
+    if ((order.openIssueCount ?? 0) > 0) return "customer_service";
+    // An explicitly flagged order still needs attention until someone clears it.
+    return order.status === "stuck" ? "delivery" : null;
+  }
   return PHASE_BY_STATUS[status] ?? "deposit";
 }
 

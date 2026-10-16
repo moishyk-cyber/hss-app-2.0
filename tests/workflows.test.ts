@@ -11,26 +11,27 @@ function effects() {
   return { audits, refreshes, audit: async (...args: unknown[]) => { audits.push(args); }, refresh: (path: string) => { refreshes.push(path); } };
 }
 
-test('price and status changes reconcile the same open deal and refresh every view', async () => {
+test('supplier quote status updates the deal without requiring or initializing an amount', async () => {
   const m = memoryDatabase(fixture()), e = effects();
   const pricing = createLineItemPricing(m.db, e);
-  await pricing.change('item', { kind: 'price', unitPrice: 12.345, unitCost: 8 });
-  assert.equal(m.state().lineItem[0].unitPrice, 12.35);
+  await assert.rejects(pricing.change('item', { kind: 'price', unitPrice: 12.345, unitCost: 8 }), /agreed total/);
+  await pricing.change('item', { kind: 'status', rfqStatus: 'quote_received' });
+  assert.equal(m.state().lineItem[0].unitPrice, null);
   assert.equal(m.state().lineItem[0].rfqStatus, 'quote_received');
   assert.equal(m.state().opportunity[0].needsPricing, false);
-  assert.equal(m.state().opportunity[0].value, 12.35);
+  assert.equal(m.state().opportunity[0].value, null);
   await pricing.change('item', { kind: 'status', rfqStatus: 'rfq_sent' });
   assert.equal(m.state().opportunity[0].needsPricing, true);
   assert.ok(e.refreshes.includes('/pipeline/deal') && e.refreshes.includes('/dashboard'));
 });
 
-test('removing the final unpriced item clears pricing and initializes the complete live total', async () => {
+test('removing the final pending item completes quoting without initializing a deal amount', async () => {
   const seed = fixture();
   const m = memoryDatabase({ ...seed, lineItem: [...seed.lineItem,
     { ...seed.lineItem[0], id: 'priced', rfqStatus: 'approved', unitPrice: 50, qty: 2 }] });
   await createLineItemPricing(m.db, effects()).change('item', { kind: 'status', rfqStatus: 'removed' });
   assert.equal(m.state().opportunity[0].needsPricing, false);
-  assert.equal(m.state().opportunity[0].value, 100);
+  assert.equal(m.state().opportunity[0].value, null);
 });
 
 test('adding an unpriced item reopens pricing without overwriting an agreed deal value', async () => {
@@ -73,7 +74,7 @@ test('a reconciliation failure rolls back the item edit and produces no post-com
 test('serialization retries publish pricing effects only once', async () => {
   const m = memoryDatabase(fixture()), e = effects();
   m.conflictOnce();
-  await createLineItemPricing(m.db, e).change('item', { kind: 'price', unitPrice: 10, unitCost: null });
+  await createLineItemPricing(m.db, e).change('item', { kind: 'status', rfqStatus: 'quote_received' });
   assert.equal(e.audits.length, 1);
   assert.deepEqual(m.isolation, ['Serializable', 'Serializable']);
 });

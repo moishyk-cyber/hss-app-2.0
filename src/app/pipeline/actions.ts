@@ -342,7 +342,8 @@ export async function updateOpportunity(formData: FormData) {
   }
 
   // Money: a negative or non-numeric amount is rejected instead of written as-is.
-  const value = num(formData, "value");
+  // The agreed value is changed only by the closing action.
+  const value = toMoney(before.value);
   const budget = num(formData, "budget");
   if (value === undefined || budget === undefined) {
     redirect(`/pipeline/${id}/edit?error=invalid_amount`);

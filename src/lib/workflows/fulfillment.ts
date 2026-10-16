@@ -7,6 +7,7 @@ import { plainMoney, roundCents } from "../money";
 import { cleanText, parseDateOnly, TEXT_LIMITS } from "../input";
 import { hasCarrierLeg, hasTruckerLeg, inTransitItemStatus, modeForShipTo } from "../../app/deliveries/_ui";
 import { reconcileOrderStatus } from "./orderState";
+import { rememberDeliveryPartners } from "./deliveryPartners";
 import { serialTransaction } from "./transaction";
 
 type FulfillmentEffects = {
@@ -228,6 +229,7 @@ export function createFulfillment(db: PrismaClient, effects: FulfillmentEffects)
           : {}),
       };
 
+      await rememberDeliveryPartners(prisma, legFields.trackingCarrier, legFields.trucker);
       const existingLeg = po.deliveries[0] ?? null;
       let deliveryId: string;
       if (existingLeg) {
@@ -422,6 +424,8 @@ export function createFulfillment(db: PrismaClient, effects: FulfillmentEffects)
         },
       });
 
+      await rememberDeliveryPartners(prisma, carrierLeg ? details.trackingCarrier : null, truckerLeg ? details.trucker : null);
+
       // The PO's ship-to is a read of its delivery mode, so changing the mode
       // here keeps it honest rather than leaving the PO claiming a route the
       // goods no longer take.
@@ -500,6 +504,7 @@ export function createFulfillment(db: PrismaClient, effects: FulfillmentEffects)
         where: { id: deliveryId },
         data: { trucker: trimmed || null },
       });
+      await rememberDeliveryPartners(prisma, null, trimmed);
       await log(
         existing.orderId,
         "delivery_trucker_set",

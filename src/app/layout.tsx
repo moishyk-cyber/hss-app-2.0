@@ -5,6 +5,8 @@ import { Archivo, Inter } from "next/font/google";
 import Link from "next/link";
 import Nav from "./nav";
 import { NavigationContext } from "@/lib/NavigationContext";
+import { NotificationProvider } from "./notifications/NotificationProvider";
+import { currentUserId } from "@/lib/identityServer";
 import WhoAmI from "./who-am-i";
 import { currentUserName, sessionUserIsGone } from "@/lib/identityServer";
 import { can } from "@/lib/permissionsServer";
@@ -50,10 +52,11 @@ export default async function RootLayout({
     );
   }
 
-  const [userName, showAdmin, sessionGone] = await Promise.all([
+  const [userName, showAdmin, sessionGone, userId] = await Promise.all([
     currentUserName(),
     can("admin.manage"),
     sessionUserIsGone(),
+    currentUserId(),
   ]);
   // Valid cookie, but the user was deleted or deactivated: clear the cookie
   // via /logout (see src/app/logout/route.ts) rather than going to /login.
@@ -68,6 +71,7 @@ export default async function RootLayout({
           Skip to content
         </a>
         <ToastProvider>
+          <NotificationProvider key={userId} userId={userId}>
           <NavigationContext />
           <div className="app-shell">
             <aside className="app-sidebar">
@@ -102,6 +106,7 @@ export default async function RootLayout({
             </main>
             {record}
           </div>
+          </NotificationProvider>
         </ToastProvider>
       </body>
     </html>

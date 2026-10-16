@@ -12,8 +12,14 @@ export function memoryDatabase(seed: State) {
   let conflict = false;
   const isolation: string[] = [];
   const matches = (row: Row, where: Query["where"] = {}): boolean => Object.entries(where).every(([key, value]) => {
+    if (key === "OR" && Array.isArray(value)) return value.some(clause => matches(row, clause));
+    if (key === "AND" && Array.isArray(value)) return value.every(clause => matches(row, clause));
     if (value && typeof value === "object" && !(value instanceof Date)) {
-      const clause = value as { in?: unknown[]; notIn?: unknown[]; not?: unknown };
+      const clause = value as { in?: unknown[]; notIn?: unknown[]; not?: unknown; equals?: unknown; mode?: string; startsWith?: string; lt?: Date; gte?: Date };
+      if (clause.startsWith !== undefined) return typeof row[key] === "string" && (row[key] as string).startsWith(clause.startsWith);
+      if (clause.lt) return row[key] != null && new Date(row[key] as string | Date) < clause.lt;
+      if (clause.gte) return row[key] != null && new Date(row[key] as string | Date) >= clause.gte;
+      if ("equals" in clause) return clause.mode === "insensitive" && typeof row[key] === "string" && typeof clause.equals === "string" ? (row[key] as string).toLowerCase() === clause.equals.toLowerCase() : row[key] === clause.equals;
       if (clause.in) return clause.in.includes(row[key]);
       if (clause.notIn) return !clause.notIn.includes(row[key]);
       if ("not" in clause) return row[key] !== clause.not;
@@ -23,6 +29,8 @@ export function memoryDatabase(seed: State) {
   function client(rows: State) {
     function relation(model: string, row: Row, key: string): { model: string; rows: Row[]; many: boolean } | null {
       const links: Record<string, [string, string, string, boolean]> = {
+        'order.opportunity': ['opportunity', 'id', 'opportunityId', false],
+        'order.serviceIssues': ['serviceIssue', 'orderId', 'id', true],
         'order.lineItems': ['lineItem', 'orderId', 'id', true],
         'order.payments': ['payment', 'orderId', 'id', true],
         'order.purchaseOrders': ['purchaseOrder', 'orderId', 'id', true],
@@ -45,8 +53,8 @@ export function memoryDatabase(seed: State) {
       for (const [key, config] of Object.entries(query.select ?? query.include ?? {})) {
         if (!config) continue;
         if (key === '_count') {
-          const items = relation(model, row, 'lineItems');
-          result[key] = { lineItems: items?.rows.length ?? 0 };
+          const counts = config as { select: Record<string, Query> };
+          result[key] = Object.fromEntries(Object.entries(counts.select).map(([name, spec]) => [name, relation(model, row, name)?.rows.filter(r => matches(r, spec.where)).length ?? 0]));
           continue;
         }
         const rel = relation(model, row, key);
@@ -58,12 +66,13 @@ export function memoryDatabase(seed: State) {
       return result;
     }
     const result: Record<string, unknown> = {};
-    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document', 'user', 'task', 'serviceIssue', 'taskComment', 'activityLog', 'appSetting']) {
+    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document', 'user', 'task', 'serviceIssue', 'taskComment', 'activityLog', 'appSetting', 'intakeSubmission', 'notification', 'notificationState', 'fieldRequirement']) {
       rows[model] ??= [];
       const fail = (operation: string) => {
         if (failure === `${model}.${operation}`) throw new Error(`Injected ${failure} failure`);
       };
       result[model] = {
+        async findFirst(q: Query) { const row = rows[model].find(r => matches(r, q.where)); return row ? project(model, row, q) : null; },
         async findUnique(q: Query) { const row = rows[model].find(r => matches(r, q.where)); return row ? project(model, row, q) : null; },
         async findMany(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).map(r => project(model, r, q)); },
         async count(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).length; },
@@ -74,6 +83,22 @@ export function memoryDatabase(seed: State) {
           const row = { id: `new-${++sequence}`, ...defaults, ...q.data };
           rows[model].push(row);
           return project(model, row, q);
+        },
+        async createMany(q: { data: Record<string, unknown>[]; skipDuplicates?: boolean }) {
+          fail('createMany');
+          let count = 0;
+          for (const data of q.data) {
+            const duplicate = model === 'notification' ? rows[model].some(r => r.userId === data.userId && r.eventKey === data.eventKey) : model === 'notificationState' ? rows[model].some(r => r.key === data.key) : false;
+            if (q.skipDuplicates && duplicate) continue;
+            rows[model].push({ id: `new-${++sequence}`, readAt: null, ...data }); count++;
+          }
+          return { count };
+        },
+        async upsert(q: { where: Query['where']; create: Record<string, unknown>; update: Record<string, unknown> }) {
+          fail('upsert');
+          const row = rows[model].find(r => matches(r, q.where));
+          if (row) { Object.assign(row, q.update); return structuredClone(row); }
+          const created = { id: `new-${++sequence}`, ...q.create }; rows[model].push(created); return structuredClone(created);
         },
         async update(q: Query) {
           fail('update');
@@ -88,6 +113,12 @@ export function memoryDatabase(seed: State) {
           for (const row of selected) Object.assign(row, q.data);
           return { count: selected.length };
         },
+        async deleteMany(q: Query) {
+          fail('deleteMany');
+          const selected = rows[model].filter(r => matches(r, q.where));
+          rows[model] = rows[model].filter(r => !matches(r, q.where));
+          return { count: selected.length };
+        },
         async delete(q: Query) {
           fail('delete');
           const index = rows[model].findIndex(r => matches(r, q.where));
@@ -100,8 +131,8 @@ export function memoryDatabase(seed: State) {
   }
   const db = new Proxy({} as PrismaClient, {
     get(_, key) {
-      if (key === '$transaction') return async <T>(work: (tx: Prisma.TransactionClient) => Promise<T>, options: { isolationLevel: string }) => {
-        isolation.push(options.isolationLevel);
+      if (key === '$transaction') return async <T>(work: (tx: Prisma.TransactionClient) => Promise<T>, options?: { isolationLevel: string }) => {
+        isolation.push(options?.isolationLevel ?? "default");
         const next = structuredClone(state);
         const result = await work(client(next));
         if (conflict) { conflict = false; throw Object.assign(new Error('Serialization conflict'), { code: 'P2034' }); }

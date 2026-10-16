@@ -13,7 +13,8 @@
     "lint": "eslint",
     "seed:demo": "tsx prisma/seed-demo.ts",
     "seed:demo:remove": "tsx prisma/remove-demo.ts",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "notifications:init": "node --env-file-if-exists=.env --import tsx scripts/initialize-notifications.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

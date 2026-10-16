@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "@/lib/IntentLink";
+import { NotificationBadge } from "./notifications/NotificationProvider";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 
@@ -8,7 +9,7 @@ const SECTIONS: {
   label: string | null;
   items: { href: string; label: string }[];
 }[] = [
-  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }] },
+  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }, { href: "/notifications", label: "Notifications" }] },
   {
     label: "Sell",
     items: [
@@ -21,6 +22,7 @@ const SECTIONS: {
     items: [
       { href: "/orders", label: "Orders" },
       { href: "/deliveries", label: "Deliveries" },
+      { href: "/carriers-truckers", label: "Carriers & Truckers" },
       { href: "/service", label: "Customer Service" },
     ],
   },
@@ -52,8 +54,10 @@ function NavIcon({ href }: { href: string }) {
     "/invoices": "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6",
     "/deliveries":
       "M3 6h12v12H3zM15 10h4l3 4v4h-7M6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4M18 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
+    "/carriers-truckers": "M4 4h16v16H4zM8 8h8M8 12h8M8 16h5",
     "/service": "M4 5h16v11H9l-5 4z",
     "/phonebook": "M5 3h14v18H5zM9 8h6M9 12h6M9 16h4",
+    "/notifications": "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
     "/tasks": "m5 12 4 4L19 6",
     "/admin":
       "M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
@@ -118,6 +122,7 @@ export default function Nav({ showAdmin }: { showAdmin: boolean }) {
                   >
                     <NavIcon href={item.href} />
                     {item.label}
+                    {item.href === "/notifications" && <NotificationBadge />}
                   </Link>
                 ))}
             </div>

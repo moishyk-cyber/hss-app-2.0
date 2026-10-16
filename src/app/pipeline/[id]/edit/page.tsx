@@ -183,12 +183,6 @@ export default async function EditOpportunityPage({
             defaultValue={opportunity.orderType}
           />
           <Field
-            label="Value ($)"
-            name="value"
-            type="money"
-            defaultValue={opportunity.value?.toString() ?? ""}
-          />
-          <Field
             label="Budget ($)"
             name="budget"
             type="money"

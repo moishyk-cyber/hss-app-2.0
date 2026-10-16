@@ -2,6 +2,9 @@
 
 // Order delivery rows link to full delivery pages; shipment fields follow the delivery mode.
 
+import { PartnerInput } from "@/app/deliveries/PartnerInput";
+import { DeliveryDestination } from "./DeliveryDestination";
+import type { DeliveryDestination as Destination } from "@/lib/deliveryDestination";
 import { MoneyInput } from "@/lib/MoneyInput";
 
 import { useState } from "react";
@@ -71,10 +74,12 @@ export default function DeliverySection({
   orderId,
   items,
   deliveries,
+  destination,
 }: {
   orderId: string;
   items: Item[];
   deliveries: Delivery[];
+  destination: Destination;
 }) {
   const [showStockForm, setShowStockForm] = useState(false);
 
@@ -86,6 +91,7 @@ export default function DeliverySection({
 
   return (
     <div className="space-y-6">
+      <DeliveryDestination orderId={orderId} destination={destination} />
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="section-label">Deliveries</h3>
@@ -159,7 +165,7 @@ function DeliveryRow({ delivery }: { delivery: Delivery }) {
 }
 
 /** Delivery record editor focused on shipment and delivery tracking. */
-export function DeliveryDetail({ delivery }: { delivery: Delivery }) {
+export function DeliveryDetail({ delivery, orderId, destination }: { delivery: Delivery; orderId: string; destination: Destination }) {
   const delivered = delivery.status === "delivered_full";
 
   return (
@@ -190,6 +196,7 @@ export function DeliveryDetail({ delivery }: { delivery: Delivery }) {
           )}
         </div>
 
+        <DeliveryDestination orderId={orderId} destination={destination} />
         <DeliveryDetailsForm delivery={delivery} />
 
     </div>
@@ -257,10 +264,9 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
               <span className="field-label">Carrier</span>
-              <input
+              <PartnerInput kind="carriers"
                 name="trackingCarrier"
                 className="input-klyne w-full px-2 py-1 text-xs"
-                placeholder="e.g. UPS Freight"
                 defaultValue={delivery.trackingCarrier ?? ""}
               />
             </label>
@@ -301,10 +307,9 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
             </label>
             <label className="block">
               <span className="field-label">Trucker</span>
-              <input
+              <PartnerInput kind="truckers"
                 name="trucker"
                 className="input-klyne w-full px-2 py-1 text-xs"
-                placeholder="e.g. ANDY, UBER, UPS DROPSHIP"
                 defaultValue={delivery.trucker ?? ""}
               />
             </label>

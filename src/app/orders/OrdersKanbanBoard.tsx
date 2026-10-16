@@ -40,7 +40,7 @@ const EMPTY_HINT: Record<string, string> = {
   deposit: "Orders land here when a deal is marked Won.",
   pos: "Nothing here - orders arrive once the deposit is paid.",
   delivery: "Nothing here - orders arrive once a PO ships or a delivery is scheduled.",
-  customer_service: "Nothing here - orders arrive once everything has been delivered.",
+  customer_service: "Nothing here - only delivered orders with open service issues appear here.",
 };
 
 function money(amount: number | null): string | null {

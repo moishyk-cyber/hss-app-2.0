@@ -45,7 +45,7 @@ export async function deleteTeamMember(db: PrismaClient, id: string, actorId: st
 
     const settings = await tx.appSetting.findMany();
     for (const setting of settings) {
-      if (setting.key === "service.defaultAssigneeId" && setting.value === id) {
+      if (["service.defaultAssigneeId", "pricing.defaultAssigneeId"].includes(setting.key) && setting.value === id) {
         await tx.appSetting.delete({ where: { key: setting.key } });
       } else if (setting.key.startsWith("court.") && setting.key.endsWith(".userIds")) {
         const ids = setting.value.split(",").map((value) => value.trim()).filter(Boolean);

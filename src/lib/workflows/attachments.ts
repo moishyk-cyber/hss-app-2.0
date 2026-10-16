@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { DOCUMENT_KINDS, isValidValue } from "../constants";
 import { cleanText, TEXT_LIMITS } from "../input";
+import { uploadProblem } from "../uploadPolicy";
 
 export class AttachmentValidationError extends Error { }
 
@@ -36,12 +37,8 @@ export function createAttachments(db: PrismaClient, storage: Storage) {
     return { kind: d.kind, note: cleanText(d.note, TEXT_LIMITS.medium) || null };
   }
   function metadata(m: Metadata) {
-    if (!m.fileName.trim()) throw new AttachmentValidationError("That file has no name.");
-    if (m.mimeType !== "application/pdf" && !m.mimeType.startsWith("image/")) {
-      throw new AttachmentValidationError("Only PDFs and images can be uploaded.");
-    }
-    if (!Number.isSafeInteger(m.sizeBytes) || m.sizeBytes <= 0) throw new AttachmentValidationError("That file looks empty or has an invalid size.");
-    if (m.sizeBytes > storage.maxBytes) throw new AttachmentValidationError("That file is over the 25 MB limit.");
+    const problem = uploadProblem({ name: m.fileName, type: m.mimeType, size: m.sizeBytes }, storage.maxBytes);
+    if (problem) throw new AttachmentValidationError(problem);
     return { fileName: cleanText(m.fileName, TEXT_LIMITS.short), mimeType: m.mimeType, sizeBytes: m.sizeBytes };
   }
   function configured() {

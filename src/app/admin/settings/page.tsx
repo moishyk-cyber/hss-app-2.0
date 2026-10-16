@@ -7,7 +7,7 @@ import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements
 import { getSettings } from "@/lib/settings";
 import { FLOW_STEPS } from "@/lib/ballInCourt";
 import { getStageHolders } from "@/lib/courtHolders";
-import { setFieldRequired, setServiceDefaultAssignee } from "./actions";
+import { setFieldRequired, setServiceDefaultAssignee, setPricingDefaultAssignee } from "./actions";
 import { CourtHolderRow } from "./CourtHolderRow";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export default async function AdminSettingsPage() {
   if (!(await can("admin.manage"))) notFound();
   const [requirements, settings, users, stageHolders] = await Promise.all([
     getFieldRequirements(),
-    getSettings(["service.defaultAssigneeId"]),
+    getSettings(["service.defaultAssigneeId", "pricing.defaultAssigneeId"]),
     getActiveUsers(),
     getStageHolders(),
   ]);
@@ -48,6 +48,13 @@ export default async function AdminSettingsPage() {
       <div className="card card-flush overflow-hidden">
         <ul className="divide-y divide-border">
           {FLOW_STEPS.map((s) => (
+            s.key === "close" ? <li key={s.key} className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-[13.5px] font-medium text-ink">{s.label}</span>
+                <span className="text-[13px] text-gray-dark">Deal’s salesperson</span>
+              </div>
+              <p className="mt-2 text-xs text-gray-dark">Closing follows the salesperson assigned to each deal.</p>
+            </li> :
             <CourtHolderRow
               key={s.key}
               step={s.key}
@@ -59,6 +66,23 @@ export default async function AdminSettingsPage() {
           ))}
         </ul>
       </div>
+
+      <section className="card space-y-3" aria-labelledby="pricing-assignee-heading">
+        <div>
+          <h2 id="pricing-assignee-heading" className="section-label">Default pricing assignee</h2>
+          <p className="page-sub">
+            Assign new quote and pricing items to this teammate automatically. Existing assignments
+            stay unchanged, and individual items can still be reassigned in the RFQ queue.
+            Leave unassigned until the client confirms who should receive the work.
+          </p>
+        </div>
+        <UserSelect
+          value={settings["pricing.defaultAssigneeId"] ?? ""}
+          users={users}
+          action={setPricingDefaultAssignee}
+          ariaLabel="Default pricing assignee"
+        />
+      </section>
 
       <div className="card space-y-3">
         <div>

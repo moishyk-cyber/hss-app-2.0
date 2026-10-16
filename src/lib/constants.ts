@@ -120,7 +120,6 @@ export const USER_ROLES = [
   { value: "sales", label: "Sales" },
   { value: "purchasing", label: "Purchasing" },
   { value: "billing", label: "Billing" },
-  { value: "design", label: "Design" },
   { value: "viewer", label: "Viewer" },
 ] as const;
 

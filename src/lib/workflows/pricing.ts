@@ -3,6 +3,7 @@ import { RFQ_STATUSES, isValidValue } from "../constants";
 import { roundCents, toMoney } from "../money";
 import { reconcileOrderStatus, reconcileOrderValue } from "./orderState";
 import { serialTransaction } from "./transaction";
+import { getDefaultPricingAssignee, isPricingWork } from "./pricingAssignee";
 
 type PricingChange =
   | { kind: "price"; unitCost: number | null; unitPrice: number }
@@ -29,17 +30,12 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
       if (deal && deal.stage !== "won" && deal.stage !== "lost") {
         const live = deal.lineItems.filter(i => i.rfqStatus !== "removed");
         const needsPricing = live.some(i => i.rfqStatus === "needs_pricing" || i.rfqStatus === "rfq_sent");
-        const data: { needsPricing?: boolean; value?: number } = {};
+        const data: { needsPricing?: boolean } = {};
         if (deal.needsPricing !== needsPricing) data.needsPricing = needsPricing;
-        // Deal value is editable/agreed: only initialize it, never overwrite it.
-        if (deal.value == null && live.length && live.every(i => i.unitPrice != null && Number(i.unitPrice) > 0)) {
-          data.value = roundCents(live.reduce((sum, i) => sum + Number(i.unitPrice) * i.qty, 0));
-        }
         if (Object.keys(data).length) {
           await db.opportunity.update({ where: { id: item.opportunityId }, data });
           events.push(["opportunity", item.opportunityId, "pricing_synced",
-            [data.needsPricing == null ? null : data.needsPricing ? "Items need pricing" : "No active items awaiting pricing",
-            data.value == null ? null : `Deal value set to $${data.value} from priced items`].filter(Boolean).join("; ")]);
+            data.needsPricing ? "Items awaiting supplier quotes" : "No active items awaiting supplier quotes"]);
         }
       }
     }
@@ -65,6 +61,9 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
       const result = await serialTransaction(db, async tx => {
         const before = await tx.lineItem.findUnique({ where: { id } });
         if (!before) throw new Error("Line item not found");
+        if (change.kind === "price" && before.opportunityId && !before.orderId) {
+          throw new Error("Quote amounts are entered as the agreed total when closing the deal.");
+        }
         let data: Prisma.LineItemUpdateInput;
         switch (change.kind) {
           case "price":
@@ -90,7 +89,9 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
     },
     async add(data: Prisma.LineItemUncheckedCreateInput) {
       const result = await serialTransaction(db, async tx => {
-        const item = await tx.lineItem.create({ data });
+        const assigneeId = data.assigneeId === undefined && isPricingWork(data.rfqStatus ?? "needs_pricing")
+          ? await getDefaultPricingAssignee(tx) : data.assigneeId ?? null;
+        const item = await tx.lineItem.create({ data: { ...data, assigneeId } });
         return { item, events: await reconcile(tx, item) };
       });
       await finish(result);

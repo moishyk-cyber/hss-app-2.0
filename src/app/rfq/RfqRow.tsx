@@ -21,6 +21,8 @@ import { LeadTimeCell, StockStatusCell } from "./StockCells";
 const RFQ_WAITING_THRESHOLD_DAYS = 7;
 
 type RfqItem = {
+  opportunityId?: string | null;
+  orderId?: string | null;
   id: string;
   name: string;
   qty: number;
@@ -48,6 +50,11 @@ type RfqItem = {
  * Blank input preserves the saved price. Commit a valid price on blur or Enter.
  */
 export function PriceCell({ item }: { item: RfqItem }) {
+  if (item.opportunityId && !item.orderId) return <span className="text-xs text-gray-dark">Total entered at closing</span>;
+  return <OrderPriceCell item={item} />;
+}
+
+function OrderPriceCell({ item }: { item: RfqItem }) {
   const { toast } = useToast();
   const [saving, startSave] = useTransition();
   const inFlight = useRef(false);

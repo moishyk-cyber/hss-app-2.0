@@ -14,6 +14,8 @@
 
 import { useRef, useState } from "react";
 import { DOCUMENT_KINDS, labelFor } from "@/lib/constants";
+import { uploadFile, type UploadAttempt } from "@/lib/uploadFile";
+import { UPLOAD_ACCEPT } from "@/lib/uploadPolicy";
 import { fmtDateUTC } from "@/lib/dates";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { FormAlert, PendingButton, Spinner } from "@/lib/ui";
@@ -51,8 +53,7 @@ const KIND_COLORS: Record<string, string> = {
   other: "badge-gray",
 };
 
-const MAX_BYTES = 25 * 1024 * 1024;
-const ACCEPT = "application/pdf,image/*";
+const ACCEPT = UPLOAD_ACCEPT;
 
 function hostOf(url: string): string | null {
   try {
@@ -254,6 +255,8 @@ export default function FilesSection({
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadLock = useRef(false);
+  const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
 
   async function submitLink(formData: FormData) {
@@ -273,6 +276,8 @@ export default function FilesSection({
     setAdding(false);
   }
 
+  const uploadAttempt = useRef<UploadAttempt | null>(null);
+
   async function submitUpload(formData: FormData) {
     setError(null);
     const file = fileRef.current?.files?.[0] ?? null;
@@ -280,49 +285,14 @@ export default function FilesSection({
       setError("Pick a file to upload.");
       return;
     }
-    if (file.size > MAX_BYTES) {
-      setError("That file is over the 25 MB limit.");
-      return;
-    }
-    const mimeType = file.type || "application/octet-stream";
     const kind = String(formData.get("kind") ?? "other");
     const note = String(formData.get("note") ?? "");
-
-    const signed = await createSignedUpload(linkedType, linkedId, file.name, mimeType, file.size);
-    if (signed.ok === false) {
-      setError(signed.message);
-      return;
-    }
-
-    // Straight to Supabase Storage: a PUT of the raw bytes to the signed URL
-    // (the same request @supabase/storage-js makes in uploadToSignedUrl).
-    let uploaded: Response;
-    try {
-      uploaded = await fetch(signed.uploadUrl, {
-        method: "PUT",
-        headers: {
-          "content-type": mimeType,
-          "cache-control": "max-age=3600",
-          "x-upsert": "false",
-        },
-        body: file,
-      });
-    } catch {
-      setError("The upload could not reach storage. Check your connection and try again.");
-      return;
-    }
-    if (!uploaded.ok) {
-      setError("Storage rejected the upload. Please try again, or paste a link instead.");
-      return;
-    }
-
-    const result = await finalizeUpload(linkedType, linkedId, {
-      storagePath: signed.storagePath,
-      fileName: file.name,
-      mimeType,
-      sizeBytes: file.size,
-      kind,
-      note,
+    const result = await uploadFile(file, uploadAttempt, {
+      start: () => createSignedUpload(linkedType, linkedId, file.name, file.type, file.size),
+      finish: (signed) => finalizeUpload(linkedType, linkedId, {
+        storagePath: signed.storagePath, fileName: file.name,
+        mimeType: file.type, sizeBytes: file.size, kind, note,
+      }),
     });
     if (result.ok === false) {
       setError(result.message);
@@ -423,26 +393,36 @@ export default function FilesSection({
               Direct upload isn&rsquo;t configured yet - paste a link instead.
             </p>
           ) : (
-            <form key={`upload-${formKey}`} action={submitUpload} className="space-y-3">
-              <label className="block">
-                <span className="field-label">File * (PDF or image, max 25 MB)</span>
-                <input ref={fileRef} type="file" accept={ACCEPT} required className="input-klyne w-full" />
-              </label>
-              <div className="flex flex-wrap items-end gap-3">
-                <KindSelect defaultValue={defaultKind} />
-                <label className="block min-w-48 flex-1">
-                  <span className="field-label">Note</span>
-                  <input name="note" placeholder="Optional" className="input-klyne w-full" />
+            <form key={`upload-${formKey}`} onSubmit={async event => {
+              event.preventDefault();
+              if (uploadLock.current) return;
+              const data = new FormData(event.currentTarget);
+              uploadLock.current = true;
+              setUploading(true);
+              try { await submitUpload(data); }
+              finally { uploadLock.current = false; setUploading(false); }
+            }}>
+              <fieldset disabled={uploading} className="space-y-3">
+                <label className="block">
+                  <span className="field-label">File * (PDF or image, max 25 MB)</span>
+                  <input ref={fileRef} type="file" accept={ACCEPT} required className="input-klyne w-full" />
                 </label>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button type="button" className="btn" onClick={() => setAdding(false)}>
-                  Cancel
-                </button>
-                <PendingButton className="btn btn-primary active:scale-[0.99]" pendingText="Uploading…">
-                  Upload
-                </PendingButton>
-              </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <KindSelect defaultValue={defaultKind} />
+                  <label className="block min-w-48 flex-1">
+                    <span className="field-label">Note</span>
+                    <input name="note" placeholder="Optional" className="input-klyne w-full" />
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="btn" onClick={() => setAdding(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary active:scale-[0.99]" disabled={uploading} aria-busy={uploading}>
+                    {uploading ? <><Spinner /> Uploading…</> : "Upload"}
+                  </button>
+                </div>
+              </fieldset>
             </form>
           )}
         </div>

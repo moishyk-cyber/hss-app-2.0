@@ -17,7 +17,7 @@ model User {
   id            String        @id @default(cuid())
   name          String
   email         String        @unique
-  role          String        @default("sales") // admin | sales | purchasing | billing | design | viewer
+  role          String        @default("sales") // admin | sales | purchasing | billing | viewer
   active        Boolean       @default(true)
   // Real login (Sep 17). Null until an admin sets one on Admin > Team - a
   // user with no password can't log in yet.
@@ -29,6 +29,7 @@ model User {
   taskComments  TaskComment[]
   serviceIssues ServiceIssue[] @relation("IssueAssignee")
   activityLogs  ActivityLog[]
+  notifications Notification[]
   createdAt     DateTime      @default(now())
 }
 
@@ -256,8 +257,8 @@ model Order {
   quoteStatus    String       @default("not_needed") // not_needed | needed | sent | accepted
   quoteUrl       String?
   quoteSentAt    DateTime?
-  // Last PO sequence number handed out for this order; createPurchaseOrder
-  // increments it atomically to build the next poNumber.
+  salesOrderSentAt DateTime? // Confirmed sent after payment, before logging a PO
+  // Retained for historical app-generated PO numbers. New POs use the AutoQuotes number.
   poSequence     Int          @default(0)
   notes          String?
   mondayId       String?      @unique
@@ -285,10 +286,10 @@ model PurchaseOrder {
   orderId          String
   supplier         Company?   @relation("PoSupplier", fields: [supplierId], references: [id])
   supplierId       String?
-  // Allocated from Order.poSequence (PO-<jobId or order id tail>-<n>); globally
-  // unique so two orders sharing a jobId can never mint the same number.
+  // AutoQuotes PO number, entered when logging the PO; globally unique.
   poNumber         String     @unique
   autoQuotesPoNumber String? // the PO number typed into AutoQuotes for this vendor order
+  expectedDate     DateTime? // PO expected date, independent of item dates and delivery scheduling
   status           String     @default("draft") // draft | sent | acknowledged | shipped | received
   shipTo           String     @default("hss") // hss | client_direct
   sentDate         DateTime?
@@ -442,6 +443,7 @@ model Document {
 }
 
 model ActivityLog {
+  notificationProcessedAt DateTime?
   id            String   @id @default(cuid())
   // userName stays the display snapshot (renders even if the user is later
   // deleted or renamed); userId is the real link, added for the audit item 21
@@ -519,7 +521,7 @@ model ServiceIssue {
 // "use the shipped default" (see getRolePermissions in @/lib/permissionsServer).
 model RolePermission {
   id         String  @id @default(cuid())
-  role       String // admin | sales | purchasing | billing | design | viewer
+  role       String // admin | sales | purchasing | billing | viewer
   permission String // e.g. deals.close, pos.edit (see PERMISSIONS)
   allowed    Boolean @default(true)
 
@@ -532,4 +534,28 @@ model AppSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// One durable inbox per teammate. Event keys make delivery retry-safe.
+model Notification {
+  id String @id @default(cuid())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  eventKey String
+  kind String
+  title String
+  message String
+  href String
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  @@unique([userId, eventKey])
+  @@index([userId, readAt, createdAt])
+}
+
+// Last observed workflow facts, used to notify on transitions rather than every refresh.
+model NotificationState {
+  key String @id
+  snapshot Json
+  version Int @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
 }

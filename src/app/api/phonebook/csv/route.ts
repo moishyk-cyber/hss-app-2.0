@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { currentUser, requirePermission } from "@/lib/permissionsServer";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { CSV_MAX_BYTES, parseCsv, PHONEBOOK_SAMPLE, validatePhonebookRow, writeCsv } from "@/lib/phonebookCsv";
+import { hasSameOrigin } from "@/lib/requestOrigin";
 
 export const dynamic = "force-dynamic";
 const normalize = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) return Response.json({ message: "Import from this app's Phone Book." }, { status: 403 });
+  if (origin && !hasSameOrigin(request)) return Response.json({ message: "Import from this app's Phone Book." }, { status: 403 });
   const denied = await requirePermission("phonebook.edit");
   if (denied && !denied.ok) return Response.json({ message: denied.message }, { status: 403 });
   if (Number(request.headers.get("content-length")) > CSV_MAX_BYTES) return Response.json({ message: "Choose a CSV smaller than 2 MB." }, { status: 413 });

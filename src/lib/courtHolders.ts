@@ -25,6 +25,7 @@ const DEFAULT_STEP_ROLES: Record<FlowStepKey, Role> = {
   quote: "purchasing",
   terms: "sales",
   deposit: "billing",
+  salesOrder: "sales",
   pos: "purchasing",
   delivery: "purchasing",
   service: "purchasing",
@@ -39,6 +40,7 @@ const STEP_SETTING_KEYS: Record<FlowStepKey, { role: SettingKey; userIds: Settin
   quote: { role: "court.quote.role", userIds: "court.quote.userIds" },
   terms: { role: "court.terms.role", userIds: "court.terms.userIds" },
   deposit: { role: "court.deposit.role", userIds: "court.deposit.userIds" },
+  salesOrder: { role: "court.salesOrder.role", userIds: "court.salesOrder.userIds" },
   pos: { role: "court.pos.role", userIds: "court.pos.userIds" },
   delivery: { role: "court.delivery.role", userIds: "court.delivery.userIds" },
   service: { role: "court.service.role", userIds: "court.service.userIds" },
@@ -104,8 +106,8 @@ export function holderLabel(step: FlowStepKey, holders: StageHolders): string {
   return FLOW_STEPS.find((s) => s.key === step)?.label ?? step;
 }
 
-/** Copy of a ball with its holder filled in from the current stage holders. */
+/** Fill a configured holder only when the record has no specific holder. */
 export function withHolder(ball: Ball, holders: StageHolders): Ball {
-  if (!ball.step) return ball;
+  if (!ball.step || ball.holder) return ball;
   return { ...ball, holder: holderLabel(ball.step, holders) };
 }

@@ -13,6 +13,7 @@ function seed() {
     appSetting: [
       { id: "owner-setting", key: "account.ownerId", value: "owner" },
       { id: "service-setting", key: "service.defaultAssigneeId", value: "departing" },
+      { id: "pricing-setting", key: "pricing.defaultAssigneeId", value: "departing" },
       { id: "court-setting", key: "court.sales.userIds", value: "departing,admin" },
     ],
     opportunity: [{ id: "deal", salespersonId: "departing", stage: "won" }],
@@ -89,6 +90,7 @@ test("deletion preserves business records, comments and audit names and cleans s
   assert.equal(m.state().activityLog[1].action, "user_deleted");
   assert.equal(m.state().activityLog[1].userId, "admin");
   assert.equal(m.state().appSetting.some(s => s.key === "service.defaultAssigneeId"), false);
+  assert.equal(m.state().appSetting.some(s => s.key === "pricing.defaultAssigneeId"), false);
   assert.equal(m.state().appSetting.find(s => s.key === "court.sales.userIds")?.value, "admin");
   assert.equal(m.state().appSetting.find(s => s.key === "account.ownerId")?.value, "owner");
 });
@@ -101,7 +103,7 @@ test("a failed delete or audit write rolls back all changes", async () => {
     assert.equal(m.state().user.length, 3);
     assert.equal(m.state().taskComment[0].authorId, "departing");
     assert.equal(m.state().taskComment[0].authorName, null);
-    assert.equal(m.state().appSetting.length, 3);
+    assert.equal(m.state().appSetting.length, 4);
     assert.equal(m.state().activityLog.length, 1);
   }
 });

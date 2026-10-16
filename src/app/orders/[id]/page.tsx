@@ -1,9 +1,14 @@
+import { can } from "@/lib/permissionsServer";
+import { deliveryDestination } from "@/lib/deliveryDestination";
+import { getDeliveryPartners } from "@/lib/deliveryPartnerData";
+import { DeliveryPartnersProvider } from "@/app/deliveries/PartnerInput";
 import { AutoQuotesField } from "./AutoQuotesField";
 import { Suspense } from "react";
 import { getActiveUsers } from "@/lib/users";
 import { DetailHeader } from "@/lib/PageLayout";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeleteIntakeButton } from "@/app/intake/DeleteIntakeButton";
 import { prisma } from "@/lib/prisma";
 import { CloseoutControl } from "./CloseoutControl";
 import { StatusOwnerControls } from "./OrderHeaderControls";
@@ -62,6 +67,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         },
         contact: true,
         owner: true,
+        location: { select: { name: true, address: true } },
+        opportunity: { select: { companyId: true, locationName: true, salesperson: { select: { name: true, active: true } } } },
         payments: true,
         deliveries: { orderBy: { createdAt: "asc" } },
         lineItems: {
@@ -89,6 +96,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const order = plainMoney(orderRow);
   if (!order) notFound();
 
+  const canEditIntake = await can("orders.edit");
   const gate = evaluatePaymentGate(order);
   // One source of truth for "what happens next" - the header stepper, the badge,
   // the primary action and the opening tab all read this (see @/lib/ballInCourt).
@@ -112,7 +120,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   // Both record pages use the same journey and step labels.
   // Completed sales work is reviewed in place; order work opens its local tab.
-  const steps = dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }).map((step, index) => {
+  const steps = dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }).map((step, index) => {
     // Sales-side work is historical once the order exists. Review it in place.
     if (index < 3) return { ...step, state: "complete" as const, action: undefined, checks: [{ label: index === 0 ? "Request captured and carried into this order" : index === 1 ? "Deal pricing confirmed before order creation" : "Deal won and order created", complete: true, href: index === 0 ? "#order-intake" : index === 1 ? "#line-items" : "#order-summary" }], description: index === 0 ? "Review the intake details below. Changes to the customer, delivery address and needed-by date are saved on this order." : index === 1 ? "Review the item prices below. Price changes save when you leave the field or press Enter." : "The customer decision is recorded and this order was created. Continue with the remaining order steps." };
     const localHref = (href: string) => href === `/orders/${order.id}` ? "#order-summary" : href.replace(`/orders/${order.id}`, "");
@@ -145,7 +153,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   } else if (isOpen && unassignedLineItems.length > 0) {
     primaryAction = (
       <a href="#purchase-orders" className="btn btn-primary active:scale-[0.99]">
-        Create POs
+        {order.salesOrderSentAt ? "Create POs" : "Confirm sales order sent"}
       </a>
     );
   } else if (isOpen && anySent) {
@@ -173,6 +181,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     quote: "invoice",
     terms: "invoice",
     deposit: "invoice",
+    salesOrder: "purchase-orders",
     pos: "purchase-orders",
     delivery: "delivery",
     service: "service",
@@ -195,17 +204,18 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const hasLiveItems = chipItems.some((i) => i.rfqStatus !== "removed");
 
   return (
-    <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={steps.map(step => step.key)} initialKey={steps.find(step => !["complete", "not_required", "stopped"].includes(step.state))?.key ?? "close"}>
+    <DeliveryPartnersProvider partners={await getDeliveryPartners()}>
+    <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={steps.map(step => step.key)} initialKey={ball.step ?? "delivery"}>
     <div className="pipeline-detail space-y-8">
       <DetailHeader backHref="/orders" backLabel="Back to Orders" title={order.title}
         subtitle={<>{order.company ? <Link href={`/companies/${order.company.id}`}>{order.company.name}</Link> : "No linked business"}{order.contact && <> · {order.contact.firstName} {order.contact.lastName ?? ""}</>}</>}
         badges={<><span className="badge badge-gray capitalize">{order.orderType}</span><BallInCourtBadge ball={ball}/></>}
-        action={primaryAction}/>
+        action={primaryAction} secondary={canEditIntake && !order.opportunityId && isOpen && !order.payments.length && !order.purchaseOrders.length && !order.deliveries.length && !order._count.serviceIssues ? <DeleteIntakeButton id={order.id} kind="order" name={order.title} /> : undefined}/>
       <DealProgress steps={steps} lost={false} />
       <WorkflowPanel when={["pricing"]}>
-        <PricingItems items={order.lineItems} editable={isOpen} />
+        <PricingItems items={order.lineItems} editable={isOpen} deletable={canEditIntake && !order.opportunityId && isOpen && !order.payments.length && !order.purchaseOrders.length && !order.deliveries.length} />
       </WorkflowPanel>
-      <WorkflowPanel when={["quote", "terms", "deposit", "pos", "delivery", "service", "files"]}>
+      <WorkflowPanel when={["quote", "terms", "deposit", "salesOrder", "pos", "delivery", "service", "files"]}>
       <div className="card">
         <OrderTabs
           defaultTab={defaultTab}
@@ -226,12 +236,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <Suspense fallback={<SectionLoading name="purchase orders" />}>
               <OrderPurchasing orderId={order.id} data={supporting}
                 purchaseOrderIds={order.purchaseOrders.map(po => po.id)}
-                unassignedLineItems={unassignedLineItems} gate={gate} />
+                unassignedLineItems={unassignedLineItems} gate={gate} salesOrderSentAt={order.salesOrderSentAt} />
             </Suspense>
           }
           delivery={
             <Suspense fallback={<SectionLoading name="deliveries" />}>
-              <OrderDelivery orderId={order.id} data={supporting} />
+              <OrderDelivery orderId={order.id} data={supporting} destination={deliveryDestination(order)} />
             </Suspense>
           }
           files={
@@ -432,5 +442,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} collapsible /></Suspense>
     </div>
     </WorkflowSelectionProvider>
+    </DeliveryPartnersProvider>
   );
 }

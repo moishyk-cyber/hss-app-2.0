@@ -1,19 +1,17 @@
 import { liveLineItems, evaluatePaymentGate, canCompleteOrder } from "./flowRules";
-import { hasOrderTerms, type OrderBallInput } from "./ballInCourt";
+import { closingHolder, hasOrderTerms, itemHasQuote, type OrderBallInput } from "./ballInCourt";
+
+export { itemIsPriced } from "./ballInCourt";
 
 export type ValidationIssue = { field: string; message: string; href?: string };
 export type DealRequirements = { company: boolean; neededBy: boolean };
 export type DealFacts = {
   id: string; title: string; stage: string; companyId: string | null;
   orderType?: string;
+  salesperson?: { name: string; active?: boolean } | null;
   neededByDate: Date | string | null;
   lineItems: { id: string; name: string; rfqStatus: string; unitPrice: number | null }[];
 };
-
-export function itemIsPriced(item: { rfqStatus: string; unitPrice: number | null }) {
-  return item.unitPrice != null && Number.isFinite(item.unitPrice) && item.unitPrice > 0 &&
-    !["needs_pricing", "rfq_sent", "removed"].includes(item.rfqStatus);
-}
 
 export function intakeIssues(deal: DealFacts, required: DealRequirements): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -25,8 +23,8 @@ export function intakeIssues(deal: DealFacts, required: DealRequirements): Valid
 }
 
 export function pricingIssues(deal: DealFacts): ValidationIssue[] {
-  return liveLineItems(deal.lineItems).filter(item => !itemIsPriced(item)).map(item => ({
-    field: "lineItems", message: `${item.name}: ${item.rfqStatus === "rfq_sent" ? "awaiting supplier quote" : "confirm a price"}.`,
+  return liveLineItems(deal.lineItems).filter(item => !itemHasQuote(item)).map(item => ({
+    field: "lineItems", message: `${item.name}: ${item.rfqStatus === "rfq_sent" ? "awaiting supplier quote" : "confirm supplier quote received"}.`,
     href: `#pricing-${item.id}`,
   }));
 }
@@ -75,10 +73,10 @@ export function dealJourney(deal: DealFacts, required: DealRequirements, order?:
       ...(required.neededBy ? [{ label: "Needed-by date", complete: !!deal.neededByDate, href: "#deal-needed-by" }] : []),
       { label: "Requested items added", complete: live.length > 0, href: "#line-items" },
     ], intake.length ? { label: intake[0].field === "lineItems" ? "Add requested items" : "Finish intake", href: intake[0].href! } : { label: "Review intake", href: edit }),
-    step("pricing", "Pricing", "Office", !live.length ? "to_do" : !pricing.length ? "complete" : live.filter(i => !itemIsPriced(i)).every(i => i.rfqStatus === "rfq_sent") ? "waiting" : "in_progress", `${live.filter(itemIsPriced).length} of ${live.length} active items have confirmed pricing.`, "Completes automatically when every active item has a price and is no longer awaiting pricing or a supplier quote.", live.map(item => ({ label: `${item.name}${item.rfqStatus === "rfq_sent" ? " · awaiting supplier" : ""}`, complete: itemIsPriced(item), href: `#pricing-${item.id}` })), { label: pricing.length ? `Price ${pricing.length} item${pricing.length === 1 ? "" : "s"}` : "Review pricing", href: rfq }),
-    step("close", "Confirm deal", "Sales", lost ? "stopped" : order ? "complete" : "to_do", order ? "Won. The linked order was created with the deal's items." : "Record the customer decision and review the order details.", "Completes when Mark Won creates the linked order. Mark Lost ends the journey without completing later steps.", [
+    step("pricing", "Supplier quotes", "Office", !live.length ? "to_do" : !pricing.length ? "complete" : live.filter(i => !itemHasQuote(i)).every(i => i.rfqStatus === "rfq_sent") ? "waiting" : "in_progress", `${live.filter(itemHasQuote).length} of ${live.length} active items have supplier quotes.`, "Completes when every active item is marked Quote Received, Priced in AutoQuotes, or Approved. Dollar amounts are entered when closing the deal.", live.map(item => ({ label: `${item.name}${item.rfqStatus === "rfq_sent" ? " · awaiting supplier" : ""}`, complete: itemHasQuote(item), href: `#pricing-${item.id}` })), { label: pricing.length ? `Get quotes for ${pricing.length} item${pricing.length === 1 ? "" : "s"}` : "Review supplier quotes", href: rfq }),
+    step("close", "Confirm deal", closingHolder(deal.salesperson), lost ? "stopped" : order ? "complete" : "to_do", order ? "Won. The linked order was created with the deal's items." : "Record the customer decision and review the order details.", "Completes when Mark Won creates the linked order. Mark Lost ends the journey without completing later steps.", [
       { label: "Intake requirements met", complete: !intake.length, href: edit },
-      { label: "All active items priced", complete: live.length > 0 && !pricing.length, href: rfq },
+      { label: "Supplier quotes received for all active items", complete: live.length > 0 && !pricing.length, href: rfq },
       { label: "Customer decision recorded and order created", complete: !!order, href: orderHref ?? "#close" },
     ], { label: order ? "View order" : "Review decision", href: orderHref ?? "#close" }),
   ];
@@ -98,8 +96,9 @@ export function dealJourney(deal: DealFacts, required: DealRequirements, order?:
         { label: "Quote sent to the customer", complete: !!quoteDone || order?.quoteStatus === "sent", href: orderHref ? `${orderHref}#quote-status` : undefined },
         { label: "Customer approval recorded as Quote Accepted", complete: !!quoteDone, href: orderHref ? `${orderHref}#quote-status` : undefined },
       ], !order ? { label: "Confirm deal first", href: "#close" } : next("quote-status", quoteDone || quoteExempt ? "Review customer quote" : order.quoteStatus === "sent" ? "Record customer approval" : "Open customer quote")),
-    step("terms", "Sales order & terms", "Sales", termsDone ? "complete" : "to_do", "Write the terms agreed with the customer on the order.", "Completes automatically when order terms are saved.", [{ label: "Agreed terms saved", complete: termsDone, href: next("order-terms", "")?.href }], next("order-terms", "Review order terms")),
+    step("terms", "Agreed terms", "Sales", termsDone ? "complete" : "to_do", "Write the terms agreed with the customer on the order.", "Completes automatically when order terms are saved.", [{ label: "Agreed terms saved", complete: termsDone, href: next("order-terms", "")?.href }], next("order-terms", "Review order terms")),
     step("deposit", "Payment", "Billing", gate?.exempt ? "not_required" : gate?.open ? "complete" : gate?.invoiced ? "waiting" : "to_do", gate?.reason ?? "The account's deposit or full-payment requirement is shown after the order is created.", "Completes automatically when paid payments satisfy the account's requirement. Exempt accounts show Not required.", [{ label: gate?.exempt ? "No deposit required for this account" : "Required payment received", complete: !!gate?.open, href: next("payments", "")?.href }], next("payments", "Review payment")),
+    step("salesOrder", "Sales order sent", "Sales", order?.salesOrderSentAt ? "complete" : "to_do", "After payment, send the sales order to the customer and confirm it here before logging a PO.", "Completes when Sales order sent is checked. Existing purchase orders remain unchanged.", [{ label: "Sales order sent to customer", complete: !!order?.salesOrderSentAt, href: next("purchase-orders", "")?.href }], next("purchase-orders", "Confirm sales order sent")),
     step("pos", "Purchasing", "Purchasing", poDone ? "complete" : order?.purchaseOrders.length ? "in_progress" : "to_do", "Assign active items to purchase orders and track suppliers through shipment.", "Completes when items are covered by shipped or received POs, or all goods have already been delivered (including stock deliveries).", [{ label: "All active items covered by POs or received", complete: !!order && items.every(i => !!i.purchaseOrderId || i.deliveryStatus === "arrived_complete"), href: next("purchase-orders", "")?.href }, { label: "Supplier work complete", complete: poDone, href: next("purchase-orders", "")?.href }], next("purchase-orders", "Review purchase orders")),
     step("delivery", "Delivery", "Purchasing", deliveryDone ? "complete" : order?.deliveries.length ? "in_progress" : "to_do", "Track delivery legs and confirm every active item arrived.", "Completes automatically when all delivery legs and active items are fully received.", [{ label: "Delivery legs fully delivered (if applicable)", complete: !!order && order.deliveries.every(d => d.status === "delivered_full"), href: next("delivery", "")?.href }, { label: "All active items received", complete: !!order && items.length > 0 && items.every(i => i.deliveryStatus === "arrived_complete"), href: next("delivery", "")?.href }], next("delivery", "Review deliveries")),
     step("service", "Closeout", "Customer Service", order?.status === "complete" && orderCanClose(order) ? "complete" : order?.openIssueCount ? "in_progress" : "to_do", "Resolve service issues, then explicitly mark the order complete.", "Requires the quote, terms, payment and fulfillment requirements to be met, no open issues, and an explicit Mark complete action.", [{ label: "Quote and agreed terms complete", complete: !!order && (!!quoteDone || !!quoteExempt) && termsDone, href: next(quoteDone || quoteExempt ? "order-terms" : "quote-status", "")?.href }, { label: "Payment and fulfillment requirements met", complete: !!order && canCompleteOrder(order), href: next(!gate?.open ? "payments" : "delivery", "")?.href }, { label: "No open service issues", complete: !!order && order.openIssueCount === 0, href: next("service", "")?.href }, { label: "Order marked complete", complete: order?.status === "complete", href: next("order-complete", "")?.href }], next("service", "Review closeout")),

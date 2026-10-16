@@ -13,10 +13,14 @@
 // collected. From there the delivery is the Delivery tab's to edit; this tab
 // only reads it back.
 
+import { PoExpectedDateField } from "./PoExpectedDateField";
 import { AutoQuotesField } from "./AutoQuotesField";
+import { PartnerInput } from "@/app/deliveries/PartnerInput";
 import { MoneyInput } from "@/lib/MoneyInput";
 
-import { useRef, useState } from "react";
+import { setSalesOrderSent } from "../actions";
+import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition } from "react";
 import { SectionLink as Link } from "@/lib/SectionLink";
 import { useDialogAccessibility } from "@/lib/useDialogAccessibility";
 import {
@@ -46,6 +50,7 @@ type Po = {
   id: string;
   poNumber: string | null;
   autoQuotesPoNumber: string | null;
+  expectedDate: Date | null;
   status: string;
   shipTo: string;
   sentDate: Date | null;
@@ -98,6 +103,7 @@ export default function PurchaseOrdersSection({
   unassignedLineItems,
   vendors,
   gate,
+  salesOrderSentAt,
   documentsByPoId,
 }: {
   orderId: string;
@@ -105,13 +111,17 @@ export default function PurchaseOrdersSection({
   unassignedLineItems: UnassignedLineItem[];
   vendors: Vendor[];
   gate: PaymentGate;
+  salesOrderSentAt: Date | null;
   /** The AutoQuotes PDF (and any other attachment) on file per PO id. */
   documentsByPoId: Record<string, FileDocData[]>;
   uploadsEnabled: boolean;
 }) {
+  const router = useRouter();
+  const [savingSalesOrder, startSalesOrder] = useTransition();
+  const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Once anything still needs a PO, the form stays up - there's nothing to
-  // toggle. The "+ Create PO" reveal only applies once everything's assigned
+  // toggle. The "+ Log PO" reveal only applies once everything's assigned
   // (an edge case: creating an extra PO with no items left to attach).
   const hasUnassigned = unassignedLineItems.length > 0;
   const [showEmptyForm, setShowEmptyForm] = useState(false);
@@ -179,6 +189,10 @@ export default function PurchaseOrdersSection({
       return;
     }
     const autoQuotesPoNumber = String(formData.get("autoQuotesPoNumber") ?? "").trim();
+    if (!autoQuotesPoNumber) {
+      setCreateError("Enter the PO number from AutoQuotes.");
+      return;
+    }
     if (autoQuotesPoNumber.length > 40) {
       setCreateError("AutoQuotes PO # is too long (max 40 characters).");
       return;
@@ -189,7 +203,8 @@ export default function PurchaseOrdersSection({
       supplierId,
       lineItemIds,
       supplierId ? "" : typedVendor,
-      autoQuotesPoNumber
+      autoQuotesPoNumber,
+      String(formData.get("expectedDate") ?? "")
     );
     if (result.ok) {
       setShowEmptyForm(false);
@@ -201,7 +216,7 @@ export default function PurchaseOrdersSection({
         : typedVendor;
       toast({
         kind: "success",
-        message: `PO created for ${vendorLabel} with ${lineItemIds.length} item${
+        message: `PO ${autoQuotesPoNumber} logged for ${vendorLabel} with ${lineItemIds.length} item${
           lineItemIds.length === 1 ? "" : "s"
         }`,
       });
@@ -212,11 +227,30 @@ export default function PurchaseOrdersSection({
 
   return (
     <div className="space-y-4">
-      {formVisible ? (
+      <Link fullPage href="/carriers-truckers" className="text-sm text-gray-dark hover:underline">Carriers &amp; Truckers</Link>
+      <section className="card space-y-2">
+        <h2 className="section-label">Sales order</h2>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={!!salesOrderSentAt} disabled={savingSalesOrder || !gate.open}
+            onChange={event => {
+              const sent = event.target.checked;
+              startSalesOrder(async () => {
+                setSalesOrderError(null);
+                const result = await setSalesOrderSent(orderId, sent);
+                if (!result.ok) setSalesOrderError(result.message);
+                else router.refresh();
+              });
+            }} />
+          Sales order sent to customer
+        </label>
+        <p className="text-xs text-gray-dark">{!gate.open ? gate.reason : salesOrderSentAt ? "Sent confirmation saved. You can log a purchase order." : "Confirm the sales order was sent before logging a purchase order."}</p>
+        {salesOrderError && <p role="alert" className="banner-alert">{salesOrderError}</p>}
+      </section>
+      {gate.open && salesOrderSentAt ? formVisible ? (
         <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
-          <div className="section-label">Create Purchase Order</div>
+          <div className="section-label">Log AutoQuotes Purchase Order</div>
           <p className="text-xs text-gray-dark">
-            Vendor, AutoQuotes PO # and items. How it ships is decided when the vendor acknowledges it.
+            Create the PO in AutoQuotes first, then enter its number, vendor and items here.
           </p>
           <div className="max-w-xs">
             <SearchCombobox
@@ -250,15 +284,20 @@ export default function PurchaseOrdersSection({
           </div>
           <div className="max-w-xs">
             <label className="block">
-              <span className="field-label">AutoQuotes PO #</span>
+              <span className="field-label">AutoQuotes PO # (required)</span>
               <input
                 name="autoQuotesPoNumber"
+                required
                 maxLength={40}
                 placeholder="AutoQuotes PO #"
                 className="input-klyne w-full px-2 py-1.5 text-sm"
               />
             </label>
           </div>
+          <label className="block max-w-xs">
+            <span className="field-label">Expected Date</span>
+            <input type="date" name="expectedDate" className="input-klyne w-full px-2 py-1.5 text-sm" />
+          </label>
           <div>
             <span className="field-label">Items</span>
             {unassignedLineItems.length === 0 ? (
@@ -290,8 +329,8 @@ export default function PurchaseOrdersSection({
                 Cancel
               </button>
             )}
-            <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Creating PO…">
-              Create PO
+            <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Logging PO…">
+              Log PO
             </PendingButton>
           </div>
         </form>
@@ -301,14 +340,14 @@ export default function PurchaseOrdersSection({
           className="btn btn-primary btn-sm active:scale-[0.99]"
           onClick={() => setShowEmptyForm(true)}
         >
-          + Create PO
+          + Log PO
         </button>
-      )}
+      ) : null}
 
       {purchaseOrders.length === 0 ? (
         <div className="empty-state">
           {hasUnassigned
-            ? "No purchase orders yet - use the form above."
+            ? gate.open && salesOrderSentAt ? "No purchase orders yet - use the form above." : "No purchase orders yet. Complete payment and confirm the sales order was sent to continue."
             : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (
@@ -344,6 +383,7 @@ export default function PurchaseOrdersSection({
                     </Link>
                     <div className="relative z-10 min-w-0">
                       <AutoQuotesField po={po} />
+                      <PoExpectedDateField po={po} />
                     </div>
                     <span className="hidden shrink-0 text-[12px] text-gray-dark sm:block">
                       {po.lineItems.length} item{po.lineItems.length === 1 ? "" : "s"}
@@ -420,6 +460,7 @@ export function PurchaseOrderDetail({po, documents, uploadsEnabled}: {po: Po; do
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <AutoQuotesField po={po} />
+          <PoExpectedDateField po={po} />
         </div>
 
         <ul className="space-y-0.5 border-t border-border pt-3 text-sm text-ink">
@@ -623,10 +664,9 @@ function AcknowledgePoDialog({
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="field-label">Carrier</span>
-                  <input
+                  <PartnerInput kind="carriers"
                     name="trackingCarrier"
                     className="input-klyne w-full px-2 py-1 text-xs"
-                    placeholder="e.g. UPS Freight"
                     defaultValue={delivery?.trackingCarrier ?? ""}
                   />
                 </label>
@@ -660,10 +700,9 @@ function AcknowledgePoDialog({
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="field-label">Trucker</span>
-                  <input
+                  <PartnerInput kind="truckers"
                     name="trucker"
                     className="input-klyne w-full px-2 py-1 text-xs"
-                    placeholder="e.g. ANDY, UBER"
                     defaultValue={delivery?.trucker ?? ""}
                   />
                 </label>

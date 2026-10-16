@@ -1,3 +1,4 @@
+import { getDeliveryPartners } from "@/lib/deliveryPartnerData";
 import { compileFilterTree } from "@/lib/nestedFilters";
 import { collectionLimit } from "@/lib/CollectionWindow";
 import { CollectionGroup, SortHeader, TableRows } from "@/lib/CollectionViews";
@@ -354,8 +355,8 @@ export default async function DeliveriesPage({
       ] },
     ] },
   ] };
-  const [truckerRows, collection, canEdit] = await Promise.all([
-    prisma.delivery.findMany({ where: { trucker: { not: null } }, select: { trucker: true }, distinct: ["trucker"] }),
+  const [partners, collection, canEdit] = await Promise.all([
+    getDeliveryPartners(),
     loadDeliveryCollection(
       (where, take) => prisma.delivery.findMany({ where, take, orderBy: openOrder, select: LEG_SELECT }),
       where, limit,
@@ -363,7 +364,7 @@ export default async function DeliveriesPage({
     ),
     can("deliveries.edit"),
   ]);
-  const knownTruckers = truckerRows.map(row => row.trucker as string);
+  const knownTruckers = partners.truckers;
   const { hasMore } = collection;
   const openRaw = collection.rows.filter(row => OPEN_STATUSES.includes(row.status));
   const deliveredRaw = collection.rows.filter(row => DELIVERED.includes(row.status));

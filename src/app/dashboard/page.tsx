@@ -1,3 +1,5 @@
+import { intakeIssues } from "@/lib/dealWorkflow";
+import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { PageHeader } from "@/lib/PageLayout";
 import { Suspense } from "react";
 import Link from "next/link";
@@ -55,6 +57,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  salesOrderSentAt: true,
   termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
@@ -123,6 +126,7 @@ export default async function DashboardPage({
   const mineId = userId ?? "__no_identity__";
 
   const [
+    requirements,
     holders,
     dueOrders,
     opportunityStageGroups,
@@ -148,6 +152,7 @@ export default async function DashboardPage({
     // whole batch into plain numbers for the tiles, charts and queues below.
   ] = plainMoney(
     await Promise.all([
+      getFieldRequirements(),
       getStageHolders(),
       // ---- Overdue & due this week: replaces the old manual-urgency queue -
       // the client's call was "just filter it by due date". ----
@@ -258,8 +263,11 @@ export default async function DashboardPage({
           id: true,
           title: true,
           stage: true,
+          companyId: true,
+          neededByDate: true,
           nextFollowUp: true,
-          lineItems: { select: { rfqStatus: true } },
+          salesperson: { select: { name: true, active: true } },
+          lineItems: { select: { id: true, name: true, rfqStatus: true, unitPrice: true } },
         },
         orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
       }),
@@ -588,6 +596,8 @@ export default async function DashboardPage({
               const ball = withHolder(
                 opportunityBall({
                   stage: d.stage,
+                  salesperson: d.salesperson,
+                  intakeComplete: intakeIssues(d, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }).length === 0,
                   lineItems: d.lineItems,
                   order: null,
                 }),

@@ -49,7 +49,7 @@ export async function OrderService({ issues, ...props }:
 }
 
 export async function OrderPurchasing({ data, purchaseOrderIds, ...props }:
-  Pick<ComponentProps<typeof PurchaseOrdersSection>, "orderId" | "unassignedLineItems" | "gate"> & { data: OrderSupportingReads; purchaseOrderIds: string[] }) {
+  Pick<ComponentProps<typeof PurchaseOrdersSection>, "orderId" | "unassignedLineItems" | "gate" | "salesOrderSentAt"> & { data: OrderSupportingReads; purchaseOrderIds: string[] }) {
   // The core record already has PO IDs; documents can run alongside PO details.
   const documentsPromise = purchaseOrderIds.length ? prisma.document.findMany({
     where: { linkedType: "purchase_order", linkedId: { in: purchaseOrderIds } },
@@ -65,7 +65,7 @@ export async function OrderPurchasing({ data, purchaseOrderIds, ...props }:
 }
 
 export async function OrderDelivery({ data, ...props }:
-  Pick<ComponentProps<typeof DeliverySection>, "orderId"> & { data: OrderSupportingReads }) {
+  Pick<ComponentProps<typeof DeliverySection>, "orderId" | "destination"> & { data: OrderSupportingReads }) {
   const [items, deliveries] = await Promise.all([data.items, data.deliveries]);
   return <DeliverySection {...props} items={items} deliveries={deliveries} />;
 }

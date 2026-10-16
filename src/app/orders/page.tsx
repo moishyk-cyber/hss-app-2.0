@@ -40,6 +40,7 @@ const ORDER_BALL_SELECT = {
   orderValue: true,
   depositRequired: true,
   quoteStatus: true,
+  salesOrderSentAt: true,
   termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
@@ -203,7 +204,14 @@ export default async function OrdersPage({
     }
   }
 
-  if (!isList && !status) where.status = { notIn: ["complete"] };
+  // Finished work stays in the table, rather than consuming the kanban window.
+  const boardWhere: Prisma.OrderWhereInput = isList ? {} : {
+    status: { not: "complete" },
+    OR: [
+      { status: { not: "delivered" } },
+      { serviceIssues: { some: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
+    ],
+  };
 
   const ORDER_BY: Record<string, Prisma.OrderOrderByWithRelationInput> = {
     title: { title: sortDir },
@@ -238,7 +246,7 @@ export default async function OrdersPage({
   const orders = plainMoney(
     await prisma.order.findMany({
       take: limit + 1,
-      where: { AND: [where, nestedWhere ?? {}] },
+      where: { AND: [where, nestedWhere ?? {}, boardWhere] },
       include: {
         company: {
           select: {
@@ -279,7 +287,7 @@ export default async function OrdersPage({
   // Board cards. orderPhase() returns null for completed orders, which is how
   // they drop off the board without disappearing from the list.
   const cards: OrderCard[] = orders.flatMap((order) => {
-    const phase = orderPhase(order);
+    const phase = orderPhase({ ...order, openIssueCount: order._count.serviceIssues });
     if (!phase) return [];
     return [
       {
