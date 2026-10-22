@@ -13,14 +13,14 @@
 // collected. From there the delivery is the Delivery tab's to edit; this tab
 // only reads it back.
 
+import { PickupLocationDropdown } from "@/lib/LocationDropdown";
+import { SalesOrderConfirmation } from "./SalesOrderConfirmation";
 import { PoExpectedDateField } from "./PoExpectedDateField";
 import { AutoQuotesField } from "./AutoQuotesField";
 import { PartnerInput } from "@/app/deliveries/PartnerInput";
 import { MoneyInput } from "@/lib/MoneyInput";
 
-import { setSalesOrderSent } from "../actions";
-import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { SectionLink as Link } from "@/lib/SectionLink";
 import { useDialogAccessibility } from "@/lib/useDialogAccessibility";
 import {
@@ -116,9 +116,6 @@ export default function PurchaseOrdersSection({
   documentsByPoId: Record<string, FileDocData[]>;
   uploadsEnabled: boolean;
 }) {
-  const router = useRouter();
-  const [savingSalesOrder, startSalesOrder] = useTransition();
-  const [salesOrderError, setSalesOrderError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // Once anything still needs a PO, the form stays up - there's nothing to
   // toggle. The "+ Log PO" reveal only applies once everything's assigned
@@ -228,25 +225,8 @@ export default function PurchaseOrdersSection({
   return (
     <div className="space-y-4">
       <Link fullPage href="/carriers-truckers" className="text-sm text-gray-dark hover:underline">Carriers &amp; Truckers</Link>
-      <section className="card space-y-2">
-        <h2 className="section-label">Sales order</h2>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={!!salesOrderSentAt} disabled={savingSalesOrder || !gate.open}
-            onChange={event => {
-              const sent = event.target.checked;
-              startSalesOrder(async () => {
-                setSalesOrderError(null);
-                const result = await setSalesOrderSent(orderId, sent);
-                if (!result.ok) setSalesOrderError(result.message);
-                else router.refresh();
-              });
-            }} />
-          Sales order sent to customer
-        </label>
-        <p className="text-xs text-gray-dark">{!gate.open ? gate.reason : salesOrderSentAt ? "Sent confirmation saved. You can log a purchase order." : "Confirm the sales order was sent before logging a purchase order."}</p>
-        {salesOrderError && <p role="alert" className="banner-alert">{salesOrderError}</p>}
-      </section>
-      {gate.open && salesOrderSentAt ? formVisible ? (
+      <SalesOrderConfirmation orderId={orderId} sentAt={salesOrderSentAt} />
+      {gate.open ? formVisible ? (
         <form action={handleCreatePo} className="space-y-3 rounded-lg border border-border bg-panel p-3">
           <div className="section-label">Log AutoQuotes Purchase Order</div>
           <p className="text-xs text-gray-dark">
@@ -347,7 +327,7 @@ export default function PurchaseOrdersSection({
       {purchaseOrders.length === 0 ? (
         <div className="empty-state">
           {hasUnassigned
-            ? gate.open && salesOrderSentAt ? "No purchase orders yet - use the form above." : "No purchase orders yet. Complete payment and confirm the sales order was sent to continue."
+            ? gate.open ? "No purchase orders yet - use the form above." : "No purchase orders yet. Complete the required payment to continue."
             : "No purchase orders yet. Line items will appear here once they're ready to purchase."}
         </div>
       ) : (
@@ -735,15 +715,7 @@ function AcknowledgePoDialog({
                     defaultValue={delivery?.deliveryContactPhone ?? ""}
                   />
                 </label>
-                <label className="col-span-2 block">
-                  <span className="field-label">Pickup address</span>
-                  <input
-                    name="pickupAddress"
-                    className="input-klyne w-full px-2 py-1 text-xs"
-                    placeholder={po.supplier?.deliveryAddress ?? "Where the driver picks up"}
-                    defaultValue={delivery?.pickupAddress ?? ""}
-                  />
-                </label>
+<PickupLocationDropdown current={delivery?.pickupAddress ?? null} supplierAddress={po.supplier?.deliveryAddress} />
                 <label className="col-span-2 flex items-center gap-2 pt-1 text-xs text-ink">
                   <input
                     type="checkbox"

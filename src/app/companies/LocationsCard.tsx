@@ -13,7 +13,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import type { ActionResult } from "@/lib/actionResult";
-import { Spinner } from "@/lib/ui";
+import { Spinner, EditIconButton } from "@/lib/ui";
 import { createLocation, deleteLocation, setDefaultLocation, updateLocation } from "./actions";
 
 export type CompanyLocation = {
@@ -265,13 +265,7 @@ export function LocationsCard({
                         Make default
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => startEdit(location)}
-                      className="btn btn-sm active:scale-[0.99]"
-                    >
-                      Edit
-                    </button>
+                    <EditIconButton label={`Edit ${location.name}`} onClick={() => startEdit(location)} />
                     <button
                       type="button"
                       onClick={() => {

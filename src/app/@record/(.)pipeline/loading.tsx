@@ -1,1 +1,1 @@
-export { DetailLoading as default } from "@/lib/PageLoading";
+export { WorkflowRequirementsLoading as default } from "@/lib/WorkflowRequirementsLoading";

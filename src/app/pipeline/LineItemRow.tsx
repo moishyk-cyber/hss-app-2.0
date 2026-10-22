@@ -1,5 +1,7 @@
 "use client";
 
+import { ItemMetadata, ItemNotes, type ItemDetailsFields } from "@/lib/ItemDetails";
+import { useRfqStatusAction } from "@/lib/useRfqStatusAction";
 import { useState, useTransition } from "react";
 import { RFQ_STATUSES, RFQ_STATUS_COLORS } from "@/lib/constants";
 import { BadgeSelect, Spinner } from "@/lib/ui";
@@ -9,11 +11,10 @@ import type { ActionResult } from "@/lib/actionResult";
 import {
   updateLineItemAssignee,
   updateLineItemQty,
-  updateLineItemRfqStatus,
 } from "./actions";
 import { LeadTimeCell, StockStatusCell } from "../rfq/StockCells";
 
-export type EditableLineItem = {
+export type EditableLineItem = ItemDetailsFields & {
   id: string;
   name: string;
   description: string | null;
@@ -100,14 +101,14 @@ export function LineItemRow({
   deletable?: boolean;
   users: { id: string; name: string }[];
 }) {
+  const saveStatus = useRfqStatusAction("deal");
   return (
     <tr id={`pricing-${item.id}`}>
-      <td>
+      <td className="item-name-cell">
         <div className="font-semibold text-ink">{item.name}</div>
-        {item.description ? (
-          <div className="text-xs text-gray">{item.description}</div>
-        ) : null}
+        <ItemMetadata item={item} />
       </td>
+      <td className="item-notes-cell"><ItemNotes item={item} /></td>
 
       <td>
         <InlineNumber
@@ -137,7 +138,7 @@ export function LineItemRow({
           value={item.rfqStatus}
           options={RFQ_STATUSES}
           colorMap={RFQ_STATUS_COLORS}
-          action={(next) => updateLineItemRfqStatus(item.id, next)}
+          action={(next) => saveStatus(item.id, next)}
         />
       </td>
 

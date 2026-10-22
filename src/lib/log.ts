@@ -1,3 +1,6 @@
+import { after } from "next/server";
+import { invalidateSharedReads } from "./shareRead";
+import { dispatchNotificationEmails } from "@/lib/notificationEmails";
 import { processNotificationActivity } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { currentUserId, currentUserName } from "@/lib/identityServer";
@@ -14,15 +17,30 @@ export type ActivityLogMeta = {
  * Never throws - a logging hiccup must not fail or roll back the business
  * mutation it narrates. All per-folder log helpers should delegate here.
  */
+type ActivityActor = { id: string; name: string };
+
+/** Reuse a server-verified actor within one request, never a client-provided identity. */
+export function activityLoggerFor(actor: ActivityActor) {
+  return (...args: Parameters<typeof logActivity>) => writeActivity(actor, ...args);
+}
+
 export async function logActivity(
+  linkedType: string, linkedId: string, action: string, detail: string, meta?: ActivityLogMeta
+): Promise<void> {
+  return writeActivity(null, linkedType, linkedId, action, detail, meta);
+}
+
+async function writeActivity(
+  actor: ActivityActor | null,
   linkedType: string,
   linkedId: string,
   action: string,
   detail: string,
   meta?: ActivityLogMeta
 ): Promise<void> {
+  invalidateSharedReads();
   try {
-    const [userName, userId] = await Promise.all([currentUserName(), currentUserId()]);
+    const [userName, userId] = actor ? [actor.name, actor.id] : await Promise.all([currentUserName(), currentUserId()]);
     const entry = await prisma.activityLog.create({
       data: {
         userName,
@@ -36,8 +54,15 @@ export async function logActivity(
         sourceScreen: meta?.sourceScreen ?? null,
       },
     });
-    try { await processNotificationActivity(prisma, entry); }
-    catch (error) { console.error("notification delivery queued for retry", error); }
+    // The durable audit row is saved before acknowledgement. Its notification
+    // work runs after the response and can still retry from this row on failure.
+    after(async () => {
+      try { await processNotificationActivity(prisma, entry); }
+      catch (error) { console.error("notification delivery queued for retry", error); }
+      invalidateSharedReads();
+      try { await dispatchNotificationEmails(prisma); }
+      catch { console.error("notification email delivery queued for retry"); }
+    });
   } catch (err) {
     console.error("activity log write failed", err);
   }

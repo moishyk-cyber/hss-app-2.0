@@ -18,8 +18,13 @@
 // and writes what was agreed; nothing is invoiced automatically. The invoices
 // are added by hand on the order's Invoice tab.
 
+import { EditIconButton } from "@/lib/ui";
+import { useWorkflowFormCompletion } from "@/lib/WorkflowFormContext";
 import { MoneyInput } from "@/lib/MoneyInput";
 
+import { usePaymentTermsConversion, PaymentTermsPreview } from "@/lib/PaymentTermsField";
+import { paymentPlanAmounts } from "@/lib/paymentTerms";
+import { LocationDropdown } from "@/lib/LocationDropdown";
 import { useRef, useState, useEffect } from "react";
 import { highlightSection } from "@/lib/SectionLink";
 import { useRouter } from "next/navigation";
@@ -56,13 +61,7 @@ function SummaryRow({
         <span className="field-label !mb-0.5 block">{label}</span>
         <span className="block break-words text-[13px] text-ink">{value}</span>
       </div>
-      <button
-        type="button"
-        onClick={onChange}
-        className="shrink-0 text-xs text-primary transition-colors hover:underline"
-      >
-        change
-      </button>
+      <EditIconButton label={`Edit ${label}`} onClick={onChange} />
     </div>
   );
 }
@@ -70,7 +69,6 @@ function SummaryRow({
 export function ClosePanel({
   opportunityId,
   prerequisiteIssues,
-  isProject,
   requiresDeposit,
   depositPercent,
   needsOrderRecovery,
@@ -100,6 +98,7 @@ export function ClosePanel({
   locations: CloseLocation[];
 }) {
   const router = useRouter();
+  const finishWorkflow = useWorkflowFormCompletion();
   const [closingAs, setClosingAs] = useState<"won" | "lost">("won");
   const [validation, setValidation] = useState<ValidationIssue[]>([]);
   const [attempted, setAttempted] = useState(false);
@@ -124,40 +123,30 @@ export function ClosePanel({
     previousNeededBy.current = defaultNeededBy;
   }, [defaultNeededBy]);
   const [terms, setTerms] = useState("");
+  const conversion = usePaymentTermsConversion(terms);
   const [poNumber, setPoNumber] = useState("");
 
   // An answer that is already on the deal opens closed; a missing one opens as
   // an input, because that is the only thing the close is actually waiting for.
   const [editPrice, setEditPrice] = useState(!(defaultValue != null && defaultValue > 0));
-  const [editLocation, setEditLocation] = useState(!defaultDeliveryAddress);
+  const [locationChoice, setLocationChoice] = useState("intake");
   const [editNeededBy, setEditNeededBy] = useState(!defaultNeededBy);
 
   const numericValue = Number(value);
   const priceReady = Number.isFinite(numericValue) && numericValue >= 0.01;
-  // The POs still wait on the account's own deposit rule (Company.requiresDeposit
-  // / depositPercent) - the free-text terms are for people, not for the gate.
   const accountDeposit = roundCents(((priceReady ? numericValue : 0) * depositPercent) / 100);
-  const gateLine = isProject
-    ? requiresDeposit
-      ? `Deposit per account terms: ${depositPercent}% (${fmtUSD(accountDeposit, { cents: true })})`
-      : "No deposit required for this account"
-    : "Full payment before POs go out";
-
-  function pickLocation(nextId: string) {
-    setLocationId(nextId);
-    const picked = locations.find((l) => l.id === nextId);
-    if (picked) {
-      setLocationName(picked.name);
-      setAddress(picked.address);
-    }
+  let termsProblem = terms.trim() && (conversion.loading ? "Wait for payment terms to finish converting." : conversion.error || (conversion.plan?.status !== "ready" || !conversion.token ? "Clarify the payment terms before confirming the deal." : ""));
+  let gateLine = requiresDeposit ? `Account deposit: ${depositPercent}% (${fmtUSD(accountDeposit, { cents: true })}) before purchasing` : "No payment required before purchasing";
+  if (conversion.plan?.status === "ready") {
+    try { const required = paymentPlanAmounts(conversion.plan, priceReady ? numericValue : null).requiredBeforePurchase; gateLine = required === 0 ? "No payment required before purchasing" : required == null ? "Set the agreed total to calculate the deposit" : `${fmtUSD(required, { cents: true })} required before purchasing`; }
+    catch (error) { termsProblem = (error as Error).message; }
   }
 
   function validateWon() {
     setAttempted(true);
     const own = closeIssues({ value: numericValue, address, neededBy }, "won");
-    const issues = [...prerequisiteIssues.filter(i => i.field !== "neededByDate"), ...own];
+    const issues = [...prerequisiteIssues.filter(i => i.field !== "neededByDate"), ...own, ...(termsProblem ? [{ field: "termsNotes", message: termsProblem }] : [])];
     if (own.some(i => i.field === "value")) setEditPrice(true);
-    if (own.some(i => i.field === "deliveryAddress")) setEditLocation(true);
     if (own.some(i => i.field === "neededByDate")) setEditNeededBy(true);
     setValidation(issues);
     return issues.length === 0;
@@ -197,7 +186,7 @@ export function ClosePanel({
     }
     requestAnimationFrame(() => {
       const form = closingAs === "won" ? wonFormRef.current : lostFormRef.current;
-      const input = issue?.field === "value" ? form?.querySelector<HTMLInputElement>('input[inputmode="decimal"]') : form?.querySelector<HTMLInputElement>(`[name="${issue?.field}"]`);
+      const input = issue?.field === "value" ? form?.querySelector<HTMLElement>('input[inputmode="decimal"]') : issue?.field === "deliveryAddress" ? form?.querySelector<HTMLElement>('input[name="deliveryAddress"]:not([type="hidden"]), select[aria-label="Location"]') : form?.querySelector<HTMLElement>(`[name="${issue?.field}"]`);
       if (input?.id) highlightSection(`#${input.id}`, form); else { input?.scrollIntoView({ block: "center" }); input?.focus(); }
     });
   }
@@ -206,7 +195,10 @@ export function ClosePanel({
     setSubmitting(kind);
     try {
       const result = await (kind === "won" ? markOpportunityWon(formData) : markOpportunityLost(formData));
-      if (result.ok) { router.push(result.href); router.refresh(); }
+      if (result.ok) {
+        if (finishWorkflow) { setWonSummary(null); setConfirmingLost(false); finishWorkflow(); }
+        else { router.push(result.href); router.refresh(); }
+      }
       else { setWonSummary(null); setConfirmingLost(false); setValidation(result.issues); }
     } catch {
       setWonSummary(null); setConfirmingLost(false);
@@ -259,78 +251,8 @@ export function ClosePanel({
 
         {/* The order this creates goes straight to fulfillment - it needs a
             destination and a date, not "not set" everywhere. */}
-        {editLocation ? (
-          <div className="space-y-2 rounded-[10px] border border-border bg-panel p-3">
-            <span className="section-label !mb-0">Location</span>
-            {locations.length > 0 ? (
-              <label className="block">
-                <span className="field-label">Saved location</span>
-                <select
-                  value={locationId}
-                  onChange={(e) => pickLocation(e.target.value)}
-                  className="input-klyne w-full"
-                >
-                  <option value="">Somewhere else</option>
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label className="block">
-              <span className="field-label">Name of location</span>
-              <input
-                type="text"
-                name="locationName"
-                value={locationName}
-                onChange={(e) => {
-                  setLocationName(e.target.value);
-                  setLocationId("");
-                }}
-                placeholder="e.g. Main kitchen"
-                className="input-klyne w-full"
-              />
-            </label>
-            <label className="block">
-              <span className="field-label">Delivery address (required)</span>
-              <input
-                type="text"
-                name="deliveryAddress"
-                id="close-address"
-                aria-invalid={attempted && !address.trim()}
-                aria-describedby={attempted && !address.trim() ? "close-address-error" : undefined}
-                required
-                value={address}
-                onChange={(e) => {
-                  setAddress(e.target.value);
-                  setLocationId("");
-                }}
-                placeholder="Where is this order going?"
-                className="input-klyne w-full"
-              />
-              {attempted && !address.trim() ? <span id="close-address-error" className="mt-1 block text-xs text-red">Enter the delivery address.</span> : null}
-            </label>
-            <input type="hidden" name="locationId" value={locationId} />
-          </div>
-        ) : (
-          <>
-            <SummaryRow
-              label="Deliver to"
-              value={
-                <>
-                  {locationName ? <span className="text-gray-dark">{locationName} · </span> : null}
-                  {address}
-                </>
-              }
-              onChange={() => setEditLocation(true)}
-            />
-            <input type="hidden" name="locationId" value={locationId} />
-            <input type="hidden" name="locationName" value={locationName} />
-            <input type="hidden" name="deliveryAddress" value={address} />
-          </>
-        )}
+        <LocationDropdown label="Location" intake={{ name: defaultLocationName ?? null, address: defaultDeliveryAddress ?? null }} locations={locations} value={{ choice: locationChoice, locationId, locationName, address }} required onChange={next => { setLocationChoice(next.choice); setLocationId(next.locationId); setLocationName(next.locationName); setAddress(next.address); }} />
+        {attempted && !address.trim() && <p role="alert" className="text-xs text-red">Choose a location or enter the new delivery address.</p>}
 
         {editNeededBy ? (
           <label className="block max-w-xs">
@@ -362,16 +284,19 @@ export function ClosePanel({
         {/* Sep 4 (client): one free-text box. The salesperson reads the quote and
             writes what was agreed; the invoices are added by hand later. */}
         <label className="block">
-          <span className="field-label">Customer terms (optional)</span>
+          <span className="field-label">Payment terms</span>
           <textarea
             name="termsNotes"
             rows={3}
+            maxLength={4000}
             value={terms}
             onChange={(e) => setTerms(e.target.value)}
             placeholder="Enter the terms agreed with this customer in your own words…"
             className="input-klyne w-full"
           />
         </label>
+        <input type="hidden" name="paymentTermsToken" value={conversion.token} />
+        <PaymentTermsPreview conversion={conversion} total={priceReady ? numericValue : null} />
 
         <label className="block">
           <span className="field-label">PO number (optional, from AutoQuotes)</span>
@@ -385,18 +310,11 @@ export function ClosePanel({
           />
         </label>
 
-        {isProject ? null : (
-          <p className="text-[13px] text-gray-dark">
-            A straight order needs no customer quote - it goes to fulfillment as soon as the terms
-            are met.
-          </p>
-        )}
-
         {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
         <button
           type="button"
           onClick={openWonConfirm}
-          disabled={!!submitting}
+          disabled={!!submitting || !!termsProblem}
           aria-haspopup="dialog"
           aria-busy={submitting === "won"}
           className={`btn active:scale-[0.99] ${submitting === "won" ? "cursor-progress opacity-60" : ""}`}

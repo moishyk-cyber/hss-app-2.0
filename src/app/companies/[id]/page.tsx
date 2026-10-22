@@ -97,11 +97,11 @@ export default async function CompanyDetailPage({
               />
             ) : null}
             <DetailRow
-              label="Deposit"
+              label="Account payment terms"
               value={
-                company.requiresDeposit
+                !company.paymentTermsConfigured ? "Not set — set terms before creating an order" : company.requiresDeposit
                   ? `${company.depositPercent}% required`
-                  : "not required - full payment after delivery"
+                  : "No payment required before purchase"
               }
             />
             <DetailRow

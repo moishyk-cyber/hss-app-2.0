@@ -27,6 +27,13 @@ test("successful save returns persisted workflow evidence without page-render de
   assert.deepEqual(await response.json(), { ok: true, steps: ["terms completed"], payments: [] });
   assert.equal(f.writes.length, 1);
 });
+test("workflow saves accept the public host behind a proxy and still reject a foreign origin",async()=>{
+ const f=fixture();
+ const proxied=(origin:string)=>new Request("http://internal:3001/api/orders/order/workflow",{method:"POST",headers:{host:"internal:3001","x-forwarded-host":"127.0.0.1:3001","x-forwarded-proto":"http",origin,"Content-Type":"application/json"},body:JSON.stringify({action:"terms",args:["order","QA terms"]})});
+ assert.equal((await f.post(proxied("http://127.0.0.1:3001"),context)).status,200);
+ assert.equal((await f.post(proxied("https://elsewhere.example"),context)).status,403);
+ assert.equal(f.writes.length,1);
+});
 test("validation failures remain visible; uncertain saved state never claims success", async () => {
   const invalid = fixture({ save: async () => ({ ok: false, message: "Terms too long" }) });
   assert.equal((await invalid.post(request({ action: "terms", args: ["order"] }), context)).status, 400);

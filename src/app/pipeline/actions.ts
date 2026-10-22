@@ -1,4 +1,7 @@
 "use server";
+import { requireAccountPaymentTerms, AccountTermsRequiredError } from "@/lib/accountPaymentTerms";
+import { verifiedPaymentInterpretation } from "@/lib/interpretPaymentTerms";
+import { paymentPlanAmounts } from "@/lib/paymentTerms";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -90,6 +93,7 @@ export async function saveDealIntake(formData: FormData): Promise<ActionResult &
     });
     await logActivity("opportunity", id, "intake_updated", "Required intake details saved");
     revalidatePath(`/pipeline/${id}`);
+    revalidatePath(`/records/${id}`);
     revalidatePath("/pipeline");
   }, "Could not save intake details. Refresh if the deal was closed in another session, then try again.");
 }
@@ -232,7 +236,7 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
   const before = plainMoney(await prisma.opportunity.findUnique({ where: { id }, include: { lineItems: true } }));
   if (!before) return { ok: false, message: "This deal no longer exists." };
   if (before.stage === stage) return { ok: true };
-  if (before.stage === "won") return { ok: false, message: "This deal already has an order. Manage its fulfillment from the order page.", issues: [{ field: "stage", message: "A won deal cannot be reopened with the stage picker.", href: `/pipeline/${id}` }] };
+  if (before.stage === "won") return { ok: false, message: "This deal already has an order. Manage its fulfillment from the order page.", issues: [{ field: "stage", message: "A won deal cannot be reopened with the stage picker.", href: `/records/${id}` }] };
   const req = await getFieldRequirements();
   const issues = stageIssues(before, stage, { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] });
   if (issues.length) return { ok: false, message: "Complete the required work before moving to this stage.", issues };
@@ -255,6 +259,7 @@ export async function changeOpportunityStage(id: string, stage: string): Promise
 
     revalidatePath("/pipeline");
     revalidatePath(`/pipeline/${id}`);
+    revalidatePath(`/records/${id}`);
   }, "Could not move the deal. Please try again.");
 }
 
@@ -285,6 +290,7 @@ export async function moveStageFromStepper(
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${id}`);
+    revalidatePath(`/records/${id}`);
   redirect(`/pipeline/${id}`);
 }
 
@@ -420,13 +426,15 @@ export async function updateOpportunity(formData: FormData) {
         facilityType: text(formData, "facilityType", TEXT_LIMITS.short),
         menu: text(formData, "menu", TEXT_LIMITS.medium),
         roomDimensions: text(formData, "roomDimensions", TEXT_LIMITS.short),
-        wallMeasurements: text(formData, "wallMeasurements", TEXT_LIMITS.short),
+        wallMeasurements: orderType === "project" ? text(formData, "wallMeasurements", TEXT_LIMITS.short) : before.wallMeasurements,
         plumbingElectricalNotes: text(formData, "plumbingElectricalNotes", TEXT_LIMITS.long),
         budget,
         clientVisionNotes: text(formData, "clientVisionNotes", TEXT_LIMITS.long),
         deliveryType,
         openingSize: text(formData, "openingSize", TEXT_LIMITS.short),
         installationNeeded: bool(formData, "installationNeeded"),
+        floorNote: text(formData, "floorNote", TEXT_LIMITS.medium),
+        orders: { updateMany: { where: {}, data: { deliveryType, openingSize: text(formData, "openingSize", TEXT_LIMITS.short), installationNeeded: bool(formData, "installationNeeded"), floorNote: text(formData, "floorNote", TEXT_LIMITS.medium) } } },
         designStatus,
         locationId,
         locationName: copiedFromLocation?.locationName ?? text(formData, "locationName", TEXT_LIMITS.short),
@@ -455,7 +463,8 @@ export async function updateOpportunity(formData: FormData) {
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${id}`);
-  redirect(`/pipeline/${id}`);
+    revalidatePath(`/records/${id}`);
+  redirect(`/records/${id}${formData.get("returnWorkflow") === "sales" ? "?workflow=sales" : formData.get("returnStep") === "sales" ? "?step=sales" : ""}`);
 }
 
 export async function markOpportunityLost(formData: FormData): Promise<DealCloseResult> {
@@ -479,7 +488,8 @@ export async function markOpportunityLost(formData: FormData): Promise<DealClose
   }
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${id}`);
-  return { ok: true, href: `/pipeline/${id}` };
+    revalidatePath(`/records/${id}`);
+  return { ok: true, href: `/records/${id}` };
 }
 
 /**
@@ -488,9 +498,8 @@ export async function markOpportunityLost(formData: FormData): Promise<DealClose
  * and what was agreed on terms. Those answers ARE the order: the value, the
  * location and the free-text terms.
  *
- * Sep 4 (client): no invoice is ever created here. The terms are free text, and
- * the payment gate falls back to the account's own rule
- * (Company.requiresDeposit / depositPercent, see evaluatePaymentGate).
+ * Custom terms are automatically interpreted into a validated payment schedule.
+ * No invoice is created here; the schedule controls the purchasing gate.
  */
 export type DealCloseResult = { ok: true; href: string } | { ok: false; issues: ValidationIssue[] };
 
@@ -513,7 +522,7 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
   // create a second order, but a deal stuck at stage "won" with no order (the old
   // dropdown bypass) must still be able to run this as recovery.
   if (opportunity.orders.length > 0) {
-    return { ok: true, href: `/orders/${opportunity.orders[0].id}` };
+    return { ok: true, href: `/records/${opportunity.id}` };
   }
 
   if (opportunity.stage === "lost") return { ok: false, issues: [{ field: "stage", message: "This deal is Lost. Reopen it before marking it Won." }] };
@@ -522,7 +531,17 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
   const rawValue = fromClosePanel ? num(formData, "value") : toMoney(opportunity.value);
   const closeDeliveryAddress = text(formData, "deliveryAddress", TEXT_LIMITS.medium);
   const closeNeededByDate = parseDateOnly(formData.get("neededByDate"));
-  const orderDeliveryAddress = fromClosePanel ? closeDeliveryAddress : (closeDeliveryAddress ?? opportunity.deliveryAddress);
+  let orderDeliveryAddress = fromClosePanel ? closeDeliveryAddress : (closeDeliveryAddress ?? opportunity.deliveryAddress);
+  let orderLocationId: string | null = opportunity.locationId;
+  let closeLocationName = str(formData, "locationName");
+  const destinationChoice = str(formData, "destinationChoice");
+  if (destinationChoice === "intake") orderDeliveryAddress = opportunity.deliveryAddress;
+  else if (destinationChoice === "elsewhere") { orderLocationId = null; closeLocationName = null; }
+  else if (destinationChoice) {
+    const picked = await prisma.location.findUnique({ where: { id: destinationChoice }, select: { id: true, name: true, address: true, companyId: true } });
+    if (!picked || picked.companyId !== opportunity.companyId) return { ok: false, issues: [{ field: "deliveryAddress", message: "Choose a location belonging to this business." }] };
+    orderDeliveryAddress = picked.address; orderLocationId = picked.id; closeLocationName = picked.name;
+  }
   const orderNeededByDate = fromClosePanel ? closeNeededByDate : (closeNeededByDate ?? opportunity.neededByDate);
   const req = await getFieldRequirements();
   const issues = [
@@ -531,13 +550,11 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
   ];
   if (issues.length) return { ok: false, issues };
   const value = roundCents(rawValue!);
-  const closeLocationName = str(formData, "locationName");
 
   // The site picked in the Close panel carries into the order (and back onto the
   // deal). A location from another business is a tampered payload - ignore it.
-  let orderLocationId: string | null = opportunity.locationId;
   const pickedLocationId = str(formData, "locationId");
-  if (pickedLocationId) {
+  if (!destinationChoice && pickedLocationId) {
     const picked = await prisma.location.findUnique({
       where: { id: pickedLocationId },
       select: { id: true, companyId: true },
@@ -556,12 +573,11 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
     }
   }
 
-  const isProject = opportunity.orderType === "project";
 
-  // Whatever was agreed on the call, in the salesperson's own words. Nothing is
-  // derived from it: depositRequired stays null so the gate reads the account's
-  // deposit rule exactly as it did before terms existed.
   const termsNotes = text(formData, "termsNotes", TEXT_LIMITS.long);
+  let interpretation: ReturnType<typeof verifiedPaymentInterpretation> | null = null;
+  try { interpretation = termsNotes ? verifiedPaymentInterpretation(termsNotes, formData.get("paymentTermsToken")) : null; if (interpretation) paymentPlanAmounts(interpretation.plan, value); }
+  catch (error) { return { ok: false, issues: [{ field: "termsNotes", message: (error as Error).message }] }; }
 
   // Customer PO # as read off AutoQuotes - typed once here so the order never
   // has to wait on someone adding it by hand afterward.
@@ -577,6 +593,7 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
       if (current.updatedAt.getTime() !== opportunity.updatedAt.getTime()) throw new DealValidationError([{ field: "request", message: "This deal changed in another session. Refresh and review its details before marking it Won." }]);
       const currentIssues = stageIssues({ ...plainMoney(current), neededByDate: orderNeededByDate ?? null }, "won", { company: req["opportunity.companyId"], neededBy: req["opportunity.neededByDate"] });
       if (currentIssues.length) throw new DealValidationError(currentIssues);
+      await requireAccountPaymentTerms(tx, current.companyId);
       const created = await tx.order.create({
         data: {
           title: opportunity.title,
@@ -589,13 +606,17 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
           orderValue: value,
           locationId: orderLocationId,
           deliveryAddress: orderDeliveryAddress,
+          intakeDeliveryAddress: opportunity.deliveryAddress ?? orderDeliveryAddress,
+          intakeLocationName: opportunity.locationName,
+          deliveryType: opportunity.deliveryType,
+          installationNeeded: opportunity.installationNeeded,
+          openingSize: opportunity.openingSize,
+          floorNote: opportunity.floorNote,
           neededByDate: orderNeededByDate,
-          // A project is quoted to the customer before the sales order goes
-          // out; a straight order never is (see QUOTE_STATUSES).
-          quoteStatus: isProject ? "needed" : "not_needed",
           termsNotes,
-          paymentTerms: null,
-          depositRequired: null,
+          paymentTerms: interpretation ? "custom" : null,
+          paymentPlan: interpretation?.plan,
+          depositRequired: interpretation ? paymentPlanAmounts(interpretation.plan, value).requiredBeforePurchase : null,
           clientPoNumber: poNumber,
         },
       });
@@ -616,8 +637,8 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
           nextFollowUp: null,
           value,
           locationId: orderLocationId,
-          ...(closeLocationName ? { locationName: closeLocationName } : {}),
-          ...(closeDeliveryAddress ? { deliveryAddress: closeDeliveryAddress } : {}),
+          locationName: closeLocationName,
+          ...(orderDeliveryAddress ? { deliveryAddress: orderDeliveryAddress } : {}),
           ...(closeNeededByDate ? { neededByDate: closeNeededByDate } : {}),
         },
       });
@@ -625,6 +646,7 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
       return created;
     });
   } catch (err) {
+    if (err instanceof AccountTermsRequiredError) return { ok: false, issues: [{ field: "termsNotes", message: err.message }] };
     if (err instanceof DealValidationError) return { ok: false, issues: err.issues };
     console.error(err);
     return { ok: false, issues: [{ field: "request", message: "Could not create the order. Your entries are preserved. Refresh if this deal changed in another session, then try again." }] };
@@ -654,6 +676,27 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${opportunity.id}`);
+  revalidatePath(`/records/${opportunity.id}`);
   revalidatePath("/orders");
-  return { ok: true, href: `/orders/${order.id}` };
+  return { ok: true, href: `/records/${id}` };
+}
+
+/** Validate a board move against fresh saved evidence. This never marks work complete. */
+export async function checkPipelineWorkflowMove(id: string, target: string): Promise<import("@/lib/pipelineWorkflow").PipelineMoveResult> {
+  const fallback = `/pipeline/${id}`;
+  const denied = await requirePermission("deals.edit");
+  if (denied?.ok === false) return { ok: false, title: "Cannot move this card", message: denied.message, issues: [], href: fallback };
+  const { FLOW_STEPS } = await import("@/lib/ballInCourt");
+  if (!FLOW_STEPS.some(step => step.key === target)) return { ok: false, title: "Cannot move this card", message: "Choose a valid workflow step.", issues: [], href: fallback };
+  try {
+    const [{ PIPELINE_WORKFLOW_INDEX_SELECT }, { validatePipelineWorkflowMove }] = await Promise.all([import("./data"), import("@/lib/pipelineWorkflow")]);
+    const [raw, requirements] = await Promise.all([
+      prisma.opportunity.findUnique({ where: { id }, select: PIPELINE_WORKFLOW_INDEX_SELECT }), getFieldRequirements(),
+    ]);
+    if (!raw) return { ok: false, title: "Cannot move this card", message: "This deal no longer exists.", issues: [], href: "/pipeline" };
+    const deal = plainMoney(raw), order = deal.orders[0];
+    return validatePipelineWorkflowMove(deal, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }, order ? { ...order, openIssueCount: order._count.serviceIssues } : null, target as import("@/lib/ballInCourt").FlowStepKey);
+  } catch {
+    return { ok: false, title: "Could not check this move", message: "The card has not moved. Please try again.", issues: [], href: fallback };
+  }
 }

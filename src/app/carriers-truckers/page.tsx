@@ -1,3 +1,4 @@
+import { PencilIcon } from "@/lib/ui";
 import { Suspense } from "react";
 import Link from "@/lib/IntentLink";
 import { PageHeader } from "@/lib/PageLayout";
@@ -8,6 +9,7 @@ import { parseListQuery, type ListField } from "@/lib/listQuery";
 import { matchFilterTree } from "@/lib/nestedFilters";
 import { getDeliveryPartners } from "@/lib/deliveryPartnerData";
 import { can } from "@/lib/permissionsServer";
+import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
 export const dynamic = "force-dynamic";
 const fields: ListField[] = [
   { key: "name", label: "Name", type: "text" },
@@ -16,6 +18,7 @@ const fields: ListField[] = [
 export default async function DeliveryPartnersPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const [params, partners, editable] = await Promise.all([searchParams, getDeliveryPartners(), can("deliveries.edit")]);
   const { sortKey, sortDir, filters } = parseListQuery(fields, params);
+  const limit=collectionLimit(params);
   const search = typeof params.q === "string" ? params.q.trim().toLowerCase() : "";
   const rows = [
     ...partners.carriers.map(name => ({ name, kind: "carriers" })),
@@ -31,10 +34,11 @@ export default async function DeliveryPartnersPage({ searchParams }: { searchPar
     {!rows.length ? <div className="empty-state">{search || Object.keys(filters).length ? "No carriers or truckers match your search or filters." : "No carriers or truckers yet. Add the first one above."}</div> :
       <div className="table-scroll"><table className="table-klyne">
         <thead><tr><SortHeader field="name">Name</SortHeader><SortHeader field="kind">Type</SortHeader></tr></thead>
-        <TableRows columns={2}>{rows.map(row => <tr key={`${row.kind}:${row.name}`}>
-          <td><div className="flex items-center gap-2"><Avatar name={row.name} kind="business" /><Link href={`/carriers-truckers/edit?${new URLSearchParams({ kind: row.kind, name: row.name })}`} className="font-medium hover:underline" aria-label={`Edit ${row.name}`}>{row.name}</Link></div></td>
+        <TableRows columns={2}>{rows.slice(0,limit).map(row => <tr key={`${row.kind}:${row.name}`}>
+          <td><div className="flex items-center gap-2"><Avatar name={row.name} kind="business" /><Link href={`/carriers-truckers/edit?${new URLSearchParams({ kind: row.kind, name: row.name })}`} className="inline-flex items-center gap-1.5 font-medium hover:underline" aria-label={`Edit ${row.name}`} title={`Edit ${row.name}`}>{row.name}<PencilIcon /></Link></div></td>
           <td><span className="badge badge-gray">{row.kind === "carriers" ? "Carrier" : "Trucker"}</span></td>
         </tr>)}</TableRows>
       </table></div>}
+    <MoreRecords href="/carriers-truckers" limit={limit} hasMore={rows.length>limit}/>
   </div>;
 }

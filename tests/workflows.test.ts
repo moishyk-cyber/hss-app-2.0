@@ -46,7 +46,7 @@ test('adding an unpriced item reopens pricing without overwriting an agreed deal
 
 test('post-win quantity updates the order and gate; manual statuses and closed deals survive', async () => {
   const seed = fixture();
-  const m = memoryDatabase({ ...seed, purchaseOrder: [], opportunity: [{ ...seed.opportunity[0], stage: 'won', value: 100 }],
+  const m = memoryDatabase({ ...seed, purchaseOrder: [], payment: [{ ...seed.payment[0], amount: 30 }], opportunity: [{ ...seed.opportunity[0], stage: 'won', value: 100 }],
     lineItem: [{ ...seed.lineItem[0], orderId: 'order', unitPrice: 100, rfqStatus: 'approved' }] });
   const pricing = createLineItemPricing(m.db, effects());
   await pricing.change('item', { kind: 'quantity', qty: 2 });
@@ -233,4 +233,26 @@ test('adding an order item reconciles status while retaining the incomplete tota
   await createLineItemPricing(m.db, effects()).add({ orderId: 'order', name: 'Late oven', qty: 1, rfqStatus: 'needs_pricing' });
   assert.equal(m.state().order[0].orderValue, 100);
   assert.equal(m.state().order[0].status, 'awaiting_payment');
+});
+
+test('direct RFQ status saves reconcile quotes without rereading the line item', async () => {
+  const m = memoryDatabase(fixture()), e = effects();
+  m.fail('lineItem.findUnique');
+  const result = await createLineItemPricing(m.db, e).setStatus('item', 'approved');
+  assert.equal(result.item.rfqStatus, 'approved');
+  assert.equal(result.quoteProgress?.state, 'complete');
+  assert.equal(m.state().opportunity[0].needsPricing, false);
+  assert.equal(e.audits.length, 1);
+  assert.ok(e.refreshes.includes('/pipeline'));
+});
+
+test('direct RFQ saves roll back on reconciliation failure and reject invalid statuses', async () => {
+  const m = memoryDatabase(fixture()), e = effects();
+  const pricing = createLineItemPricing(m.db, e);
+  await assert.rejects(pricing.setStatus('item', 'invalid'), /Invalid RFQ status/);
+  m.fail('opportunity.update');
+  await assert.rejects(pricing.setStatus('item', 'approved'));
+  assert.equal(m.state().lineItem[0].rfqStatus, 'needs_pricing');
+  assert.deepEqual(e.audits, []);
+  assert.deepEqual(e.refreshes, []);
 });

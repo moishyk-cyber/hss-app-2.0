@@ -14,9 +14,11 @@ export function memoryDatabase(seed: State) {
   const matches = (row: Row, where: Query["where"] = {}): boolean => Object.entries(where).every(([key, value]) => {
     if (key === "OR" && Array.isArray(value)) return value.some(clause => matches(row, clause));
     if (key === "AND" && Array.isArray(value)) return value.every(clause => matches(row, clause));
+    if (value instanceof Date) return row[key] instanceof Date && (row[key] as Date).getTime() === value.getTime();
     if (value && typeof value === "object" && !(value instanceof Date)) {
-      const clause = value as { in?: unknown[]; notIn?: unknown[]; not?: unknown; equals?: unknown; mode?: string; startsWith?: string; lt?: Date; gte?: Date };
+      const clause = value as { in?: unknown[]; notIn?: unknown[]; not?: unknown; equals?: unknown; mode?: string; startsWith?: string; lt?: Date; lte?: Date; gte?: Date };
       if (clause.startsWith !== undefined) return typeof row[key] === "string" && (row[key] as string).startsWith(clause.startsWith);
+      if (clause.lte) return row[key] != null && new Date(row[key] as string | Date) <= clause.lte;
       if (clause.lt) return row[key] != null && new Date(row[key] as string | Date) < clause.lt;
       if (clause.gte) return row[key] != null && new Date(row[key] as string | Date) >= clause.gte;
       if ("equals" in clause) return clause.mode === "insensitive" && typeof row[key] === "string" && typeof clause.equals === "string" ? (row[key] as string).toLowerCase() === clause.equals.toLowerCase() : row[key] === clause.equals;
@@ -29,6 +31,8 @@ export function memoryDatabase(seed: State) {
   function client(rows: State) {
     function relation(model: string, row: Row, key: string): { model: string; rows: Row[]; many: boolean } | null {
       const links: Record<string, [string, string, string, boolean]> = {
+        'notification.user': ['user', 'id', 'userId', false],
+        'notificationEmail.notification': ['notification', 'id', 'notificationId', false],
         'order.opportunity': ['opportunity', 'id', 'opportunityId', false],
         'order.serviceIssues': ['serviceIssue', 'orderId', 'id', true],
         'order.lineItems': ['lineItem', 'orderId', 'id', true],
@@ -66,7 +70,7 @@ export function memoryDatabase(seed: State) {
       return result;
     }
     const result: Record<string, unknown> = {};
-    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document', 'user', 'task', 'serviceIssue', 'taskComment', 'activityLog', 'appSetting', 'intakeSubmission', 'notification', 'notificationState', 'fieldRequirement']) {
+    for (const model of ['order', 'opportunity', 'lineItem', 'purchaseOrder', 'delivery', 'payment', 'company', 'document', 'user', 'task', 'serviceIssue', 'taskComment', 'activityLog', 'appSetting', 'intakeSubmission', 'notification', 'notificationEmail', 'notificationState', 'fieldRequirement']) {
       rows[model] ??= [];
       const fail = (operation: string) => {
         if (failure === `${model}.${operation}`) throw new Error(`Injected ${failure} failure`);
@@ -74,7 +78,7 @@ export function memoryDatabase(seed: State) {
       result[model] = {
         async findFirst(q: Query) { const row = rows[model].find(r => matches(r, q.where)); return row ? project(model, row, q) : null; },
         async findUnique(q: Query) { const row = rows[model].find(r => matches(r, q.where)); return row ? project(model, row, q) : null; },
-        async findMany(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).map(r => project(model, r, q)); },
+        async findMany(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).slice(0,q.take).map(r => project(model, r, q)); },
         async count(q: Query = {}) { return rows[model].filter(r => matches(r, q.where)).length; },
         async create(q: Query) {
           fail('create');
@@ -88,9 +92,10 @@ export function memoryDatabase(seed: State) {
           fail('createMany');
           let count = 0;
           for (const data of q.data) {
-            const duplicate = model === 'notification' ? rows[model].some(r => r.userId === data.userId && r.eventKey === data.eventKey) : model === 'notificationState' ? rows[model].some(r => r.key === data.key) : false;
+            const duplicate = model === 'notification' ? rows[model].some(r => r.userId === data.userId && r.eventKey === data.eventKey) : model === 'notificationState' ? rows[model].some(r => r.key === data.key) : model === 'notificationEmail' ? rows[model].some(r => r.notificationId === data.notificationId) : false;
             if (q.skipDuplicates && duplicate) continue;
-            rows[model].push({ id: `new-${++sequence}`, readAt: null, ...data }); count++;
+            const defaults = model === "notificationEmail" ? { status: "pending", attempts: 0, leaseUntil: null, firstAttemptAt: null, payload: null, resendId: null, createdAt: new Date(), availableAt: new Date() } : { readAt: null, createdAt: new Date() };
+            rows[model].push({ id: `new-${++sequence}`, ...defaults, ...data }); count++;
           }
           return { count };
         },
@@ -153,7 +158,7 @@ export function fixture() {
     unitCost: null, rfqStatus: 'needs_pricing', deliveryStatus: 'pending', deliveryId: null,
     purchaseOrderId: null, dateArrivedClient: null };
   return {
-    company: [{ id: 'company', requiresDeposit: true, depositPercent: 30 }],
+    company: [{ id: 'company', requiresDeposit: true, paymentTermsConfigured: true, depositPercent: 30 }],
     opportunity: [{ id: 'deal', stage: 'estimating', value: null, needsPricing: true }],
     order: [{ id: 'order', orderType: 'order', status: 'new', orderValue: 100, depositRequired: null, companyId: 'company' }],
     lineItem: [item], payment: [{ id: 'payment', orderId: 'order', status: 'paid', amount: 100 }],

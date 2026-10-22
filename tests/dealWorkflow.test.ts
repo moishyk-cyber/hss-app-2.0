@@ -1,95 +1,54 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { closeIssues, dealJourney, stageIssues, orderCanClose, type DealFacts } from "../src/lib/dealWorkflow";
-import type { OrderBallInput } from "../src/lib/ballInCourt";
-
-const required = { company: true, neededBy: true };
-const deal: DealFacts = { id: "deal", title: "Kitchen equipment", stage: "estimating", companyId: "company", neededByDate: "2026-10-10", lineItems: [{ id: "oven", name: "Oven", rfqStatus: "quote_received", unitPrice: null }] };
-const order: OrderBallInput & { id: string } = { id: "order", status: "delivered", orderType: "project", orderValue: 2000, quoteStatus: "accepted", termsNotes: "30% deposit", paymentTerms: null, company: { requiresDeposit: true, depositPercent: 30 }, payments: [{ status: "paid", amount: 600 }], purchaseOrders: [{ status: "shipped" }], deliveries: [{ status: "delivered_full" }], lineItems: [{ rfqStatus: "approved", deliveryStatus: "arrived_complete", purchaseOrderId: "po" }], openIssueCount: 0 };
-
-test("Mark Won reports all missing fields and rejects invalid dates and nonfinite totals", () => {
-  assert.deepEqual(closeIssues({ value: 0, address: "  ", neededBy: "" }, "won").map(i => i.field), ["value", "deliveryAddress", "neededByDate"]);
-  assert.ok(closeIssues({ value: Infinity, address: "Brooklyn", neededBy: "2026-02-30" }, "won").some(i => i.field === "neededByDate"));
-  assert.ok(closeIssues({ value: 0.001, address: "Brooklyn", neededBy: "2026-10-10" }, "won").some(i => i.field === "value"));
-  assert.deepEqual(closeIssues({ value: 0.01, address: "Brooklyn", neededBy: "2026-10-10" }, "won"), []);
+import { FLOW_STEPS, type OrderBallInput } from "../src/lib/ballInCourt";
+const required={company:true,neededBy:true};
+const deal:DealFacts={id:"deal",title:"Equipment",stage:"estimating",companyId:"company",neededByDate:"2026-10-22",clientQuoteCreated:true,clientQuoteSent:true,lineItems:[{id:"item",name:"Oven",rfqStatus:"quote_received",unitPrice:null}]};
+const order:OrderBallInput&{id:string}={id:"order",status:"delivered",orderType:"project",orderValue:2000,quoteStatus:"needed",termsNotes:null,paymentTerms:null,company:{requiresDeposit:true,paymentTermsConfigured:true,depositPercent:30},payments:[{status:"paid",amount:600}],purchaseOrders:[{status:"shipped"}],deliveries:[{status:"delivered_full"}],lineItems:[{rfqStatus:"approved",deliveryStatus:"arrived_complete",purchaseOrderId:"po"}],openIssueCount:0};
+const sequence=["Intake","Supplier Quotes","Client Quote","Confirm Deal","Payment","Purchase","Delivery","Close Out"];
+test("both guides use exactly the approved eight steps for every deal type",()=>{
+ assert.deepEqual(FLOW_STEPS.map(s=>s.label),sequence);
+ for(const orderType of ["order","project"])for(const savedOrder of [undefined,order])assert.deepEqual(dealJourney({...deal,orderType},required,savedOrder).map(s=>s.label),sequence);
 });
-
-test("Losing a deal requires a real reason, without pricing or delivery requirements", () => {
-  assert.equal(closeIssues({ value: null, address: "", neededBy: "", lostReason: "  " }, "lost").length, 1);
-  assert.deepEqual(closeIssues({ value: null, address: "", neededBy: "", lostReason: "Customer cancelled" }, "lost"), []);
+test("won requires a valid agreed price, delivery address and real calendar date",()=>{
+ assert.deepEqual(closeIssues({value:0,address:"",neededBy:""},"won").map(i=>i.field),["value","deliveryAddress","neededByDate"]);
+ assert.ok(closeIssues({value:100,address:"Address",neededBy:"2026-02-30"},"won").length);
+ assert.deepEqual(closeIssues({value:100,address:"Address",neededBy:"2026-10-22"},"won"),[]);
+ assert.equal(closeIssues({value:null,address:"",neededBy:"",lostReason:""},"lost").length,1);
 });
-
-test("Later stage changes require intake and supplier quotes, without item prices", () => {
-  const incomplete = { ...deal, companyId: null, neededByDate: null, lineItems: [{ ...deal.lineItems[0], rfqStatus: "approved", unitPrice: null }] };
-  assert.deepEqual(stageIssues(incomplete, "won", required).map(i => i.field), ["companyId", "neededByDate"]);
-  assert.deepEqual(stageIssues(incomplete, "info_missing", required), []);
-  assert.equal(stageIssues({ ...deal, lineItems: [] }, "won", required).length, 1);
+test("confirming a deal cannot bypass creating and sending its client quote",()=>{
+ assert.equal(stageIssues({...deal,clientQuoteCreated:false,clientQuoteSent:false},"won",required).at(-1)?.field,"clientQuote");
+ assert.equal(stageIssues({...deal,clientQuoteSent:false},"won",required).at(-1)?.field,"clientQuote");
+ assert.deepEqual(stageIssues(deal,"won",required),[]);
+ assert.deepEqual(stageIssues({...deal,clientQuoteCreated:false},"lost",required),[]);
 });
-
-test("Revisions can reopen pricing and removed items do not block a ready proposal", () => {
-  const revised = { ...deal, lineItems: [{ ...deal.lineItems[0], rfqStatus: "rfq_sent" }] };
-  assert.equal(stageIssues(revised, "proposal_sent", required).length, 1);
-  assert.deepEqual(stageIssues({ ...deal, lineItems: [...deal.lineItems, { id: "removed", name: "Removed fryer", rfqStatus: "removed", unitPrice: null }] }, "proposal_sent", required), []);
+test("intake and supplier readiness still block later stages independently",()=>{
+ assert.deepEqual(stageIssues({...deal,companyId:null,neededByDate:null},"won",required).map(i=>i.field),["companyId","neededByDate"]);
+ assert.equal(stageIssues({...deal,lineItems:[]},"won",required)[0].field,"lineItems");
+ assert.equal(dealJourney({...deal,lineItems:[{...deal.lineItems[0],rfqStatus:"rfq_sent"}]},required)[1].state,"waiting");
+ assert.deepEqual(stageIssues({...deal,lineItems:[...deal.lineItems,{id:"removed",name:"Old",rfqStatus:"removed",unitPrice:null}]},"won",required),[]);
 });
-
-test("Pricing completes from saved evidence even when the stored stage is still estimating", () => {
-  const journey = dealJourney(deal, required);
-  assert.equal(journey[1].state, "complete");
-  assert.equal(journey.find(s => !["complete", "not_required"].includes(s.state))?.key, "close");
-  assert.equal(journey[1].checks[0].href, "#pricing-oven");
-  assert.ok(journey[0].checks.every(c => c.href?.startsWith("#")));
+test("Client Quote follows Supplier Quotes and precedes Confirm Deal; preparation alone is incomplete",()=>{
+ let steps=dealJourney({...deal,clientQuoteCreated:false,clientQuoteSent:false},required);
+ assert.equal(steps[1].state,"complete");assert.equal(steps[2].key,"clientQuote");assert.equal(steps[2].state,"to_do");
+ assert.equal(steps[2].action?.href,"#client-quote");
+ steps=dealJourney({...deal,clientQuoteSent:false},required);assert.equal(steps[2].state,"in_progress");
+ assert.equal(dealJourney(deal,required).find(s=>s.state==="to_do")?.key,"close");
 });
-
-test("New unpriced items reopen pricing; supplier requests show waiting", () => {
-  const revised = { ...deal, lineItems: [...deal.lineItems, { id: "fryer", name: "Fryer", unitPrice: null, rfqStatus: "needs_pricing" }] };
-  assert.equal(dealJourney(revised, required)[1].state, "in_progress");
-  assert.equal(dealJourney({ ...deal, lineItems: [{ ...deal.lineItems[0], rfqStatus: "rfq_sent" }] }, required)[1].state, "waiting");
+test("removed order quote statuses and terms never block closeout",()=>{
+ for(const quoteStatus of ["needed","sent","accepted","not_needed"])assert.equal(orderCanClose({...order,quoteStatus,salesOrderSentAt:null,termsNotes:null,paymentTerms:null}),true);
+ assert.equal(orderCanClose({...order,openIssueCount:1}),false);
+ assert.equal(orderCanClose({...order,payments:[]}),false);
+ assert.equal(orderCanClose({...order,deliveries:[{status:"in_transit"}]}),false);
 });
-
-test("A lost deal never claims downstream work is complete", () => {
-  const journey = dealJourney({ ...deal, stage: "lost" }, required);
-  assert.equal(journey[0].state, "complete");
-  assert.ok(journey.slice(2).every(s => s.state === "stopped" && !s.action));
+test("historical confirmed orders keep the new Client Quote step visible without inventing send evidence",()=>{
+ const steps=dealJourney({...deal,stage:"won",clientQuoteCreated:false,clientQuoteSent:false},required,order);
+ assert.equal(steps.length,8);assert.equal(steps[2].state,"not_required");assert.match(steps[2].checks[0].label,/already confirmed/);
+ assert.equal(steps[3].state,"complete");assert.equal(steps[4].state,"complete");
 });
-
-test("Independent checks expose missing quote even after payment and delivery", () => {
-  const journey = dealJourney({ ...deal, stage: "won" }, required, { ...order, quoteStatus: "sent" });
-  assert.equal(journey.find(s => s.key === "quote")?.state, "waiting");
-  assert.equal(journey.find(s => s.key === "deposit")?.state, "complete");
-  assert.equal(journey.find(s => s.key === "delivery")?.state, "complete");
-  assert.equal(orderCanClose({ ...order, quoteStatus: "sent" }), false);
+test("exempt payment stays visible and delivered stock satisfies purchasing",()=>{
+ assert.equal(dealJourney(deal,required,{...order,company:{requiresDeposit:false,paymentTermsConfigured:true,depositPercent:0},payments:[]})[4].state,"not_required");
+ assert.equal(dealJourney(deal,required,{...order,purchaseOrders:[],lineItems:[{...order.lineItems[0],purchaseOrderId:null}]})[5].state,"complete");
 });
-
-test("Exempt quote steps are hidden while exempt payment stays visible", () => {
-  const journey = dealJourney({ ...deal, stage: "won" }, required, { ...order, quoteStatus: "not_needed", payments: [], company: { requiresDeposit: false, depositPercent: 30 } });
-  assert.equal(journey.some(s => s.key === "quote"), false);
-  assert.equal(journey.length, 9);
-  assert.equal(journey.find(s => s.key === "deposit")?.state, "not_required");
-});
-
-test("Straight deals hide quotes before order creation; an explicitly needed order quote remains visible", () => {
-  const straight = { ...deal, orderType: "order" };
-  assert.equal(dealJourney(straight, required).some(s => s.key === "quote"), false);
-  assert.equal(dealJourney({ ...deal, orderType: "project" }, required).some(s => s.key === "quote"), true);
-  assert.equal(dealJourney(straight, required, { ...order, quoteStatus: "needed" }).some(s => s.key === "quote"), true);
-});
-
-test("Closeout requires terms, quote acceptance, fulfillment, and resolved service issues", () => {
-  assert.equal(orderCanClose(order), true);
-  assert.equal(orderCanClose({ ...order, termsNotes: "  " }), false);
-  assert.equal(orderCanClose({ ...order, openIssueCount: 1 }), false);
-  assert.equal(orderCanClose({ ...order, payments: [] }), false);
-  assert.equal(orderCanClose({ ...order, deliveries: [{ status: "in_transit" }] }), false);
-});
-
-test("Delivered stock does not appear to still need a purchase order", () => {
-  const journey = dealJourney({ ...deal, stage: "won" }, required, { ...order, purchaseOrders: [], lineItems: [{ ...order.lineItems[0], purchaseOrderId: null }] });
-  assert.equal(journey.find(s => s.key === "pos")?.state, "complete");
-});
-
-test("every order workflow requirement links to the relevant work, including completed checks", () => {
-  const steps = dealJourney(deal, required, order);
-  for (const step of steps) for (const check of step.checks) assert.ok(check.href, `${step.key}: ${check.label} needs a destination`);
-  assert.equal(steps.find(step => step.key === "terms")?.checks[0].href, "/orders/order#order-terms");
-  assert.equal(steps.find(step => step.key === "deposit")?.checks[0].href, "/orders/order#payments");
-});
+test("lost deals stop unfinished downstream work",()=>{const steps=dealJourney({...deal,stage:"lost",clientQuoteSent:false},required);assert.ok(steps.slice(2).every(s=>s.state==="stopped"&&!s.action));});
+test("all requirements have destinations after order creation",()=>{for(const step of dealJourney(deal,required,order))for(const check of step.checks)assert.ok(check.href,step.label);});

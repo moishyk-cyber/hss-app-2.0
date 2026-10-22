@@ -1,3 +1,4 @@
+import { dispatchNotificationEmails } from "@/lib/notificationEmails";
 import { currentUser } from "@/lib/permissionsServer";
 import { prisma } from "@/lib/prisma";
 import { notifyDueTasks, retryNotificationActivity } from "@/lib/notifications";
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
   try {
     await retryNotificationActivity(prisma);
     await notifyDueTasks(prisma, user.id);
+    try { await dispatchNotificationEmails(prisma); } catch { console.error("notification email retry deferred"); }
     return await feed(user.id);
   } catch {
     return Response.json({ message: "Notifications are temporarily unavailable. Please retry." }, { status: 503, headers: privateHeaders });

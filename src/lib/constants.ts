@@ -49,9 +49,9 @@ export const ORDER_STATUSES = [
 ] as const;
 
 /**
- * Columns on the Orders kanban board - the four working phases of fulfillment
+ * Columns on the Orders kanban board - the three working phases of fulfillment
  * (Sep 8 2026 client call: "once the deposit is received, it goes to POs,
- * delivery, customer service. That's the orders").
+ * delivery, close out. That's the orders").
  *
  * NOT a stored field. An order's phase is derived from its ORDER_STATUSES value
  * by orderPhase() in @/lib/flowRules, so there is no second status to keep in
@@ -59,10 +59,9 @@ export const ORDER_STATUSES = [
  * phase and drop off the board entirely.
  */
 export const ORDER_PHASES = [
-  { value: "deposit", label: "Deposit" },
-  { value: "pos", label: "POs" },
+  { value: "pos", label: "Purchase" },
   { value: "delivery", label: "Delivery" },
-  { value: "customer_service", label: "Customer Service" },
+  { value: "service", label: "Close Out" },
 ] as const;
 
 export const PO_STATUSES = [
@@ -219,14 +218,6 @@ export const DELIVERY_LEG_STATUSES = [
   { value: "delivered_full", label: "Delivered - Full" },
 ] as const;
 
-/** Customer-facing quote on an order (projects need one; straight orders do not). */
-export const QUOTE_STATUSES = [
-  { value: "not_needed", label: "Not Needed" },
-  { value: "needed", label: "Quote Needed" },
-  { value: "sent", label: "Quote Sent" },
-  { value: "accepted", label: "Quote Accepted" },
-] as const;
-
 export const SERVICE_ISSUE_STATUSES = [
   { value: "open", label: "Open" },
   { value: "in_progress", label: "In Progress" },
@@ -237,6 +228,7 @@ export const SERVICE_ISSUE_STATUSES = [
 export const DOCUMENT_KINDS = [
   { value: "quote", label: "Quote" },
   { value: "invoice", label: "Invoice" },
+  { value: "sales_order", label: "Sales Order" },
   { value: "drawing", label: "Drawing" },
   { value: "po", label: "Purchase Order" },
   { value: "tracking", label: "Tracking" },

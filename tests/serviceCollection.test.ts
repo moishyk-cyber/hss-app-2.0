@@ -59,11 +59,12 @@ test("large collections use lightweight lane reads and hydrate the combined resu
     fullReads++;
     if (!where.AND) return [{ id: "a", title: "A" }, { id: "b", title: "B" }];
     return [{ id: "a", title: "A" }];
-  }, {}, 1, async () => {
+  }, {}, 1, async where => {
     laneReads++;
+    if (!where.AND) return [{ id: "a" }, { id: "b" }];
     return [{ id: "a" }];
   });
-  assert.equal(fullReads, 2);
-  assert.equal(laneReads, 8);
+  assert.equal(fullReads, 1);
+  assert.equal(laneReads, 9);
   assert.deepEqual(result, { rows: [{ id: "a", title: "A" }], hasMore: false });
 });

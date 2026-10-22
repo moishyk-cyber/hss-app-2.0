@@ -1,4 +1,5 @@
 import type { ActionResult } from "./actionResult";
+import { hasSameOrigin } from "./requestOrigin";
 
 type Dependencies = {
   authorize: (action: string) => Promise<ActionResult | null>;
@@ -10,7 +11,7 @@ type Dependencies = {
 /** Bounded JSON saves run outside an RSC refresh; uncertain outcomes are explicit. */
 export function createOrderWorkflowEndpoint(deps: Dependencies) {
   return async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-    if (request.headers.get("origin") !== new URL(request.url).origin) return Response.json({ ok: false, message: "Reload the page before saving." }, { status: 403 });
+    if (!hasSameOrigin(request)) return Response.json({ ok: false, message: "Reload the page before saving." }, { status: 403 });
     try {
       let input: unknown;
       try { input = await request.json(); }

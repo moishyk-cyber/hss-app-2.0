@@ -1,3 +1,4 @@
+import { saveNotificationRows } from "./notificationEmailQueue";
 import { isDeepStrictEqual } from "node:util";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { orderCanClose, intakeIssues } from "./dealWorkflow";
@@ -41,7 +42,7 @@ function orderNotice(row: OrderRow, conf: Config): RecordNotice {
 
 function dealNotice(row: DealRow, conf: Config): RecordNotice {
   const items = row.lineItems.filter(i => i.rfqStatus !== "removed");
-  const ball = opportunityBall({ stage: row.stage, lineItems: items.map(i => ({ rfqStatus: i.rfqStatus, unitPrice: null })), intakeComplete: intakeIssues({ ...row, lineItems: items.map(i => ({ ...i, unitPrice: null })) }, conf.requirements).length === 0 });
+  const ball = opportunityBall({ stage: row.stage, clientQuoteCreated: row.clientQuoteCreated, clientQuoteSent: row.clientQuoteSent, lineItems: items.map(i => ({ rfqStatus: i.rfqStatus, unitPrice: null })), intakeComplete: intakeIssues({ ...row, lineItems: items.map(i => ({ ...i, unitPrice: null })) }, conf.requirements).length === 0 });
   const assignees = activeRecipients(items.flatMap(i => i.assigneeId ? [i.assigneeId] : []), conf.users);
   const defaultAssignee = activeRecipients([conf.settings["pricing.defaultAssigneeId"] ?? ""], conf.users);
   return { key: `opportunity:${row.id}`, title: row.title, href: `/pipeline/${row.id}`, isDeal: true, createdAt: row.createdAt,
@@ -91,7 +92,7 @@ export async function syncRecordNotifications(db: PrismaClient, kind: string, id
         const notices = emit ? planNotifications(previous ? previous.snapshot as NoticeSnapshot : null, snapshot, record) : [];
         await tx.notificationState.upsert({ where: { key: record.key }, create: { key: record.key, version, snapshot: snapshot as Prisma.InputJsonValue }, update: { version, snapshot: snapshot as Prisma.InputJsonValue } });
         const data = notices.flatMap(notice => notice.recipientIds.map(userId => ({ userId, eventKey: `${record.key}:${version}:${notice.kind}`, kind: notice.kind, title: notice.title, message: notice.message, href: notice.href, createdAt: now })));
-        if (data.length) await tx.notification.createMany({ data, skipDuplicates: true });
+        await saveNotificationRows(tx, data);
       });
     } catch (error) {
       // Two workers can first observe a brand-new record simultaneously.
@@ -123,6 +124,9 @@ export async function processNotificationActivity(db: PrismaClient, entry: { id:
       }
     }));
     if (errors.length) throw errors[0];
+  } else if (entry.linkedType === "task") {
+    const task = await db.task.findUnique({ where: { id: entry.linkedId }, select: { assigneeId: true } });
+    if (task?.assigneeId) await notifyDueTasks(db, task.assigneeId);
   } else await syncRecordNotifications(db, entry.linkedType, entry.linkedId);
   await db.activityLog.update({ where: { id: entry.id }, data: { notificationProcessedAt: new Date() } });
 }
@@ -135,9 +139,35 @@ export async function retryNotificationActivity(db: PrismaClient) {
 }
 
 export async function notifyDueTasks(db: PrismaClient, userId: string, now = new Date()) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { active: true } });
+  if (!user?.active) return;
   const tasks = await db.task.findMany({ where: { assigneeId: userId, status: { not: "done" }, dueDate: { lt: taskDueCutoff(now) } }, select: { id: true, title: true, dueDate: true } });
   if (!tasks.length) return;
-  await db.notification.createMany({ data: tasks.map(task => ({ userId, eventKey: `task:${task.id}:due:${task.dueDate!.toISOString().slice(0, 10)}:${userId}`, kind: "task_due", title: "Task due", message: `${task.title} is due ${task.dueDate!.toISOString().slice(0, 10)}. Review and update the task.`, href: `/tasks/${task.id}`, createdAt: now })), skipDuplicates: true });
+  const data = tasks.map(task => dueTaskNotice(task, userId, now));
+  await persistNewDueNotices(db, data);
+}
+
+/** Background reminders do not depend on an assignee opening the app. Batch all active users in one write. */
+export async function notifyAllDueTasks(db: PrismaClient, now = new Date()) {
+  const users = await db.user.findMany({ where: { active: true }, select: { id: true } });
+  if (!users.length) return;
+  const tasks = await db.task.findMany({ where: { assigneeId: { in: users.map(user => user.id) }, status: { not: "done" }, dueDate: { lt: taskDueCutoff(now) } }, select: { id: true, title: true, dueDate: true, assigneeId: true } });
+  if (!tasks.length) return;
+  const data = tasks.map(task => dueTaskNotice(task, task.assigneeId!, now));
+  await persistNewDueNotices(db, data);
+}
+
+/** Repeated browser polls must not open write transactions for already-delivered reminders. */
+async function persistNewDueNotices(db: PrismaClient, data: ReturnType<typeof dueTaskNotice>[]) {
+  const existing = await db.notification.findMany({ where: { userId: { in: [...new Set(data.map(row => row.userId))] }, eventKey: { in: data.map(row => row.eventKey) } }, select: { userId: true, eventKey: true } });
+  const keys = new Set(existing.map(row => `${row.userId}:${row.eventKey}`));
+  const fresh = data.filter(row => !keys.has(`${row.userId}:${row.eventKey}`));
+  if (fresh.length) await serialTransaction(db, tx => saveNotificationRows(tx, fresh));
+}
+
+function dueTaskNotice(task: { id: string; title: string; dueDate: Date | null }, userId: string, now: Date) {
+  const date = task.dueDate!.toISOString().slice(0, 10);
+  return { userId, eventKey: `task:${task.id}:due:${date}:${userId}`, kind: "task_due", title: "Task due", message: `${task.title} is due ${date}. Review and update the task.`, href: `/tasks/${task.id}`, createdAt: now };
 }
 
 /** Deployment bootstrap: establish current facts before enabling new event delivery. Idempotent. */

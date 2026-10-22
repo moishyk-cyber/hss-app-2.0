@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { serialTransaction } from "@/lib/workflows/transaction";
 import { addPartner, renamePartner } from "@/lib/workflows/deliveryPartners";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { logActivity } from "@/lib/log";
 
 export async function addDeliveryPartner(kind: string, raw: string, deliveryId?: string): Promise<ActionResult> {
@@ -36,9 +37,11 @@ export async function renameDeliveryPartner(kind: string, original: string, name
     revalidatePath("/carriers-truckers", "layout");
     revalidatePath("/deliveries", "layout");
     revalidatePath("/orders", "layout");
-    return { ok: true };
   } catch (error) {
     const message = error instanceof Error && ["That name already exists. Choose a different name.", "This name no longer exists. Refresh the list."].includes(error.message) ? error.message : "Could not rename this entry. Please try again.";
     return { ok: false, message };
   }
+  // Renaming invalidates the name in the current edit URL. Navigate in the same
+  // server response so revalidation cannot render that obsolete URL as missing.
+  redirect("/carriers-truckers");
 }

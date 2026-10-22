@@ -7,7 +7,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SearchCombobox, type ComboboxOption } from "@/lib/Combobox";
-import { InlineError, PencilIcon, Spinner } from "@/lib/ui";
+import { InlineError, EditIconButton, Spinner } from "@/lib/ui";
 import type { ActionResult } from "@/lib/actionResult";
 import { setOrderCompany, setOrderContact } from "../actions";
 
@@ -60,19 +60,7 @@ function EditableParty({
         <span className="truncate text-ink">
           {currentLabel ?? <span className="empty-value">not set</span>}
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            setQuery(currentLabel ?? "");
-            setSelectedId(currentId);
-            setError(null);
-            setEditing(true);
-          }}
-          aria-label={ariaLabel}
-          className="shrink-0 text-gray transition-colors hover:text-ink"
-        >
-          <PencilIcon />
-        </button>
+        <EditIconButton label={ariaLabel} onClick={() => { setQuery(currentLabel ?? ""); setSelectedId(currentId); setError(null); setEditing(true); }} />
       </span>
     );
   }

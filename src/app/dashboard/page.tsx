@@ -1,3 +1,5 @@
+import { evaluatePaymentGate } from "@/lib/flowRules";
+import { shareRead } from "@/lib/shareRead";
 import { intakeIssues } from "@/lib/dealWorkflow";
 import { getFieldRequirements } from "@/lib/fieldRequirements";
 import { PageHeader } from "@/lib/PageLayout";
@@ -55,13 +57,11 @@ const ORDER_BALL_SELECT = {
   status: true,
   orderType: true,
   orderValue: true,
-  depositRequired: true,
-  quoteStatus: true,
-  salesOrderSentAt: true,
+  depositRequired: true, paymentPlan: true,
   termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
-  company: { select: { requiresDeposit: true, depositPercent: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true } },
   lineItems: { select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true } },
   purchaseOrders: { select: { status: true } },
   deliveries: { select: { status: true } },
@@ -124,6 +124,12 @@ export default async function DashboardPage({
   // My Items queries in the same parallel batch without matching any row.
   const userId = await currentUserId();
   const mineId = userId ?? "__no_identity__";
+  const myDealWhere: Prisma.OpportunityWhereInput = { salespersonId: mineId, stage: { notIn: ["won", "lost"] } };
+  const myOrderWhere: Prisma.OrderWhereInput = { ownerId: mineId, status: { not: "complete" } };
+  const myTaskWhere: Prisma.TaskWhereInput = { assigneeId: mineId, status: { not: "done" } };
+  const myPricingWhere: Prisma.LineItemWhereInput = { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES }, OR: [
+    { orderId: { not: null } }, { opportunityId: null }, { opportunity: { stage: { notIn: ["won", "lost"] } } },
+  ] };
 
   const [
     requirements,
@@ -148,15 +154,17 @@ export default async function DashboardPage({
     orphanedAssigneeCount,
     openServiceIssueCount,
     openServiceIssues,
+    myCounts,
     // Money columns (sums included) come back as Decimal; plainMoney turns the
     // whole batch into plain numbers for the tiles, charts and queues below.
   ] = plainMoney(
-    await Promise.all([
+    await shareRead(JSON.stringify(["dashboard-data-v1",mineId,rawRange,from,to,now.toISOString().slice(0,16)]),()=>Promise.all([
       getFieldRequirements(),
       getStageHolders(),
       // ---- Overdue & due this week: replaces the old manual-urgency queue -
       // the client's call was "just filter it by due date". ----
       prisma.order.findMany({
+        relationLoadStrategy:"join",
         where: { neededByDate: { lte: in7Days }, status: { notIn: ["delivered", "complete"] }, OR: [{ payments: { none: {} } }, { payments: { some: { status: { not: "paid" } } } }] },
         select: { id: true, title: true, neededByDate: true },
         orderBy: { neededByDate: "asc" },
@@ -168,11 +176,12 @@ export default async function DashboardPage({
         _sum: { value: true },
       }),
       prisma.opportunity.findMany({
+        relationLoadStrategy:"join",
         where: { stage: "won" },
         select: {
           value: true,
           createdAt: true,
-          orders: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 },
+          orders: { select: { createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 1 },
         },
       }),
       prisma.order.groupBy({
@@ -181,9 +190,10 @@ export default async function DashboardPage({
         _sum: { orderValue: true },
       }),
       prisma.lineItem.findMany({
+        relationLoadStrategy:"join",
         where: { rfqStatus: "needs_pricing" },
         select: { id: true, name: true, createdAt: true, orderId: true, opportunity: { select: { stage: true } } },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       prisma.lineItem.groupBy({
         by: ["rfqStatus"],
@@ -191,19 +201,23 @@ export default async function DashboardPage({
         _count: { _all: true },
       }),
       prisma.opportunity.findMany({
+        relationLoadStrategy:"join",
         where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
         select: { createdAt: true },
       }),
       prisma.order.findMany({
+        relationLoadStrategy:"join",
         where: { createdAt: { gte: rangeStart, lte: rangeEnd }, opportunityId: null },
         select: { createdAt: true },
       }),
       prisma.order.findMany({
+        relationLoadStrategy:"join",
         where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
         select: { orderType: true, createdAt: true },
       }),
       // ---- Team queue: orders awaiting payment (also feeds the stat tile) ----
       prisma.order.findMany({
+        relationLoadStrategy:"join",
         where: {
           OR: [{ status: "awaiting_payment" }, { status: "new", payments: { some: { status: { not: "paid" } } } }],
         },
@@ -212,10 +226,12 @@ export default async function DashboardPage({
           title: true,
           orderType: true,
           orderValue: true,
+          depositRequired: true, paymentPlan: true,
+          company: { select: { requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true } },
           createdAt: true,
           payments: { select: { amount: true, status: true, type: true } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       // ---- Team queue: POs awaiting acknowledgment / in transit ----
       prisma.purchaseOrder.findMany({
@@ -251,6 +267,7 @@ export default async function DashboardPage({
       }),
       // ---- Team queue: deliveries this week (orders by neededByDate) ----
       prisma.order.findMany({
+        relationLoadStrategy:"join",
         where: { neededByDate: { gte: now, lte: in7Days }, status: { notIn: ["delivered", "complete"] } },
         select: { id: true, title: true, neededByDate: true },
       }),
@@ -258,31 +275,40 @@ export default async function DashboardPage({
       // picked, `mineId` matches nothing, so these come back empty and the tab
       // shows its "pick your name" empty state instead. ----
       prisma.opportunity.findMany({
-        where: { salespersonId: mineId, stage: { notIn: ["won", "lost"] } },
+        relationLoadStrategy:"join",
+        where: myDealWhere,
+        take: 8,
         select: {
           id: true,
           title: true,
           stage: true,
+          clientQuoteCreated: true,
+          clientQuoteSent: true,
           companyId: true,
           neededByDate: true,
           nextFollowUp: true,
           salesperson: { select: { name: true, active: true } },
           lineItems: { select: { id: true, name: true, rfqStatus: true, unitPrice: true } },
         },
-        orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ nextFollowUp: "asc" }, { createdAt: "desc" }, { id: "asc" }],
       }),
       prisma.order.findMany({
-        where: { ownerId: mineId, status: { not: "complete" } },
+        relationLoadStrategy:"join",
+        where: myOrderWhere,
+        take: 8,
         select: { id: true, title: true, neededByDate: true, ...ORDER_BALL_SELECT },
-        orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ neededByDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
       }),
       prisma.task.findMany({
-        where: { assigneeId: mineId, status: { not: "done" } },
+        where: myTaskWhere,
+        take: 8,
         select: { id: true, title: true, status: true, dueDate: true },
-        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
       }),
       prisma.lineItem.findMany({
-        where: { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES } },
+        relationLoadStrategy:"join",
+        where: myPricingWhere,
+        take: 8,
         select: {
           id: true,
           name: true,
@@ -291,7 +317,7 @@ export default async function DashboardPage({
           orderId: true,
           opportunity: { select: { stage: true } },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       // Open work assigned to a deactivated teammate never shows up in anyone's
       // "My Items" (the picker only lists active users) - QA #2b traced "My
@@ -321,7 +347,13 @@ export default async function DashboardPage({
         orderBy: { reportedAt: "desc" },
         take: 5,
       }),
-    ])
+      Promise.all([
+        prisma.opportunity.count({ where: myDealWhere }),
+        prisma.order.count({ where: myOrderWhere }),
+        prisma.task.count({ where: myTaskWhere }),
+        prisma.lineItem.count({ where: myPricingWhere }),
+      ]),
+    ]))
   );
 
 
@@ -395,10 +427,11 @@ export default async function DashboardPage({
   for (const g of rfqStageGroups) rfqCounts[g.rfqStatus] = g._count._all;
 
   // ---- Team queue: orders awaiting payment (amount due + type), also drives the stat tile ----
-  const awaitingPaymentRows = ordersAwaitingPayment.map((o) => {
+  const awaitingPaymentRows = ordersAwaitingPayment.filter(o => !evaluatePaymentGate(o).open).map((o) => {
     const nonPaid = o.payments.filter((p) => p.status !== "paid");
-    const amountDue = nonPaid.length > 0 ? nonPaid.reduce((sum, p) => sum + p.amount, 0) : o.orderValue ?? 0;
-    const paymentType = nonPaid[0]?.type ?? (o.orderType === "project" ? "deposit" : "full");
+    const gate = evaluatePaymentGate(o);
+    const amountDue = gate.requiredTotal != null ? gate.shortfall : nonPaid.length > 0 ? nonPaid.reduce((sum, p) => sum + p.amount, 0) : o.orderValue ?? 0;
+    const paymentType = nonPaid[0]?.type ?? (gate.requiredTotal != null && o.orderValue != null && gate.requiredTotal < o.orderValue ? "deposit" : "full");
     // Sep 3 QA #6: an order with no invoice rows at all used to read exactly like
     // one with a real unpaid invoice ("full · $0"). Flag it so the row says so.
     const invoiced = o.payments.length > 0;
@@ -589,7 +622,8 @@ export default async function DashboardPage({
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <QueueCard
             title="My Deals"
-            count={myDeals.length}
+            count={myCounts[0]}
+            paging={{kind:"deals",cursor:myDeals.at(-1)?.id??"",hasMore:myCounts[0]>myDeals.length}}
             viewAllHref="/pipeline"
             viewAllLabel="All deals"
             rows={myDeals.slice(0, 8).map((d): QueueRow => {
@@ -597,6 +631,8 @@ export default async function DashboardPage({
                 opportunityBall({
                   stage: d.stage,
                   salesperson: d.salesperson,
+                  clientQuoteCreated: d.clientQuoteCreated,
+                  clientQuoteSent: d.clientQuoteSent,
                   intakeComplete: intakeIssues(d, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }).length === 0,
                   lineItems: d.lineItems,
                   order: null,
@@ -628,7 +664,8 @@ export default async function DashboardPage({
 
           <QueueCard
             title="My Orders"
-            count={myOrders.length}
+            count={myCounts[1]}
+            paging={{kind:"orders",cursor:myOrders.at(-1)?.id??"",hasMore:myCounts[1]>myOrders.length}}
             viewAllHref="/orders"
             viewAllLabel="All orders"
             rows={myOrders.slice(0, 8).map((o): QueueRow => {
@@ -654,12 +691,13 @@ export default async function DashboardPage({
 
           <QueueCard
             title="My Tasks"
-            count={myTasks.length}
+            count={myCounts[2]}
+            paging={{kind:"tasks",cursor:myTasks.at(-1)?.id??"",hasMore:myCounts[2]>myTasks.length}}
             viewAllHref="/tasks"
             viewAllLabel="All tasks"
             rows={myTasks.slice(0, 8).map(
               (t): QueueRow => ({
-                href: "/tasks",
+                href: `/tasks/${t.id}`,
                 primary: t.title,
                 secondary: <span className="text-xs text-gray-dark">{labelFor(TASK_STATUSES, t.status)}</span>,
                 meta: (
@@ -676,7 +714,8 @@ export default async function DashboardPage({
 
           <QueueCard
             title="My Items to Price"
-            count={myPricingItems.length}
+            count={myCounts[3]}
+            paging={{kind:"pricing",cursor:myPricingItems.at(-1)?.id??"",hasMore:myCounts[3]>myPricingItems.length}}
             viewAllHref="/rfq"
             viewAllLabel="RFQ queue"
             rows={myPricingItems.slice(0, 8).map(

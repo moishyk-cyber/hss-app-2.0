@@ -61,40 +61,43 @@ export const permissionsOpenMode = cache(async (): Promise<boolean> => {
  * - admin.manage: only role "admin", regardless of open mode.
  * - Everything else: open mode says yes; otherwise the role matrix decides.
  */
-export async function can(permission: Permission): Promise<boolean> {
-  const user = await currentUser();
+async function permissionDecision(permission: Permission) {
+  // Independent reads overlap; identity and permissions remain fresh per request.
+  const [user, open] = await Promise.all([
+    currentUser(),
+    permission === "admin.manage" ? Promise.resolve(false) : permissionsOpenMode(),
+  ]);
+  let allowed = false;
   if (!user) {
     if (permission === "admin.manage") {
-      try {
-        return (await prisma.user.count()) === 0;
-      } catch {
-        // Unreachable database - fail closed.
-        return false;
-      }
+      try { allowed = (await prisma.user.count()) === 0; } catch { /* Fail closed. */ }
     }
-    return false;
-  }
-  if (permission === "admin.manage") return user.role === "admin";
-  if (await permissionsOpenMode()) return true;
-  return roleCan(await getRolePermissions(), user.role, permission);
+  } else if (permission === "admin.manage") allowed = user.role === "admin";
+  else allowed = open || roleCan(await getRolePermissions(), user.role, permission);
+  return { user, allowed };
+}
+
+export async function can(permission: Permission): Promise<boolean> {
+  return (await permissionDecision(permission)).allowed;
 }
 
 /**
- * Guard for server actions that return ActionResult. Returns null when allowed,
- * otherwise the friendly denial to hand straight back:
- *   const denied = await requirePermission("pos.edit"); if (denied) return denied;
+ * Authorize once and retain the verified identity for request-local audit attribution.
+ * A denied decision must be returned before performing any mutation.
  */
-export async function requirePermission(permission: Permission): Promise<ActionResult | null> {
-  if (await can(permission)) return null;
-  const user = await currentUser();
-  if (!user) {
-    return {
-      ok: false,
-      message: "You're not signed in, or your account is no longer active. Sign in again or ask an admin.",
-    };
-  }
-  return {
+export async function authorizePermission(permission: Permission): Promise<{ user: CurrentUser | null; denied: ActionResult | null }> {
+  const { user, allowed } = await permissionDecision(permission);
+  if (allowed) return { user, denied: null };
+  if (!user) return { user, denied: {
+    ok: false,
+    message: "You're not signed in, or your account is no longer active. Sign in again or ask an admin.",
+  } };
+  return { user, denied: {
     ok: false,
     message: `You're signed in as ${user.name} (${labelFor(USER_ROLES, user.role)}), and "${permissionLabel(permission)}" is not allowed for that role. Ask an admin if you need it.`,
-  };
+  } };
+}
+
+export async function requirePermission(permission: Permission): Promise<ActionResult | null> {
+  return (await authorizePermission(permission)).denied;
 }

@@ -1,4 +1,6 @@
 "use client";
+import { BackgroundStatus } from "@/lib/BackgroundStatus";
+import { useLaneTotal } from "@/lib/CollectionScope";
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -8,16 +10,19 @@ import { FormAlert } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
 import { markPaymentInvoiced, markPaymentPending, undoMarkPaymentPaid } from "@/app/orders/actions";
 import { MarkPaidControl } from "@/app/orders/[id]/PaymentsSection";
+import { KanbanLaneAmount } from "@/lib/KanbanLaneAmount";
 import { CollapsibleKanbanLane } from "@/lib/CollapsibleKanbanLane";
 import { LaneItems } from "@/lib/CollectionViews";
 import { PAYMENT_STATUSES, labelFor } from "@/lib/constants";
 import { PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "@/app/orders/utils";
 import { fmtUSD } from "@/lib/money";
 import { fmtDateUTC } from "@/lib/dates";
+import { InvoiceEditor } from "./InvoiceEditor";
 import { InvoiceDueDate } from "./InvoiceDueDate";
 import { InvoicePaymentActions, type InvoiceRowData } from "./InvoiceRow";
 
 export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRowData[]; canEdit: boolean; today: string }) {
+  const total=useLaneTotal("status");
   const router = useRouter();
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -31,10 +36,10 @@ export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRo
     saving.current = true;
     setError(null);
     try {
-      const result = await (status === "pending" ? markPaymentPending(payment.id, payment.status) : payment.status === "paid" ? undoMarkPaymentPaid(payment.id) : markPaymentInvoiced(payment.id));
+      const result = await (payment.status === "paid" ? undoMarkPaymentPaid(payment.id, { amount: payment.amount, status: payment.status, dueDate: payment.dueDate ? new Date(payment.dueDate).toISOString().slice(0, 10) : "" }) : status === "pending" ? markPaymentPending(payment.id, payment.status) : markPaymentInvoiced(payment.id));
       if (!result.ok) { setError(result.message); return; }
       setReview(null);
-      toast({ kind: "success", message: `Payment moved to ${labelFor(PAYMENT_STATUSES, status)}` });
+      toast({ kind: "success", message: payment.status === "paid" ? "Invoice removed and received amount cleared" : `Payment moved to ${labelFor(PAYMENT_STATUSES, status)}` });
       router.refresh();
     } catch { setError("Could not update the payment. Please try again."); }
     finally { saving.current = false; }
@@ -46,6 +51,7 @@ export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRo
     else startTransition(async () => { await save(payment, status); });
   }
   return <div className="space-y-3" aria-busy={pending}>
+    <BackgroundStatus active={pending}/>
     {error && <FormAlert>{error}</FormAlert>}
     <div className="kanban-board" aria-label="Invoices by payment status" onDragEnd={() => { setDragging(null); setTarget(null); }} onDragStartCapture={event => {
       const element = event.target as HTMLElement;
@@ -56,7 +62,8 @@ export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRo
     }}>
     {PAYMENT_STATUSES.map(lane => {
       const records = payments.filter(payment => payment.status === lane.value);
-      return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={records.length} className={target === lane.value ? "is-drop-target" : ""}
+      return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={total(lane.value,records.length,payments.filter(row=>row.status===lane.value).length)} className={target === lane.value ? "is-drop-target" : ""}
+        summary={<KanbanLaneAmount field="status" lane={lane.value} amount={records.reduce((sum, payment) => sum + payment.amount, 0)} />}
         onDragOver={event => {
           if (!canEdit || pending || review || !dragging) return;
           event.preventDefault(); event.dataTransfer.dropEffect = "move"; setTarget(lane.value);
@@ -77,7 +84,7 @@ export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRo
             <Link draggable={false} href={`/orders/${payment.order.id}#invoice`} className="kanban-card-title block text-ink hover:underline">{payment.order.title}</Link>
             <p className="kanban-card-company text-xs text-gray-dark break-words">{payment.order.company?.name ?? "No customer"}</p>
             <p className="kanban-card-note text-xs text-gray-dark">{labelFor(PAYMENT_TYPES, payment.type)}{payment.order.jobId ? ` · Job ${payment.order.jobId}` : ""}</p>
-            <p className="font-semibold text-ink">{fmtUSD(payment.amount, { cents: true })}</p>
+            <p className="flex items-center gap-1 font-semibold text-ink">{fmtUSD(payment.amount, { cents: true })}{canEdit && <InvoiceEditor payment={payment} />}</p>
             {canEdit ? <select aria-label={`Payment status for ${payment.order.title} (${labelFor(PAYMENT_TYPES, payment.type)})`} value={payment.status} disabled={pending || !!review}
               onChange={event => requestMove(payment, event.target.value)} className={`badge relative z-10 cursor-pointer ${PAYMENT_STATUS_COLORS[payment.status] ?? "badge-gray"}`}>
               {PAYMENT_STATUSES.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
@@ -96,9 +103,9 @@ export function InvoiceBoard({ payments, canEdit, today }: { payments: InvoiceRo
     })}
     </div>
     {review?.status === "paid" && <MarkPaidControl key={review.payment.id} payment={review.payment} initialOpen hideTrigger onClose={() => setReview(null)} onSaved={() => { setReview(null); router.refresh(); }} />}
-    {review && review.status !== "paid" && <ConfirmDialog open title={`Move this paid payment back to ${labelFor(PAYMENT_STATUSES, review.status).toLowerCase()}?`}
+    {review && review.status !== "paid" && <ConfirmDialog open title="Mark unpaid and remove this invoice?"
       confirmLabel="Mark unpaid" danger pending={pending} onClose={() => { setReview(null); setError(null); }} onConfirm={() => startTransition(async () => { await save(review.payment, review.status); })}>
-      <p>The {fmtUSD(review.payment.amount, { cents: true })} payment will move back to {labelFor(PAYMENT_STATUSES, review.status).toLowerCase()} and its paid date will be cleared.</p>
+      <p>The {fmtUSD(review.payment.amount, { cents: true })} invoice and its received amount will be removed from HSS. The payment requirement and next step will be recalculated. This cannot be undone.</p>
       {error && <FormAlert>{error}</FormAlert>}
     </ConfirmDialog>}
   </div>;

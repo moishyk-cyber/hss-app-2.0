@@ -1,5 +1,6 @@
 import ServiceCollection from "./ServiceCollection";
-import { loadServiceCollection } from "./collectionData";
+import { loadIndexedCollection } from "@/lib/loadIndexedCollection";
+import { CollectionSnapshot } from "@/lib/CollectionScope";
 import { collectionLimit } from "@/lib/CollectionWindow";
 import { can } from "@/lib/permissionsServer";
 import { getActiveUsers } from "@/lib/users";
@@ -137,12 +138,12 @@ export default async function ServicePage({
         { id: "asc" },
       ],
     });
-  const queryIds = (where: Prisma.ServiceIssueWhereInput, take = limit + 1) =>
-    prisma.serviceIssue.findMany({
-      where, take, select: { id: true },
-      orderBy: [sortKey ? ORDER_BY[sortKey] : { reportedAt: "desc" }, { id: "asc" }],
-    });
-  const { rows, hasMore } = await loadServiceCollection(query, where, limit, queryIds);
+  const indexWhere: Prisma.ServiceIssueWhereInput = where;
+  const indexOrder: Prisma.ServiceIssueOrderByWithRelationInput[] = [sortKey ? ORDER_BY[sortKey] : { reportedAt: "desc" }, { id: "asc" }];
+  const collection=await loadIndexedCollection(JSON.stringify(["service-rows-v1",indexWhere,indexOrder]),
+    ()=>prisma.serviceIssue.findMany({where:indexWhere,orderBy:indexOrder,select:{id:true,status:true,priority:true}}).then(rows=>rows.map(row=>({id:row.id,groups:{status:row.status,priority:row.priority}}))),
+    ids=>query({AND:[indexWhere,{id:{in:ids}}]},ids.length),limit);
+  const {rows: rows,hasMore}=collection;
   const users = await usersPromise;
   const fields = FIELDS.map(field => field.key === "assignee"
     ? { ...field, options: users.map(user => ({ value: user.id, label: user.name })) }
@@ -176,7 +177,7 @@ export default async function ServicePage({
     lineItem: r.lineItem,
   });
 
-  return <ServiceCollection issues={issueRows.map(toRowData)} users={users} fields={fields}
+  return <CollectionSnapshot data={collection.snapshot}><ServiceCollection issues={issueRows.map(toRowData)} users={users} fields={fields}
     canEdit={await canEditPromise} hasMore={hasMore} limit={limit}
-    filtered={Object.values(filters).some(Boolean) || !!nestedWhere} />;
+    filtered={Object.values(filters).some(Boolean) || !!nestedWhere} /></CollectionSnapshot>;
 }

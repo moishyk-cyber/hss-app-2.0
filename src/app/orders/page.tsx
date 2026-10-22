@@ -1,7 +1,14 @@
+import { recordCardDocuments } from "@/lib/recordCardDocuments";
+import { daysSince } from "@/app/pipeline/_ui";
+import { recordPath } from "@/lib/recordPath";
 import { ToolbarIcon } from "@/lib/ToolbarIcon";
 import { getActiveUsers } from "@/lib/users";
 import { compileFilterTree } from "@/lib/nestedFilters";
 import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
+import { CollectionView, CollectionViewToggle } from "@/lib/CollectionDisplay";
+import { loadIndexedCollection } from "@/lib/loadIndexedCollection";
+import { CollectionSnapshot } from "@/lib/CollectionScope";
+import { shareRead } from "@/lib/shareRead";
 import { SortHeader, TableRows } from "@/lib/CollectionViews";
 import { QueryLink } from "@/lib/QueryLink";
 import { PageHeader } from "@/lib/PageLayout";
@@ -38,13 +45,11 @@ const ORDER_BALL_SELECT = {
   status: true,
   orderType: true,
   orderValue: true,
-  depositRequired: true,
-  quoteStatus: true,
-  salesOrderSentAt: true,
+  depositRequired: true, paymentPlan: true,
   termsNotes: true,
   paymentTerms: true,
   payments: { select: { status: true, amount: true } },
-  company: { select: { requiresDeposit: true, depositPercent: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true } },
   lineItems: {
     select: { rfqStatus: true, deliveryStatus: true, purchaseOrderId: true },
   },
@@ -205,13 +210,6 @@ export default async function OrdersPage({
   }
 
   // Finished work stays in the table, rather than consuming the kanban window.
-  const boardWhere: Prisma.OrderWhereInput = isList ? {} : {
-    status: { not: "complete" },
-    OR: [
-      { status: { not: "delivered" } },
-      { serviceIssues: { some: { status: { in: [...OPEN_SERVICE_ISSUE_STATUSES] } } } },
-    ],
-  };
 
   const ORDER_BY: Record<string, Prisma.OrderOrderByWithRelationInput> = {
     title: { title: sortDir },
@@ -243,17 +241,19 @@ export default async function OrdersPage({
     },
   );
 
-  const orders = plainMoney(
-    await prisma.order.findMany({
-      take: limit + 1,
-      where: { AND: [where, nestedWhere ?? {}, boardWhere] },
-      include: {
+  const queryWhere: Prisma.OrderWhereInput = { AND: [where, nestedWhere ?? {}] };
+  const ordering: Prisma.OrderOrderByWithRelationInput[] = [orderBy ?? { neededByDate: { sort: "asc", nulls: "last" } }, { id: "asc" }];
+  const query = (where: Prisma.OrderWhereInput, take = limit + 1) => prisma.order.findMany({
+      take, where, relationLoadStrategy: "join",
+      select: {
+        ...ORDER_BALL_SELECT, id:true, opportunityId:true, title:true, neededByDate:true, createdAt:true,
         company: {
           select: {
             id: true,
             name: true,
             requiresDeposit: true,
             depositPercent: true,
+            paymentTermsConfigured: true,
           },
         },
         owner: { select: { id: true, name: true } },
@@ -263,15 +263,17 @@ export default async function OrdersPage({
         deliveries: ORDER_BALL_SELECT.deliveries,
         _count: ORDER_BALL_SELECT._count,
       },
-      orderBy: [
-        orderBy ?? { neededByDate: { sort: "asc", nulls: "last" } },
-        { id: "asc" },
-      ],
-    }),
-  );
-
-  const hasMore = orders.length > limit;
-  if (hasMore) orders.pop();
+      orderBy: ordering,
+    });
+  const collection = await loadIndexedCollection(JSON.stringify(["order-cards-v3",queryWhere,ordering]),async()=>{
+    const index=await prisma.order.findMany({where:queryWhere,orderBy:ordering,select:{id:true,status:true,orderValue:true,_count:{select:{serviceIssues:{where:{status:{in:[...OPEN_SERVICE_ISSUE_STATUSES]}}}}}}});
+    const stuckIds=index.filter(row=>row.status==="stuck" || row.status==="new").map(row=>row.id);
+    const stuck=stuckIds.length ? plainMoney(await shareRead(JSON.stringify(["order-stuck-phases",queryWhere,ordering]),()=>prisma.order.findMany({where:{AND:[queryWhere,{id:{in:stuckIds}}]},relationLoadStrategy:"join",select:{id:true,...ORDER_BALL_SELECT}}))) : [];
+    const stuckPhases=new Map(stuck.map(row=>[row.id,orderPhase({...row,openIssueCount:row._count.serviceIssues})]));
+    return index.map(row=>({id:row.id,amount:row.orderValue == null ? null : Number(row.orderValue),groups:{status:row.status,phase:row.status==="stuck" || row.status==="new" ? stuckPhases.get(row.id)??null : orderPhase({status:row.status,openIssueCount:row._count.serviceIssues,orderType:"order",orderValue:null,company:null,payments:[],lineItems:[],purchaseOrders:[],deliveries:[]})}}));
+  },ids=>query({AND:[queryWhere,{id:{in:ids}}]},ids.length),limit,["phase"]);
+  const orders = plainMoney(collection.rows);
+  const hasMore = collection.hasMore;
 
   // Default view (no explicit sort chosen): soonest needed-by first, orders
   // with no due date last - the client asked to filter by due date instead
@@ -284,6 +286,8 @@ export default async function OrdersPage({
     });
   }
 
+  const cardDocuments = await recordCardDocuments(orders.map(order => ({ id: order.id, type: "order" })));
+
   // Board cards. orderPhase() returns null for completed orders, which is how
   // they drop off the board without disappearing from the list.
   const cards: OrderCard[] = orders.flatMap((order) => {
@@ -291,23 +295,27 @@ export default async function OrdersPage({
     if (!phase) return [];
     return [
       {
+        documents: cardDocuments.get(order.id) ?? [],
         id: order.id,
+        href: recordPath(order.id, order.opportunityId),
         title: order.title,
         phase,
         status: order.status,
-        companyName: order.company?.name ?? null,
+        companyId: order.company?.id ?? null,
+    companyName: order.company?.name ?? null,
         ownerName: order.owner?.name ?? null,
+        daysOpen: daysSince(order.createdAt),
         value: order.orderValue,
         neededByDate: order.neededByDate,
         paymentStatus: paymentState(order.payments),
         itemSummary: itemSummary(order.lineItems),
-        ball: withHolder(orderBall(toOrderBallInput(order)), holders),
+        ball: withHolder(phase === "service" ? { step: "service", court: "service", hint: "Resolve any service issues and complete close out" } : orderBall(toOrderBallInput(order)), holders),
       },
     ];
   });
 
   return (
-    <div className="space-y-8">
+    <CollectionSnapshot data={{...collection.snapshot,boardTotal:Object.values(collection.snapshot.laneTotals.phase??{}).reduce((sum,n)=>sum+n,0),defaultView:"kanban"}}><div className="space-y-8">
       <PageHeader
         title="Orders"
         subtitle="Manage orders through fulfillment."
@@ -319,21 +327,7 @@ export default async function OrdersPage({
               count={isList ? orders.length : cards.length}
             >
               {" "}
-              <div className="flex items-center gap-1.5">
-                <QueryLink
-                  clear={["view", "sort"]}
-                  href="/orders"
-                  className={`chip transition-colors active:scale-[0.98] ${isList ? "" : "chip-active"}`} data-view-tooltip="Kanban view — Orders grouped by status" aria-label="Kanban view — Orders grouped by status"
-                >
-                  <ToolbarIcon name="kanban" /><span className="sr-only">Kanban</span>
-                </QueryLink>
-                <QueryLink
-                  href="/orders?view=list"
-                  className={`chip transition-colors active:scale-[0.98] ${isList ? "chip-active" : ""}`} data-view-tooltip="Table view — Orders in rows and columns" aria-label="Table view — Orders in rows and columns"
-                >
-                  <ToolbarIcon name="table" /><span className="sr-only">Table</span>
-                </QueryLink>
-              </div>
+              <CollectionViewToggle />
             </ListControls>
           </Suspense>
         }
@@ -344,8 +338,7 @@ export default async function OrdersPage({
         </Link>
       </PageHeader>
 
-      {isList ? (
-        <>
+      <CollectionView view="list">
           {orders.length === 0 ? (
             <div className="empty-state">
               {status ||
@@ -382,13 +375,13 @@ export default async function OrdersPage({
                   </tr>
                 </thead>
                 <TableRows columns={8}>
-                  {orders.map((order) => {
+                  {orders.filter(order=>collection.snapshot.listIds.includes(order.id)).map((order) => {
                     const ps = paymentState(order.payments);
                     return (
                       <tr key={order.id}>
                         <td>
                           <Link
-                            href={`/orders/${order.id}`}
+                            href={recordPath(order.id, order.opportunityId)}
                             className="font-medium hover:underline"
                           >
                             {order.title}
@@ -433,8 +426,9 @@ export default async function OrdersPage({
               </table>
             </div>
           )}
-        </>
-      ) : cards.length === 0 ? (
+      </CollectionView>
+      <CollectionView view="kanban">
+      {cards.length === 0 ? (
         <div className="empty-state">
           {status || due || Object.keys(filters).length > 0 || !!nestedWhere ? (
             <>
@@ -463,7 +457,8 @@ export default async function OrdersPage({
           <OrdersKanbanBoard cards={cards} />
         </>
       )}
+      </CollectionView>
       <MoreRecords href="/orders" limit={limit} hasMore={hasMore} />
-    </div>
+    </div></CollectionSnapshot>
   );
 }

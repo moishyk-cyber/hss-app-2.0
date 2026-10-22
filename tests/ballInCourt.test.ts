@@ -5,7 +5,7 @@ import { withHolder, type StageHolders } from "../src/lib/courtHolders";
 import { dealJourney } from "../src/lib/dealWorkflow";
 
 const ready: OpportunityBallInput = {
-  stage: "estimating", intakeComplete: true, salesperson: { name: "Salesperson A", active: true },
+  stage: "estimating", intakeComplete: true, clientQuoteCreated: true, clientQuoteSent: true, salesperson: { name: "Salesperson A", active: true },
   lineItems: [{ rfqStatus: "quote_received", unitPrice: 100 }],
 };
 const holders = Object.fromEntries(FLOW_STEPS.map(step => [step.key, { role: "purchasing", userIds: ["office"], userNames: ["Office teammate"] }])) as StageHolders;
@@ -55,7 +55,7 @@ test("the deal workflow closing step names the same salesperson as its ball-in-c
 
 test("won orders keep their original salesperson in the historical closing step and hand the ball onward", () => {
   const order = { id: "order", status: "new", orderType: "project", orderValue: 100,
-    quoteStatus: "needed", termsNotes: null, paymentTerms: null, company: { requiresDeposit: false, depositPercent: 0 },
+    quoteStatus: "needed", termsNotes: null, paymentTerms: null, company: { requiresDeposit: true, paymentTermsConfigured: true, depositPercent: 30 },
     payments: [], purchaseOrders: [], deliveries: [], lineItems: [], openIssueCount: 0 };
   const deal = { id: "deal", title: "Equipment", stage: "won", companyId: "company", neededByDate: "2026-10-20", salesperson: ready.salesperson,
     lineItems: [{ id: "item", name: "Oven", rfqStatus: "quote_received", unitPrice: 100 }] };
@@ -63,6 +63,13 @@ test("won orders keep their original salesperson in the historical closing step 
   assert.equal(closing?.owner, "Salesperson A");
   assert.equal(closing?.state, "complete");
   const ball = withHolder(opportunityBall({ ...ready, stage: "won", order }), holders);
-  assert.equal(ball.step, "quote");
+  assert.equal(ball.step, "deposit");
   assert.equal(ball.holder, "Office teammate");
+});
+
+test("supplier readiness hands the ball to Client Quote before Confirm Deal", () => {
+ const draft=opportunityBall({...ready,clientQuoteCreated:false,clientQuoteSent:false});
+ assert.equal(draft.step,"clientQuote");assert.equal(draft.holder,"Salesperson A");
+ assert.equal(opportunityBall({...ready,clientQuoteSent:false}).step,"clientQuote");
+ assert.equal(opportunityBall(ready).step,"close");
 });

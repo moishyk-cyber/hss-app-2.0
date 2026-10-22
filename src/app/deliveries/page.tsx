@@ -8,7 +8,8 @@ import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/permissionsServer";
 import DeliveryCollection from "./DeliveryCollection";
 import { deliveryLane, deliveryLanes } from "./boardConfig";
-import { loadDeliveryCollection } from "./collectionData";
+import { loadIndexedCollection } from "@/lib/loadIndexedCollection";
+import { CollectionSnapshot } from "@/lib/CollectionScope";
 import {
   DELIVERY_MODES,
   DELIVERY_MODE_COLORS,
@@ -357,11 +358,9 @@ export default async function DeliveriesPage({
   ] };
   const [partners, collection, canEdit] = await Promise.all([
     getDeliveryPartners(),
-    loadDeliveryCollection(
-      (where, take) => prisma.delivery.findMany({ where, take, orderBy: openOrder, select: LEG_SELECT }),
-      where, limit,
-      (where, take) => prisma.delivery.findMany({ where, take, orderBy: openOrder, select: { id: true } }),
-    ),
+    loadIndexedCollection(JSON.stringify(["delivery-rows-v1",where,openOrder]),
+      ()=>prisma.delivery.findMany({where,orderBy:openOrder,select:{id:true,status:true,mode:true}}).then(rows=>rows.map(row=>({id:row.id,groups:{status:row.status,stage:row.status,mode:row.mode}}))),
+      ids=>prisma.delivery.findMany({where:{AND:[where,{id:{in:ids}}]},orderBy:openOrder,relationLoadStrategy:"join",select:LEG_SELECT}),limit),
     can("deliveries.edit"),
   ]);
   const knownTruckers = partners.truckers;
@@ -382,25 +381,25 @@ export default async function DeliveriesPage({
   const groupKey = typeof sp.group === "string" ? sp.group : "stage";
   const rows = [...open, ...delivered];
   const group = groupKey === "mode" ? "mode" : "stage";
-  const groups = groupKey === "none" ? [{ label: "All deliveries", legs: rows }] :
-    deliveryLanes(group).map(lane => ({ label: lane.label, legs: rows.filter(row => deliveryLane(row, group) === lane.value) }));
+  const groups = groupKey === "none" ? [{ label: "All deliveries", legs: rows.filter(row=>collection.snapshot.listIds.includes(row.id)) }] :
+    deliveryLanes(group).map(lane => ({ label: lane.label, legs: rows.filter(row => collection.snapshot.listIds.includes(row.id) && deliveryLane(row, group) === lane.value) }));
 
   return (
-    <DeliveryCollection rows={rows} fields={FIELDS} canEdit={canEdit} hasMore={hasMore} limit={limit}>
-      {groups.map((group) => (
+    <CollectionSnapshot data={collection.snapshot}><DeliveryCollection rows={rows} fields={FIELDS} canEdit={canEdit} hasMore={hasMore} limit={limit}>
+      {groups.map((section) => (
         <CollectionGroup
           flat={groupKey === "none"}
-          key={group.label}
-          title={group.label}
-          count={group.legs.length}
+          key={section.label}
+          title={section.label}
+          count={section.legs.length} totalField={groupKey==="mode"?"mode":"status"} totalValue={deliveryLanes(group).find(lane=>lane.label===section.label)?.value}
         >
-          {group.legs.length ? (
-            <LegTable legs={group.legs} truckers={knownTruckers} />
+          {section.legs.length ? (
+            <LegTable legs={section.legs} truckers={knownTruckers} />
           ) : (
             <div className="empty-state">No deliveries in this group.</div>
           )}
         </CollectionGroup>
       ))}
-    </DeliveryCollection>
+    </DeliveryCollection></CollectionSnapshot>
   );
 }

@@ -18,6 +18,7 @@ async function log(issueId: string, action: string, detail: string): Promise<voi
 
 /** Every surface a ServiceIssue's state is visible on. */
 function revalidateIssue(issue: { orderId: string | null; companyId: string | null }): void {
+  if (issue.orderId) revalidatePath("/pipeline");
   revalidatePath("/service");
   revalidatePath("/service/[id]", "page");
   revalidatePath("/dashboard");

@@ -9,6 +9,7 @@ import { useTransition, useOptimistic, useRef, useEffect, useState } from "react
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ActionResult } from "./actionResult";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { collectionQuery, collectionHref, stageCollectionQuery } from "./collectionNavigation";
 
 /**
  * Returned by a select's `confirm` callback when picking that value should be
@@ -56,6 +57,11 @@ export function PencilIcon() {
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
     </svg>
   );
+}
+
+/** Consistent icon-only editing affordance for editable table fields. */
+export function EditIconButton({ label, onClick, disabled = false, opensDialog = false }: { label: string; onClick: () => void; disabled?: boolean; opensDialog?: boolean }) {
+  return <button type="button" aria-label={label} title={label} aria-haspopup={opensDialog ? "dialog" : undefined} disabled={disabled} onClick={onClick} className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-gray transition-colors hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"><PencilIcon /></button>;
 }
 
 /**
@@ -144,17 +150,7 @@ export function InlineEditField({
       <span className="truncate text-ink">
         {displayValue ?? (value.trim() || <span className="empty-value">{emptyLabel}</span>)}
       </span>
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(value);
-          setEditing(true);
-        }}
-        aria-label={ariaLabel}
-        className="shrink-0 text-gray transition-colors hover:text-ink"
-      >
-        <PencilIcon />
-      </button>
+      <EditIconButton label={ariaLabel} onClick={() => { setDraft(value); setEditing(true); }} />
     </span>
   );
 }
@@ -481,6 +477,7 @@ export function BadgeSelect({
   fallback = "badge-gray",
   confirm,
   ariaLabel = "Change status",
+  showError = true,
 }: {
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
@@ -490,6 +487,8 @@ export function BadgeSelect({
   /** Return a ConfirmSpec to double-check a pick before it applies; null = apply now. */
   confirm?: (next: string) => ConfirmSpec | null;
   ariaLabel?: string;
+  /** Disable only when the caller presents the error in its own dialog. */
+  showError?: boolean;
 }) {
   const { isPending, optimistic, error, run } = useOptimisticAction(value, action);
   const [open, setOpen] = useState(false);
@@ -564,7 +563,7 @@ export function BadgeSelect({
           {confirming.spec.body}
         </ConfirmDialog>
       ) : null}
-      {error && <InlineError message={error} />}
+      {showError && error && <InlineError message={error} />}
     </span>
   );
 }
@@ -655,17 +654,16 @@ export function InstantSearch({
 
   function pushValue(next: string, debounceMs: number) {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const sp = new URLSearchParams(window.location.search);
+    stageCollectionQuery(sp => {
       sp.delete("page");
+      sp.delete("records");
       if (next) sp.set(paramKey, next);
       else sp.delete(paramKey);
-      startTransition(() => {
-        const query = sp.toString();
-        router.replace(query ? `${window.location.pathname}?${query}` : window.location.pathname, {
-          scroll: false,
-        });
-      });
+    });
+    const path = window.location.pathname;
+    timer.current = setTimeout(() => {
+      if (window.location.pathname !== path) return;
+      startTransition(() => router.replace(collectionHref(collectionQuery()), { scroll: false }));
     }, debounceMs);
   }
 

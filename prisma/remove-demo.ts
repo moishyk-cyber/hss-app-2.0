@@ -1,3 +1,4 @@
+import { databaseConnectionUrl } from "../src/lib/environmentMode";
 /**
  * HSS Kitchens — remove the DEMO data created by seed-demo.ts.
  *
@@ -17,7 +18,7 @@
 
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ datasourceUrl: databaseConnectionUrl() });
 
 const NOTE = "[demo] ";
 const SUFFIX = " [demo]";

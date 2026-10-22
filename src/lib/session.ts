@@ -10,7 +10,7 @@ const SESSION_COOKIE = "hss_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 function getSecret(): string {
-  const secret = process.env.SESSION_SECRET;
+  const secret = appMode() === 'dev' ? process.env.DEV_SESSION_SECRET : process.env.SESSION_SECRET;
   if (secret) return secret;
   if (process.env.NODE_ENV === "production") {
     throw new Error("SESSION_SECRET is not set - required to sign login sessions in production.");
@@ -75,3 +75,4 @@ export async function verifySessionToken(token: string | undefined | null): Prom
 
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;
 export const SESSION_MAX_AGE = SESSION_MAX_AGE_SECONDS;
+import { appMode } from './environmentMode';

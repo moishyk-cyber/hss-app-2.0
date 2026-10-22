@@ -1,9 +1,13 @@
-import { ToolbarIcon } from "@/lib/ToolbarIcon";
+import { recordCardDocuments } from "@/lib/recordCardDocuments";
+import { recordPath } from "@/lib/recordPath";
+import { daysSince } from "@/app/pipeline/_ui";
+import { loadIndexedCollection } from "@/lib/loadIndexedCollection";
+import { CollectionSnapshot } from "@/lib/CollectionScope";
+import { CollectionView, CollectionViewToggle } from "@/lib/CollectionDisplay";
 import { getActiveUsers } from "@/lib/users";
 import { compileFilterTree } from "@/lib/nestedFilters";
 import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
 import { CollectionGroup, SortHeader, TableRows } from "@/lib/CollectionViews";
-import { QueryLink } from "@/lib/QueryLink";
 import { RfqBoard } from "./RfqBoard";
 import { PageHeader } from "@/lib/PageLayout";
 import Link from "next/link";
@@ -30,11 +34,11 @@ type RfqLineItem = PlainMoney<
           id: true;
           title: true;
           stage: true;
-          company: { select: { name: true } };
+          company: { select: { id: true, name: true } };
         };
       };
       order: {
-        select: { id: true; title: true; company: { select: { name: true } } };
+        select: { id: true; title: true; company: { select: { id: true, name: true } } };
       };
       assignee: { select: { name: true } };
     };
@@ -191,36 +195,45 @@ export default async function RfqPage({
 
   // unitCost/unitPrice come back as Decimal; RfqRow is a client component, so
   // the rows go over as plain numbers.
-  const rawItems: RfqLineItem[] = plainMoney(
-    await prisma.lineItem.findMany({
-      take: limit + 1,
-      where: { AND: whereAnd },
+  const where: Prisma.LineItemWhereInput={AND:whereAnd};
+  const ordering: Prisma.LineItemOrderByWithRelationInput[]=[orderBy ?? { createdAt: "asc" }, { id: "asc" }];
+  const query=(ids:string[])=>prisma.lineItem.findMany({
+      take: ids.length, relationLoadStrategy: "join",
+      where: {AND:[where,{id:{in:ids}}]},
       include: {
         opportunity: {
           select: {
             id: true,
             title: true,
             stage: true,
-            company: { select: { name: true } },
+            company: { select: { id: true, name: true } },
           },
         },
         order: {
           select: {
             id: true,
             title: true,
-            company: { select: { name: true } },
+            company: { select: { id: true, name: true } },
           },
         },
         assignee: { select: { name: true } },
       },
-      orderBy: orderBy ?? { createdAt: "asc" },
-    }),
-  );
-
-  const hasMore = rawItems.length > limit;
-  if (hasMore) rawItems.pop();
+      orderBy: ordering,
+    });
+  const collection=await loadIndexedCollection(JSON.stringify(["rfq-rows-v2",where,ordering]),
+    ()=>prisma.lineItem.findMany({where,orderBy:ordering,relationLoadStrategy:"join",select:{id:true,rfqStatus:true,stockStatus:true,unitPrice:true,qty:true,assignee:{select:{name:true}}}}).then(rows=>rows.map(row=>({id:row.id,amount:Number(row.unitPrice ?? 0)*row.qty,groups:{rfqStatus:row.rfqStatus,stage:labelFor(RFQ_QUEUE_STATUSES,row.rfqStatus),status:labelFor(RFQ_QUEUE_STATUSES,row.rfqStatus),stockStatus:labelFor(STOCK_STATUSES,row.stockStatus),assignee:row.assignee?.name??"Unassigned"}}))),query,limit,["rfqStatus"]);
+  const rawItems: RfqLineItem[]=plainMoney(collection.rows);
+  const hasMore=collection.hasMore;
 
   const items = rawItems.filter((i) => !isDeadDealItem(i));
+
+  const parentRecords = [...new Map(items.flatMap<{ id: string; type: "order" | "opportunity" }>(item => item.order ? [{ id: item.order.id, type: 'order' as const }] : item.opportunity ? [{ id: item.opportunity.id, type: 'opportunity' as const }] : []).map(row => [row.id, row])).values()];
+  const documentsByRecord = await recordCardDocuments(parentRecords);
+  const cardDetails = Object.fromEntries(items.map(item => {
+    const parent = item.order ?? item.opportunity;
+    const href = parent ? `${recordPath(item.order?.id ?? parent.id, item.order ? undefined : item.opportunity?.id)}?step=pricing#pricing-${item.id}` : `/rfq?view=list&f_name=${encodeURIComponent(item.name)}`;
+    return [item.id, { href, companyId: parent?.company?.id ?? null, companyName: parent?.company?.name ?? null, daysOpen: daysSince(item.createdAt), documents: parent ? documentsByRecord.get(parent.id) ?? [] : [] }];
+  }));
 
   const groupKey = typeof sp.group === "string" ? sp.group : "stage";
   const groupValue = (item: RfqLineItem) =>
@@ -232,7 +245,7 @@ export default async function RfqPage({
           ? labelFor(STOCK_STATUSES, item.stockStatus)
           : labelFor(RFQ_QUEUE_STATUSES, item.rfqStatus);
   const groups = new Map<string, RfqLineItem[]>();
-  for (const item of items) {
+  for (const item of items.filter(item=>collection.snapshot.listIds.includes(item.id))) {
     const key = groupValue(item);
     const group = groups.get(key);
     if (group) group.push(item);
@@ -251,7 +264,7 @@ export default async function RfqPage({
     );
 
   return (
-    <div className="space-y-8">
+    <CollectionSnapshot data={collection.snapshot}><div className="space-y-8">
       <PageHeader
         title="RFQ Queue"
         subtitle="Estimating queue - items awaiting pricing before they can move to a proposal."
@@ -262,20 +275,7 @@ export default async function RfqPage({
               fields={FIELDS}
               count={items.length}
             >
-              <QueryLink
-                href="/rfq"
-                clear={["view"]}
-                className={sp.view === "kanban" ? "chip" : "chip chip-active"} data-view-tooltip="Table view — Rfq items in rows and columns" aria-label="Table view — Rfq items in rows and columns"
-              >
-                <ToolbarIcon name="table" /><span className="sr-only">Table</span>
-              </QueryLink>
-              <QueryLink
-                href="/rfq?view=kanban"
-                clear={["sort"]}
-                className={sp.view === "kanban" ? "chip chip-active" : "chip"} data-view-tooltip="Kanban view — Rfq items grouped by status" aria-label="Kanban view — Rfq items grouped by status"
-              >
-                <ToolbarIcon name="kanban" /><span className="sr-only">Kanban</span>
-              </QueryLink>
+              <CollectionViewToggle defaultView="list" />
             </ListControls>
           </Suspense>
         }
@@ -291,15 +291,15 @@ export default async function RfqPage({
             Go to Intake
           </Link>
         </div>
-      ) : sp.view === "kanban" ? (
-        <RfqBoard items={items} users={users} />
       ) : (
-        grouped.map((group) => (
+        <>
+        <CollectionView view="kanban" defaultView="list"><RfqBoard items={items} users={users} cardDetails={cardDetails} /></CollectionView>
+        <CollectionView view="list" defaultView="list">{grouped.map((group) => (
           <CollectionGroup
             flat={groupKey === "none"}
             key={group.status}
             title={group.label}
-            count={group.items.length}
+            count={group.items.length} totalField={groupKey} totalValue={group.label}
           >
             {group.items.length === 0 ? (
               <div className="empty-state">
@@ -325,7 +325,7 @@ export default async function RfqPage({
                   <thead>
                     <tr>
                       <SortHeader field="name">Item</SortHeader>
-                      <th>Qty</th>
+                      <th>Notes</th><th>Qty</th>
                       <th>Parent</th>
                       <SortHeader field="daysWaiting">Waiting</SortHeader>
                       <SortHeader field="price">Price</SortHeader>
@@ -335,7 +335,7 @@ export default async function RfqPage({
                       <SortHeader field="status">Status</SortHeader>
                     </tr>
                   </thead>
-                  <TableRows columns={9}>
+                  <TableRows columns={10}>
                     {group.items.map((item) => {
                       const parentHref = item.order
                         ? `/orders/${item.order.id}`
@@ -371,9 +371,10 @@ export default async function RfqPage({
               </div>
             )}
           </CollectionGroup>
-        ))
+        ))}</CollectionView>
+        </>
       )}
       <MoreRecords href="/rfq" limit={limit} hasMore={hasMore} />
-    </div>
+    </div></CollectionSnapshot>
   );
 }

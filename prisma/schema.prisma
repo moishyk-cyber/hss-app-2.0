@@ -41,6 +41,7 @@ model Company {
   priorityClient Boolean       @default(false)
   requiresDeposit Boolean      @default(true) // toggle: does this account need a deposit before POs go out?
   depositPercent Int           @default(30) // % of order value required as deposit, when requiresDeposit
+  paymentTermsConfigured Boolean @default(false) // explicit account selection; legacy defaults are not confirmed terms
   phone          String?
   phoneExt       String?
   cellPhone      String?
@@ -138,6 +139,10 @@ model Opportunity {
   estDueDate       DateTime?
   nextFollowUp     DateTime?
   lostReason       String?
+  // Client quote is prepared and sent on the deal, before confirmation.
+  clientQuoteCreated Boolean @default(false)
+  clientQuoteSent    Boolean @default(false)
+  clientQuoteUrl     String?
   // Project intake fields
   facilityType     String?
   menu             String?
@@ -149,6 +154,7 @@ model Opportunity {
   deliveryType     String? // curbside | inside
   openingSize      String?
   installationNeeded Boolean @default(false)
+  floorNote        String?
   designStatus     String    @default("none") // none | rendering_in_progress | rendering_approved
   location         Location? @relation(fields: [locationId], references: [id])
   locationId       String?
@@ -247,17 +253,24 @@ model Order {
   location       Location?    @relation(fields: [locationId], references: [id])
   locationId     String?
   deliveryAddress String?
+  intakeDeliveryAddress String? // Original intake snapshot; destination changes do not overwrite it.
+  intakeLocationName String?
+  deliveryType    String? // curbside | inside
+  openingSize     String?
+  installationNeeded Boolean @default(false)
+  floorNote       String?
   neededByDate   DateTime?
   nextFollowUp   DateTime?
   // Payment terms agreed at close (see PAYMENT_TERMS in @/lib/constants). Applying
   // terms writes depositRequired and the source = "terms" payments (see @/lib/terms).
   paymentTerms   String? // deposit_balance | full_upfront | on_delivery | net_30 | custom
   termsNotes     String?
-  // Customer-facing quote (projects need one before terms are set; straight orders do not).
+  paymentPlan    Json? // Validated custom payment milestones; original wording remains in termsNotes.
+  // Historical fields retained for existing records; no longer used by the workflow.
   quoteStatus    String       @default("not_needed") // not_needed | needed | sent | accepted
   quoteUrl       String?
   quoteSentAt    DateTime?
-  salesOrderSentAt DateTime? // Confirmed sent after payment, before logging a PO
+  salesOrderSentAt DateTime? // Optional confirmation in Purchase; never blocks POs
   // Retained for historical app-generated PO numbers. New POs use the AutoQuotes number.
   poSequence     Int          @default(0)
   notes          String?
@@ -548,6 +561,7 @@ model Notification {
   href String
   createdAt DateTime @default(now())
   readAt DateTime?
+  email NotificationEmail?
   @@unique([userId, eventKey])
   @@index([userId, readAt, createdAt])
 }
@@ -558,4 +572,24 @@ model NotificationState {
   snapshot Json
   version Int @default(0)
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+// Durable, per-recipient email outbox. Payloads freeze on first attempt for safe Resend retries.
+model NotificationEmail {
+  id String @id @default(cuid())
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  notificationId String @unique
+  recipient String
+  status String @default("pending") // pending | sending | sent | failed | skipped | uncertain
+  attempts Int @default(0)
+  availableAt DateTime @default(now())
+  leaseUntil DateTime?
+  attemptToken String?
+  firstAttemptAt DateTime?
+  payload Json?
+  resendId String?
+  sentAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  @@index([status, availableAt])
 }

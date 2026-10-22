@@ -7,6 +7,8 @@ import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 // dropdown" identity.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // Authentication for this exact service route is enforced by its bearer-secret handler.
+  if (pathname === "/api/cron/notifications") return NextResponse.next();
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const userId = await verifySessionToken(token);
 

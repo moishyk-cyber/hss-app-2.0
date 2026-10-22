@@ -1,0 +1,31 @@
+import { requireTestDatabase } from "../src/lib/environmentMode";
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { PrismaClient } from '@prisma/client';
+import { readPipelineWorkflowIndex } from '../src/app/pipeline/workflowData';
+import { orderPhase, FLOW_ORDER_INCLUDE } from '../src/lib/flowRules';
+import { plainMoney } from '../src/lib/money';
+import { reconcileOrderStatus } from '../src/lib/workflows/orderState';
+const db = new PrismaClient({ datasourceUrl: requireTestDatabase() });
+async function main() {
+  assert.equal(process.env.NOTIFICATION_EMAIL_ENABLED, 'false');
+  const manifest = JSON.parse(await fs.readFile('qa-reports/app-stress-manifest.json', 'utf8'));
+  const company = await db.company.findFirstOrThrow({ where: { id: { startsWith: manifest.run } } });
+  const id = 'qa_board_handoff_20261021', paymentId = `${id}_payment`;
+  await db.order.upsert({ where: { id }, update: {}, create: { id, title: '[LOAD TEST] Intake to fulfillment handoff', ownerId: manifest.userId, companyId: company.id, orderType: 'order', orderValue: 100, status: 'awaiting_payment', neededByDate: new Date('2026-11-15'), deliveryAddress: '[LOAD TEST] Preview QA street', lineItems: { create: { id: `${id}_item`, name: '[LOAD TEST] Handoff oven', qty: 1, rfqStatus: 'approved' } } } });
+  await db.payment.upsert({ where: { id: paymentId }, update: { status: 'invoiced' }, create: { id: paymentId, orderId: id, type: 'full', amount: 100, status: 'invoiced', source: 'manual' } });
+  await db.order.update({ where: { id }, data: { status: 'awaiting_payment' } });
+  const before = await readPipelineWorkflowIndex(db, { company: true, neededBy: true });
+  assert.equal(before.find(row => row.id === id)?.step, 'deposit');
+  const initial = await db.order.findUniqueOrThrow({ where: { id }, include: FLOW_ORDER_INCLUDE });
+  assert.equal(orderPhase(plainMoney(initial)), null);
+  await db.$transaction(async tx => { await tx.payment.update({ where: { id: paymentId }, data: { status: 'paid' } }); await reconcileOrderStatus(tx, id); });
+  const after = await readPipelineWorkflowIndex(db, { company: true, neededBy: true });
+  assert.equal(after.some(row => row.id === id), false);
+  const saved = await db.order.findUniqueOrThrow({ where: { id }, include: FLOW_ORDER_INCLUDE });
+  assert.equal(orderPhase(plainMoney(saved)), 'pos');
+  const report = { id, before: { intake: 'Payment', fulfillment: null }, after: { intake: null, fulfillment: 'Purchase' }, emailEnabled: false, deleted: false };
+  await fs.writeFile('qa-reports/board-handoff.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+}
+main().catch(error => { console.error(error instanceof Error ? error.message : 'Handoff verification failed'); process.exitCode = 1; }).finally(() => db.$disconnect());

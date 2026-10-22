@@ -1,7 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { evaluatePaymentGate } from "../flowRules";
 import { plainMoney } from "../money";
-import { salesOrderRequired } from "./salesOrder";
 import { serialTransaction } from "./transaction";
 import { parseDateOnly } from "../input";
 import { reconcileOrderStatus } from "./orderState";
@@ -32,7 +31,6 @@ export async function logPurchaseOrder(db: PrismaClient, input: {
     if (!order || order.status === "complete") throw new Error("This order is closed or missing.");
     const gate = evaluatePaymentGate(plainMoney(order));
     if (!gate.open) throw new Error(gate.reason);
-    if (!order.salesOrderSentAt) throw new Error(salesOrderRequired);
     const po = await tx.purchaseOrder.create({ data: {
       orderId: input.orderId, supplierId: input.supplierId,
       poNumber: number, autoQuotesPoNumber: number, expectedDate, status: "draft", shipTo: "hss",

@@ -8,6 +8,7 @@ export function loadDeliveryCollection<Row extends { id: string }>(
   where: Prisma.DeliveryWhereInput,
   limit: number,
   queryIds: (where: Prisma.DeliveryWhereInput, take?: number) => Promise<{ id: string }[]> = query,
+  sorted = false,
 ) {
   return loadBoardCollection<Row, Prisma.DeliveryWhereInput>(query, where, limit,
     [...DELIVERY_LEG_STATUSES.map(lane => ({ status: lane.value })), ...DELIVERY_MODES.map(lane => ({ mode: lane.value }))],

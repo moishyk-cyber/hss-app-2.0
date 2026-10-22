@@ -1,141 +1,27 @@
 "use client";
-
-// Top of the Invoice tab (plan §3C.3): the order's terms and the
-// customer-facing quote row. Both write through ../actions.
-//
-// Sep 4 (client): "Can we make the bills and the terms be a simple text box? I
-// upload the quote, I read it, and based on that I create the terms and the
-// invoices needed." So the terms are one free-text box - nothing is derived
-// from them, and the invoices below are added by hand.
-
 import { useState } from "react";
-import { PAYMENT_TERMS, labelFor } from "@/lib/constants";
+import { useRouter } from "next/navigation";
 import { updateOrderTermsText } from "@/lib/workflowActions";
 import { PendingButton } from "@/lib/ui";
 import { useToast } from "@/lib/toast";
-import { fmtDate } from "../utils";
-import { QuoteStatusControl, requestQuote, type SavedQuote } from "./QuoteStatusControl";
-import { ValidationDialog } from "@/lib/ValidationDialog";
-import { highlightSection } from "@/lib/SectionLink";
-import { useWorkflowSelection } from "@/lib/WorkflowSelection";
-
-type TermsCardProps = {
-  orderId: string;
-  termsNotes: string | null;
-  /** Legacy PAYMENT_TERMS value - prefills the box so an old order never reads blank. */
-  paymentTerms: string | null;
-  quoteStatus: string;
-  quoteUrl: string | null;
-  quoteSentAt: Date | null;
-  showQuote?: boolean;
-  showTerms?: boolean;
-};
-
-export default function TermsCard({
-  orderId,
-  termsNotes,
-  paymentTerms,
-  quoteStatus: savedStatus,
-  quoteUrl: savedUrl,
-  quoteSentAt: savedSentAt,
-  showQuote = true,
-  showTerms = true,
-}: TermsCardProps) {
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-  const selection = useWorkflowSelection();
-  const signature = JSON.stringify([savedStatus, savedUrl, savedSentAt]);
-  const [localQuote, setLocalQuote] = useState<{ base: string; quote: SavedQuote } | null>(null);
-  const current = localQuote?.base === signature ? localQuote.quote : null;
-  const quoteStatus = current?.quoteStatus ?? savedStatus;
-  const quoteUrl = current ? current.quoteUrl : savedUrl;
-  const quoteSentAt = current ? current.quoteSentAt ? new Date(current.quoteSentAt) : null : savedSentAt;
-  function applyQuote(quote: SavedQuote) { setLocalQuote({ base: signature, quote }); selection?.recordQuoteStatus(quote.quoteStatus); }
-
-  // Orders closed before terms became free text carry a PAYMENT_TERMS value
-  // instead - show its label so nothing old reads as "not set".
-  const initialText = termsNotes || (paymentTerms ? labelFor(PAYMENT_TERMS, paymentTerms) : "");
-  const [text, setText] = useState(initialText);
-  const [missingTerms, setMissingTerms] = useState(false);
-
-  async function handleSave(formData: FormData) {
-    const terms = String(formData.get("termsNotes") ?? "");
-    if (!terms.trim()) { setMissingTerms(true); return; }
-    const result = await updateOrderTermsText(orderId, terms);
-    if (result.ok) {
-      setError(null);
-      toast({ kind: "success", message: "Terms saved" });
-    } else {
-      setError(result.message);
-    }
-  }
-
-  async function handleQuoteLinkSave(formData: FormData) {
-    const url = String(formData.get("quoteUrl") ?? "");
-    try {
-      const quote = await requestQuote(orderId, { quoteStatus, quoteUrl: url });
-      applyQuote(quote);
-      toast({ kind: "success", message: "Quote link saved" });
-    } catch (error) { toast({ kind: "error", message: error instanceof Error ? error.message : "Could not save the quote link." }); }
-  }
-
-  return (
-    <div hidden={!showQuote && !showTerms} className="space-y-4">
-      <section hidden={!showQuote} aria-label="Customer quote" className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Customer quote</h3>
-        </div>
-        <QuoteStatusControl orderId={orderId} value={quoteStatus} quoteUrl={quoteUrl} onSaved={applyQuote} />
-        <p className="text-sm text-gray-dark">
-          {quoteStatus === "not_needed" ? "No customer quote is required for this order. Continue to the agreed terms and invoices." : quoteStatus === "accepted" ? "Customer approval is recorded. This step is complete." : quoteStatus === "sent" ? "Waiting for customer approval. When they approve, change the status above to Quote Accepted to complete this step." : "Prepare the quote in your quoting tool and send it to the customer. Save a link below, then change the status above to Quote Sent. Once the customer approves, select Quote Accepted."}
-        </p>
-        {!["not_needed", "accepted"].includes(quoteStatus) ? <p className="text-xs text-gray-dark">These statuses record what happened. This app does not create or email the quote; saving a link alone does not complete the step.</p> : null}
-        {quoteSentAt && <span className="text-xs text-gray-dark">Sent {fmtDate(quoteSentAt)}</span>}
-        <form action={handleQuoteLinkSave} className="flex flex-wrap items-end gap-2">
-          <label className="min-w-0 flex-1">
-          <span className="field-label">Quote document link (optional)</span>
-          <input
-            type="url"
-            name="quoteUrl"
-            defaultValue={quoteUrl ?? ""}
-            placeholder="https://…"
-            className="input-klyne w-full text-sm"
-          />
-          </label>
-          <PendingButton className="btn btn-sm active:scale-[0.99]" pendingText="Saving…">
-            Save link
-          </PendingButton>
-        </form>
-      </section>
-
-      {missingTerms ? <ValidationDialog issues={[{ field: "termsNotes", message: "Enter the terms agreed with the customer." }]} onClose={() => setMissingTerms(false)} onFix={() => { setMissingTerms(false); requestAnimationFrame(() => highlightSection("#order-terms")); }} /> : null}
-      <form id="order-terms" hidden={!showTerms} action={handleSave} className={`space-y-3 ${showQuote ? "border-t border-border pt-4" : ""}`}>
-        <label htmlFor="terms-notes" className="section-label">Customer terms</label>
-        <p id="customer-terms-help" className="text-xs text-gray-dark">Write the terms agreed with this customer in your own words.</p>
-        {error && (
-          <div role="alert" className="banner-alert">
-            {error}
-          </div>
-        )}
-        <textarea
-          id="terms-notes"
-          aria-describedby="customer-terms-help"
-          name="termsNotes"
-          rows={3}
-          maxLength={4000}
-          value={text}
-          onChange={event => setText(event.target.value)}
-          placeholder="Enter payment timing, deposit requirements, and any other agreed conditions…"
-          className="input-klyne w-full"
-        />
-        <div className="flex justify-end">
-          <PendingButton className="btn btn-primary btn-sm active:scale-[0.99]" pendingText="Saving…">
-            Save terms
-          </PendingButton>
-        </div>
-      </form>
-
-
-    </div>
-  );
+import { usePaymentTermsConversion, PaymentTermsPreview } from "@/lib/PaymentTermsField";
+import { MoneyInput } from "@/lib/MoneyInput";
+import { paymentPlanAmounts } from "@/lib/paymentTerms";
+export default function TermsCard({orderId,termsNotes,orderValue}:{orderId:string;termsNotes:string|null;paymentTerms:string|null;orderValue?:number|null}) {
+ const router=useRouter();
+ const [text,setText]=useState(termsNotes ?? "");
+ const [total,setTotal]=useState("");
+ const effectiveTotal=orderValue??(total.trim()?Number(total):null);
+ const [open,setOpen]=useState(false);
+ const conversion=usePaymentTermsConversion(text,open);
+ let invalid=!!text.trim() && (conversion.loading || !!conversion.error || conversion.plan?.status!=="ready" || !conversion.token);
+ try { if(conversion.plan?.status==="ready") paymentPlanAmounts(conversion.plan,effectiveTotal); } catch { invalid=true; }
+ const [error,setError]=useState<string|null>(null);const {toast}=useToast();
+ async function save(){const result=await updateOrderTermsText(orderId,text,conversion.token,orderValue==null&&total.trim()?Number(total):undefined);if(result.ok){setError(null);toast({kind:"success",message:"Payment terms applied"});router.refresh();}else setError(result.message);}
+ return <details id="order-terms" onToggle={event=>setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-medium">Payment terms</summary><form action={save} className="space-y-3 pt-3">
+ <label className="block"><span className="field-label">Payment terms</span><textarea name="termsNotes" value={text} onChange={e=>{setText(e.target.value);setError(null);}} rows={3} maxLength={4000} placeholder="e.g. 30% deposit before ordering; balance before delivery" className="input-klyne w-full" /></label>
+ {orderValue==null&&<label className="block max-w-xs"><span className="field-label">Agreed order total</span><MoneyInput value={total} onValueChange={setTotal} aria-label="Agreed order total" className="input-klyne w-full" /><span className="mt-1 block text-xs text-gray-dark">Set the total to calculate percentage-based payments.</span></label>}
+ <PaymentTermsPreview conversion={conversion} total={effectiveTotal} />
+ {error&&<p role="alert" className="banner-alert">{error}</p>}<fieldset disabled={invalid}><PendingButton className="btn btn-sm" pendingText="Saving…">Save payment terms</PendingButton></fieldset>
+ </form></details>;
 }

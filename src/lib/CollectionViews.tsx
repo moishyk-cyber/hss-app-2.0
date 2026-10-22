@@ -1,6 +1,7 @@
 "use client";
 import {
   Children,
+  isValidElement,
   useEffect,
   useRef,
   useState,
@@ -8,7 +9,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CollectionGroupScope, useCollectionTotal, useLaneTotal, useTableRecordIds } from "./CollectionScope";
+import { Spinner } from "./ui";
+import { collectionHref, stageCollectionQuery } from "./collectionNavigation";
 
 export function SortHeader({
   field,
@@ -19,7 +23,6 @@ export function SortHeader({
 }) {
   const params = useSearchParams();
   const router = useRouter();
-  const path = usePathname();
   const [pending, startTransition] = useTransition();
   const [key, dir] = (params.get("sort") ?? "").split(":");
   return (
@@ -38,23 +41,25 @@ export function SortHeader({
           disabled={pending}
           aria-busy={pending}
           onClick={(event) => {
-            const q = new URLSearchParams(params);
-            q.set(
+            const q = stageCollectionQuery(query => {
+            const [currentKey, currentDir] = (query.get("sort") ?? "").split(":");
+            query.set(
               "sort",
-              `${field}:${key === field && dir !== "desc" ? "desc" : "asc"}`,
+              `${field}:${currentKey === field && currentDir !== "desc" ? "desc" : "asc"}`,
             );
-            q.delete("page");
-            q.delete("records");
+            query.delete("page");
+            query.delete("records");
+            });
             event.currentTarget.closest(".table-scroll")?.scrollTo({ top: 0 });
             startTransition(() =>
-              router.replace(`${path}?${q}`, { scroll: false }),
+              router.replace(collectionHref(q), { scroll: false }),
             );
           }}
         >
           {children}
           <span aria-hidden>
             {pending
-              ? "…"
+              ? <Spinner />
               : key === field
                 ? dir === "desc"
                   ? "↓"
@@ -75,8 +80,12 @@ export function TableRows({
   children: ReactNode;
   columns: number;
 }) {
-  const rows = Children.toArray(children);
-  const [page, setPage] = useState(0);
+  const total=useCollectionTotal();
+  const allowed=useTableRecordIds();
+  const rows: ReactNode[]=[];
+  Children.forEach(children,row=>{if(!allowed || (isValidElement(row) && allowed.has(String(row.key)))) rows.push(row);});
+  const [visible, setVisible] = useState(30);
+  const sentinel = useRef<HTMLTableRowElement>(null);
   const params = useSearchParams();
   const resetParams = new URLSearchParams(params);
   resetParams.delete("records");
@@ -84,50 +93,22 @@ export function TableRows({
   const [previous, setPrevious] = useState(query);
   if (previous !== query) {
     setPrevious(query);
-    setPage(0);
+    setVisible(30);
   }
-  const current = Math.min(page, Math.max(0, Math.ceil(rows.length / 30) - 1));
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      if (visible < rows.length) setVisible(count => Math.min(count + 30, rows.length));
+      else if (total === undefined || rows.length < total) window.dispatchEvent(new CustomEvent("collection:load-more", { detail: { point: node.querySelector<HTMLElement>(".collection-load-point") } }));
+    }, { root: node.closest(".table-scroll"), rootMargin: "0px 0px 160px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible, rows.length, query, total]);
   return (
     <>
-      <tbody>{rows.slice(current * 30, (current + 1) * 30)}</tbody>
-      {rows.length > 30 && (
-        <tfoot>
-          <tr>
-            <td colSpan={columns}>
-              <div className="pagination">
-                <span role="status">
-                  {current * 30 + 1}–{Math.min((current + 1) * 30, rows.length)}{" "}
-                  of {rows.length}
-                </span>
-                <button
-                  className="btn btn-sm"
-                  disabled={!current}
-                  onClick={(e) => {
-                    setPage(current - 1);
-                    e.currentTarget
-                      .closest(".table-scroll")
-                      ?.scrollTo({ top: 0 });
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  className="btn btn-sm"
-                  disabled={(current + 1) * 30 >= rows.length}
-                  onClick={(e) => {
-                    setPage(current + 1);
-                    e.currentTarget
-                      .closest(".table-scroll")
-                      ?.scrollTo({ top: 0 });
-                  }}
-                >
-                  Next
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tfoot>
-      )}
+      <tbody>{rows.slice(0, visible)}<tr ref={sentinel} data-collection-sentinel><td colSpan={columns} className="collection-sentinel"><div className="collection-load-point" /></td></tr></tbody>
     </>
   );
 }
@@ -142,11 +123,20 @@ function subscribeOrder(callback: () => void) {
 export function LaneItems({
   children,
   laneKey,
+  total: suppliedTotal,
 }: {
   children: ReactNode;
   laneKey: string;
+  total?: number;
 }) {
+  const scopedTotal=useCollectionTotal();
+  const total=suppliedTotal??scopedTotal;
   const laneRef = useRef<HTMLDivElement>(null);
+  const laneEnd = useRef<HTMLDivElement>(null);
+  const params = useSearchParams();
+  const resetParams = new URLSearchParams(params);
+  resetParams.delete("records");
+  const query = resetParams.toString();
   useEffect(() => {
     const lane = laneRef.current;
     if (!lane) return;
@@ -172,6 +162,19 @@ export function LaneItems({
   }, []);
   const rows = Children.toArray(children);
   const [limit, setLimit] = useState(20);
+  const [previousQuery, setPreviousQuery] = useState(query);
+  if (previousQuery !== query) { setPreviousQuery(query); setLimit(20); }
+  useEffect(() => {
+    const node = laneEnd.current;
+    if (!node || !rows.length) return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      if (limit < rows.length) setLimit(value => Math.min(value + 20, rows.length));
+      else if (total === undefined || rows.length < total) window.dispatchEvent(new CustomEvent("collection:load-more", { detail: { point: node } }));
+    }, { root: node.closest(".kanban-lane"), rootMargin: "0px 0px 160px 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [limit, rows.length, query, total]);
   const [memoryOrder, setMemoryOrder] = useState<string[]>([]);
   const storageKey = `hss-board:${laneKey}`;
   const stored = useSyncExternalStore(
@@ -195,7 +198,7 @@ export function LaneItems({
   const keyOf = (row: ReactNode) =>
     String((row as { key?: string })?.key ?? "");
   const ranks = new Map(order.map((key, index) => [key, index]));
-  const sorted = [...rows].sort(
+  const sorted = params.get("sort") ? rows : [...rows].sort(
     (a, b) =>
       (ranks.get(keyOf(a)) ?? Infinity) - (ranks.get(keyOf(b)) ?? Infinity),
   );
@@ -219,7 +222,7 @@ export function LaneItems({
         <div
           className="lane-entry"
           key={keyOf(row)}
-          draggable
+          draggable={!params.get("sort")}
           onDragStartCapture={(e) => {
             if ((e.target as HTMLElement).closest("input,select,button")) {
               e.preventDefault();
@@ -238,7 +241,7 @@ export function LaneItems({
           }}
         >
           {row}
-          <div className="lane-reorder">
+          {!params.get("sort") && <div className="lane-reorder">
             <button
               type="button"
               className="sr-only focus:not-sr-only btn btn-sm"
@@ -255,32 +258,30 @@ export function LaneItems({
             >
               Move card down
             </button>
-          </div>
+          </div>}
         </div>
       ))}
-      {rows.length > limit && (
-        <button
-          className="btn btn-sm w-full"
-          onClick={() => setLimit(limit + 20)}
-        >
-          Load {Math.min(20, rows.length - limit)} more · {rows.length - limit}{" "}
-          remaining
-        </button>
-      )}
+      <div ref={laneEnd} className="collection-load-point" />
     </div>
   );
 }
 export function CollectionGroup({
   title,
   count,
+  totalField,
+  totalValue,
   children,
   flat = false,
 }: {
   title: string;
   count: number;
+  totalField?: string;
+  totalValue?: string;
   children: ReactNode;
   flat?: boolean;
 }) {
+  const total=useLaneTotal(totalField??"");
+  const shownCount=totalField&&totalValue?total(totalValue,count):count;
   if (flat) return <>{children}</>;
   return (
     <details open className="collection-group">
@@ -289,9 +290,9 @@ export function CollectionGroup({
           ›
         </span>
         {title}
-        <span className="group-count">{count}</span>
+        <span className="group-count">{shownCount}</span>
       </summary>
-      <div className="group-content">{children}</div>
+      <div className="group-content"><CollectionGroupScope total={shownCount}>{children}</CollectionGroupScope></div>
     </details>
   );
 }

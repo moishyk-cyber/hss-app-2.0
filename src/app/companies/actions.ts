@@ -22,23 +22,22 @@ function bool(formData: FormData, key: string): boolean {
   return formData.get(key) === "1";
 }
 
-/** Whole percent, clamped to 0-100. Anything unparseable falls back to the house default. */
-function percent(formData: FormData, key: string, fallback: number): number {
+/** Missing or malformed percentages must never turn into assumed account terms. */
+function percent(formData: FormData, key: string): number {
   const raw = str(formData, key);
-  if (raw == null) return fallback;
-  const parsed = Number.parseInt(raw.replace(/[^0-9-]/g, ""), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(100, Math.max(0, parsed));
+  return raw == null ? 0 : Number(raw);
 }
 
 function readCompanyFields(formData: FormData) {
+  const terms = str(formData, "accountPaymentTerms");
   return {
     name: str(formData, "name") ?? "Untitled company",
     type: str(formData, "type") ?? "customer",
     vertical: str(formData, "vertical"),
     priorityClient: bool(formData, "priorityClient"),
-    requiresDeposit: bool(formData, "requiresDeposit"),
-    depositPercent: percent(formData, "depositPercent", 30),
+    paymentTermsConfigured: ["deposit", "full", "none"].includes(terms ?? ""),
+    requiresDeposit: terms !== "none",
+    depositPercent: terms === "full" ? 100 : terms === "none" ? 0 : percent(formData, "depositPercent"),
     phone: str(formData, "phone"),
     phoneExt: str(formData, "phoneExt"),
     cellPhone: str(formData, "cellPhone"),
@@ -54,6 +53,7 @@ function readCompanyFields(formData: FormData) {
 
 /** True when type/vertical hold values this app actually recognises. */
 function companyEnumsValid(data: ReturnType<typeof readCompanyFields>): boolean {
+  if (data.paymentTermsConfigured && data.requiresDeposit && (!Number.isInteger(data.depositPercent) || data.depositPercent <= 0 || data.depositPercent > 100)) return false;
   if (!isValidValue(COMPANY_TYPES, data.type)) return false;
   if (data.vertical && !isValidValue(COMPANY_VERTICALS, data.vertical)) return false;
   return true;

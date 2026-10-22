@@ -15,7 +15,7 @@ export function CloseoutControl({ orderId, step }: { orderId: string; step: Jour
   return <div id="order-complete" className="mt-5 border-t border-border pt-4 space-y-3">
     <h3 className="text-sm font-semibold">Finish this order</h3>
     {current.state === "complete" ? <p className="text-sm text-gray-dark">All requirements are met. This order is complete.</p> : <>
-      <p className="text-sm text-gray-dark">Confirm the quote, terms, payment and delivery requirements, and resolve any open service issues.</p>
+      <p className="text-sm text-gray-dark">Confirm payment and delivery requirements are met, and resolve any open service issues.</p>
       {issues.length ? <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowIssues(true)}>Mark complete</button> : <ActionButton action={() => markOrderComplete(orderId)} className="btn btn-primary btn-sm">Mark complete</ActionButton>}
     </>}
     {showIssues ? <ValidationDialog title="Complete these requirements first" issues={issues} onClose={() => setShowIssues(false)} onFix={() => { setShowIssues(false); if (issues[0]?.href) requestAnimationFrame(() => highlightSection(issues[0].href!)); }} /> : null}

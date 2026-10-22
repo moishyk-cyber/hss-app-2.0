@@ -1,5 +1,6 @@
 "use client";
 
+import { lockDialogScroll } from "./dialogLocks";
 import { useEffect, useRef, type RefObject } from "react";
 
 /** Shared keyboard containment, dismissal, and return focus for short actions. */
@@ -9,9 +10,9 @@ export function useDialogAccessibility(panel: RefObject<HTMLDivElement | null>, 
   useEffect(() => { close.current = onClose; busy.current = pending; }, [onClose, pending]);
   useEffect(() => {
     if (!open) return;
+    const dialog = panel.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockDialogScroll(document.body);
     panel.current?.focus();
     const focusable = () => Array.from(panel.current?.querySelectorAll<HTMLElement>(
       'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])'
@@ -44,8 +45,9 @@ export function useDialogAccessibility(panel: RefObject<HTMLDivElement | null>, 
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("focusin", contain);
-      document.body.style.overflow = overflow;
-      if (opener?.isConnected) opener.focus();
+      unlockScroll();
+      const front = Array.from(document.querySelectorAll('[role="dialog"]')).at(-1);
+      if (opener?.isConnected && (!front || front === dialog || front.contains(opener))) opener.focus();
     };
   }, [open, panel]);
 }

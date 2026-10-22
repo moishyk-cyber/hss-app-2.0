@@ -1,3 +1,4 @@
+import { readPaymentPlan, paymentPlanAmounts } from "../paymentTerms";
 import type { Prisma } from "@prisma/client";
 import { deriveOrderStatus, FLOW_ORDER_INCLUDE, MANUAL_STATUSES } from "../flowRules";
 import { plainMoney, roundCents, toMoney } from "../money";
@@ -17,7 +18,7 @@ export async function reconcileOrderStatus(db: Prisma.TransactionClient, orderId
 export async function reconcileOrderValue(db: Prisma.TransactionClient, orderId: string) {
   const order = await db.order.findUnique({
     where: { id: orderId },
-    select: { orderValue: true, lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } } },
+    select: { orderValue: true, paymentPlan: true, lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } } },
   });
   if (!order) throw new Error("Order not found");
   const previous = toMoney(order.orderValue);
@@ -26,6 +27,6 @@ export async function reconcileOrderValue(db: Prisma.TransactionClient, orderId:
   if (!live.length || live.some(i => i.unitPrice == null || Number(i.unitPrice) <= 0)) return null;
   const total = roundCents(live.reduce((sum, i) => sum + Number(i.unitPrice) * i.qty, 0));
   if (previous != null && Math.abs(previous - total) < 0.005) return null;
-  await db.order.update({ where: { id: orderId }, data: { orderValue: total } });
+  await db.order.update({ where: { id: orderId }, data: { orderValue: total, ...(order.paymentPlan ? { depositRequired: paymentPlanAmounts(readPaymentPlan(order.paymentPlan)!, total).requiredBeforePurchase } : {}) } });
   return { previous, total };
 }

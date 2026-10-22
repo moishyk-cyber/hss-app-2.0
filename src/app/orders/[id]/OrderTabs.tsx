@@ -17,7 +17,6 @@ const HASH_TO_TAB: Record<string, TabKey> = {
   "#invoice": "invoice",
   "#order-terms": "invoice",
   "#order-complete": "service",
-  "#quote-status": "invoice",
   "#payments": "invoice", // legacy anchor, kept working
   "#purchase-orders": "purchase-orders",
   "#delivery": "delivery",
@@ -35,6 +34,7 @@ const TABS: { key: TabKey; label: string; hash: string }[] = [
 
 export function OrderTabs({
   defaultTab,
+  showTabs = true,
   invoice,
   purchaseOrders,
   delivery,
@@ -42,6 +42,7 @@ export function OrderTabs({
   service,
 }: {
   defaultTab: TabKey;
+  showTabs?: boolean;
   invoice: React.ReactNode;
   purchaseOrders: React.ReactNode;
   delivery: React.ReactNode;
@@ -51,8 +52,7 @@ export function OrderTabs({
   const [manualTab, setTab] = useState<TabKey>(defaultTab);
   const selection = useWorkflowSelection();
   const selectStep = selection?.select;
-  const selectedStep = selection?.selectedKey;
-  const stepTabs: Record<string, TabKey> = { salesOrder: "purchase-orders", quote: "invoice", terms: "invoice", deposit: "invoice", pos: "purchase-orders", delivery: "delivery", service: "service", files: "files" };
+  const stepTabs: Record<string, TabKey> = { deposit: "invoice", pos: "purchase-orders", delivery: "delivery", service: "service", files: "files" };
   const tab = selection ? stepTabs[selection.selectedKey] ?? manualTab : manualTab;
 
   // Sep 3 QA #7: the header's "Record payment" (and the stepper's step links)
@@ -82,7 +82,7 @@ export function OrderTabs({
     function syncFromHash() {
       const mapped = HASH_TO_TAB[window.location.hash];
       if (mapped) setTab(mapped);
-      const destinations: Record<string, string> = { "#quote-status": "quote", "#order-terms": "terms", "#payments": "deposit", "#purchase-orders": "pos", "#delivery": "delivery", "#service": "service", "#order-complete": "service", "#files": "files" };
+      const destinations: Record<string, string> = { "#order-terms": "deposit", "#payments": "deposit", "#purchase-orders": "pos", "#delivery": "delivery", "#service": "service", "#order-complete": "service", "#files": "files" };
       const destination = destinations[window.location.hash];
       if (destination) { selectStep?.(destination); requestAnimationFrame(() => highlightSection(window.location.hash, rootRef.current)); }
     }
@@ -108,15 +108,14 @@ export function OrderTabs({
       if (!mapped) return;
       e.preventDefault();
       const hash = href.slice(hashIdx);
-      if (hash === "#order-terms" || hash === "#payments") { selectStep?.(hash === "#order-terms" ? "terms" : "deposit"); setTab("invoice"); requestAnimationFrame(() => highlightSection(hash, rootRef.current)); return; }
-      if (href.slice(hashIdx) === "#quote-status") { selectStep?.("quote"); setTab("invoice"); requestAnimationFrame(() => highlightSection("#quote-status", rootRef.current)); return; }
-      if (selectStep) selectStep(mapped === "invoice" ? selectedStep && ["terms", "deposit"].includes(selectedStep) ? selectedStep : "quote" : mapped === "purchase-orders" ? "pos" : mapped);
+      if (hash === "#order-terms" || hash === "#payments") { selectStep?.("deposit"); setTab("invoice"); requestAnimationFrame(() => highlightSection(hash, rootRef.current)); return; }
+      if (selectStep) selectStep(mapped === "invoice" ? "deposit" : mapped === "purchase-orders" ? "pos" : mapped);
       setTab(mapped);
       requestAnimationFrame(() => { if (!highlightSection(hash, rootRef.current)) drawAttention(); });
     }
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, [drawAttention, selectStep, selectedStep]);
+  }, [drawAttention, selectStep]);
 
   function selectTab(next: TabKey, hash: string) {
     setTab(next);
@@ -126,7 +125,7 @@ export function OrderTabs({
 
   return (
     <div ref={rootRef} className="scroll-mt-4">
-      <div role="tablist" aria-label="Order sections" className="flex gap-1 border-b border-border">
+      {showTabs && <div role="tablist" aria-label="Order sections" className="flex gap-1 border-b border-border">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
@@ -147,7 +146,7 @@ export function OrderTabs({
             </button>
           );
         })}
-      </div>
+      </div>}
       {/* The ring snaps on and fades out via the transition once `flash` clears. */}
       <div
         className={

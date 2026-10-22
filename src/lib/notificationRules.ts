@@ -19,7 +19,7 @@ export function activeRecipients(ids: readonly string[], users: NotificationUser
 /** Resolve the same configured people/role as ball in court; closing always follows the salesperson. */
 export function courtRecipients(step: FlowStepKey | null, salespersonId: string | null, users: NotificationUser[], settings: Record<string, string>) {
   if (!step) return [];
-  if (step === "close") return salespersonId ? activeRecipients([salespersonId], users) : [];
+  if (step === "close" || step === "clientQuote") return salespersonId ? activeRecipients([salespersonId], users) : [];
   const pinned = activeRecipients((settings[`court.${step}.userIds`] ?? "").split(",").map(id => id.trim()), users);
   if (pinned.length) return pinned;
   const court = FLOW_STEPS.find(s => s.key === step)!.court;

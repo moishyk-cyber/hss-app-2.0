@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
-import { requirePermission } from "@/lib/permissionsServer";
+import { currentUser, requirePermission } from "@/lib/permissionsServer";
 import { currentUserName } from "@/lib/identityServer";
 import { DOCUMENT_KINDS, labelFor } from "@/lib/constants";
 import {
@@ -52,6 +52,10 @@ async function attachmentAction(work: () => Promise<void>, message: string): Pro
  * first. A PO that has since been deleted just skips the revalidate.
  */
 async function revalidateFor(linkedType: string, linkedId: string): Promise<void> {
+  // Both boards include files from the whole record lifecycle.
+  revalidatePath("/pipeline");
+  revalidatePath("/orders");
+  revalidatePath("/records/[id]", "page");
   if (linkedType === "order") {
     revalidatePath(`/orders/${linkedId}`);
     revalidatePath("/orders");
@@ -160,6 +164,7 @@ export async function finalizeUpload(
 
 /** A 1-hour link to an uploaded file. Reads aren't logged. */
 export async function getSignedDownloadUrl(documentId: string): Promise<SignedUrlResult> {
+  if (!await currentUser()) return { ok: false, message: "Sign in again to view files." };
   if (!uploadsConfigured()) return { ok: false, message: NOT_CONFIGURED };
   try {
     const doc = await prisma.document.findUnique({

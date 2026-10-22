@@ -1,4 +1,6 @@
 "use server";
+import { requireAccountPaymentTerms, AccountTermsRequiredError } from "@/lib/accountPaymentTerms";
+import { verifiedPaymentInterpretation } from "@/lib/interpretPaymentTerms";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -61,7 +63,7 @@ async function saveDrawingLink(
 function formSnapshot(formData: FormData): Record<string, string | string[]> {
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of formData.entries()) {
-    if (typeof value !== "string") continue;
+    if (typeof value !== "string" || key === "paymentTermsToken") continue;
     const existing = out[key];
     if (existing === undefined) out[key] = value;
     else if (Array.isArray(existing)) existing.push(value);
@@ -118,10 +120,15 @@ export async function submitIntake(formData: FormData) {
   // Audited but not parsed back - capped so a runaway/garbage submission can't
   // write an unbounded blob.
   const payload = cleanText(JSON.stringify(formSnapshot(formData)), 20000);
-  // Terms only reach the form when the intake becomes an order straight away.
-  // Free text since Sep 4 (client) - nothing is derived from it and no invoice
-  // is created; those are added by hand on the order's Invoice tab.
+  // Direct-order terms are automatically interpreted before submission.
   const termsNotes = text(formData, "termsNotes", TEXT_LIMITS.long);
+  let interpretation: ReturnType<typeof verifiedPaymentInterpretation> | null = null;
+  try { interpretation = termsNotes ? verifiedPaymentInterpretation(termsNotes, formData.get("paymentTermsToken")) : null; }
+  catch { redirect("/intake?error=payment_terms"); }
+
+  const deliveryType = str(formData, "deliveryType");
+  if (deliveryType && !["curbside", "inside"].includes(deliveryType)) redirect("/intake?error=invalid_value");
+  const deliveryDetails = { deliveryType, installationNeeded: formData.get("installationNeeded") === "yes", floorNote: text(formData, "floorNote", TEXT_LIMITS.medium), openingSize: deliveryType === "inside" ? text(formData, "openingSize", TEXT_LIMITS.short) : null };
 
   const goesToPipeline = orderType === "project" || needsPricing;
 
@@ -206,6 +213,7 @@ export async function submitIntake(formData: FormData) {
   try {
     result = await runIntakeTransaction();
   } catch (err) {
+    if (err instanceof AccountTermsRequiredError) redirect("/intake?error=account_terms_required");
     console.error(err);
     redirect("/intake?error=save_failed");
   }
@@ -345,7 +353,7 @@ export async function submitIntake(formData: FormData) {
       const created = await tx.location.create({
         data: {
           companyId,
-          name: locationName ?? "Main location",
+          name: locationName ?? deliveryAddress.slice(0, TEXT_LIMITS.short),
           address: deliveryAddress,
           isDefault: existingLocations === 0,
         },
@@ -382,13 +390,7 @@ export async function submitIntake(formData: FormData) {
             orderType === "project" ? text(formData, "roomDimensions", TEXT_LIMITS.short) : null,
           wallMeasurements:
             orderType === "project" ? text(formData, "wallMeasurements", TEXT_LIMITS.short) : null,
-          deliveryType: orderType === "project" ? str(formData, "deliveryType") : null,
-          openingSize:
-            orderType === "project" && str(formData, "deliveryType") === "inside"
-              ? text(formData, "openingSize", TEXT_LIMITS.short)
-              : null,
-          installationNeeded:
-            orderType === "project" && formData.get("installationNeeded") === "yes",
+          ...deliveryDetails,
           notes: text(formData, "notes", TEXT_LIMITS.long),
           lineItems: {
             create: items.map((item) => ({
@@ -417,6 +419,7 @@ export async function submitIntake(formData: FormData) {
       return { type: "opportunity" as const, id: opportunity.id, title };
     }
 
+    await requireAccountPaymentTerms(tx, companyId);
     const order = await tx.order.create({
       data: {
         title,
@@ -429,8 +432,14 @@ export async function submitIntake(formData: FormData) {
         neededByDate,
         locationId,
         deliveryAddress,
+        ...deliveryDetails,
+        intakeDeliveryAddress: deliveryAddress,
+        intakeLocationName: locationName,
         notes: text(formData, "notes", TEXT_LIMITS.long),
         termsNotes,
+        paymentPlan: interpretation?.plan,
+        paymentTerms: interpretation ? "custom" : null,
+        depositRequired: interpretation?.plan.purchaseRequirement === "none" ? 0 : null,
         lineItems: {
           create: items.map((item) => ({
             name: item.name,

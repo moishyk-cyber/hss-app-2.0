@@ -63,7 +63,7 @@ export function createFulfillment(db: PrismaClient, effects: FulfillmentEffects)
               order: {
                 include: {
                   payments: true,
-                  company: { select: { requiresDeposit: true, depositPercent: true } },
+                  company: { select: { requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true } },
                 },
               },
               deliveries: { select: { id: true, mode: true }, orderBy: { createdAt: "asc" }, take: 1 },

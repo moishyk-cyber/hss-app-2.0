@@ -6,7 +6,7 @@ import { currentUser } from "@/lib/permissionsServer";
 import { PageHeader } from "@/lib/PageLayout";
 import { ListControls } from "@/lib/ListControls";
 import { TableRows } from "@/lib/CollectionViews";
-import { MoreRecords } from "@/lib/CollectionWindow";
+import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
 import { NotificationControls, ReadNotificationButton } from "./NotificationControls";
 import type { ListField } from "@/lib/listQuery";
 
@@ -19,8 +19,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const params = await searchParams;
   const unreadOnly = params.scope === "unread";
   const search = typeof params.q === "string" ? params.q.trim().slice(0, 200) : "";
-  const rawLimit = Number(params.records);
-  const limit = Number.isSafeInteger(rawLimit) ? Math.max(120, Math.min(rawLimit, 1200)) : 120;
+  const limit = collectionLimit(params);
   const where = { userId: user.id, ...(unreadOnly ? { readAt: null } : {}), ...(search ? { OR: [{ title: { contains: search, mode: "insensitive" as const } }, { message: { contains: search, mode: "insensitive" as const } }] } : {}) };
   const [rows, count] = await Promise.all([
     prisma.notification.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit + 1 }),
@@ -28,11 +27,10 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   ]);
   const hasMore = rows.length > limit;
   return <div>
-    <PageHeader title="Notifications" subtitle="Updates for you. New alerts appear while the app is open; enable sound for a buzz."
+    <PageHeader title="Notifications" subtitle="Your workflow updates and task reminders."
       toolbar={<Suspense><ListControls fields={fields} searchParam="q" count={count} scopeSelect={{ label: "Notifications", value: unreadOnly ? "unread" : "all", options: [{ value: "all", label: "All" }, { value: "unread", label: "Unread" }], param: "scope" }} /></Suspense>}>
       <NotificationControls />
     </PageHeader>
-    <p className="mb-4 text-sm text-gray-dark">Updates refresh every 30 seconds while the app is open. Turn on sound for a buzz in this session.</p>
     {!rows.length ? <div className="empty-state">{search ? "No notifications match your search." : unreadOnly ? "You’re all caught up. No unread notifications." : "No notifications yet. Your workflow handoffs and task reminders will appear here."}</div> : <>
       <div className="table-scroll"><table className="table-klyne">
         <thead><tr><th>Status</th><th>Notification</th><th>Received (UTC)</th><th><span className="sr-only">Actions</span></th></tr></thead>

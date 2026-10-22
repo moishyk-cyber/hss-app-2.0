@@ -12,6 +12,7 @@ import { currentUserName, sessionUserIsGone } from "@/lib/identityServer";
 import { can } from "@/lib/permissionsServer";
 import { ToastProvider } from "@/lib/toast";
 import "./globals.css";
+import { appMode } from '@/lib/environmentMode';
 
 const archivo = Archivo({
   variable: "--font-archivo",
@@ -26,7 +27,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "HSS Kitchens",
+  title: appMode() === 'dev' ? 'HSS Kitchens — Testing' : 'HSS Kitchens',
   description: "CRM, Order & Purchasing Management",
 };
 
@@ -47,7 +48,7 @@ export default async function RootLayout({
         lang="en"
         className={`${archivo.variable} ${inter.variable} h-full antialiased`}
       >
-        <body className="min-h-full bg-bg text-ink">{children}</body>
+        <body className="min-h-full bg-bg text-ink">{appMode() === 'dev' && <div className="bg-ink px-4 py-2 text-center text-sm text-white">Testing environment</div>}{children}</body>
       </html>
     );
   }
@@ -90,7 +91,7 @@ export default async function RootLayout({
                       HSS Kitchens
                     </div>
                     <div className="brand-tagline">
-                      Sales · Orders · Purchasing
+                      {appMode() === 'dev' ? 'Testing environment' : 'Sales · Orders · Purchasing'}
                     </div>
                   </div>
                 </Link>

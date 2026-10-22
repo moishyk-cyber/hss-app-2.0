@@ -1,3 +1,4 @@
+import { databaseConnectionUrl } from "../src/lib/environmentMode";
 // Applies monday board_relation links (hss_relations.json) after seed.ts runs.
 // monday's API returns board_relation values only via a typed fragment, so the
 // main export (hss_items.json) has them empty — this file patches the FKs.
@@ -5,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import * as fs from "fs";
 import * as path from "path";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ datasourceUrl: databaseConnectionUrl() });
 
 type RelItem = { id: string; column_values: Array<{ id?: string; linked_item_ids?: string[] }> };
 type RelBoard = { id: string; items_page: { items: RelItem[] } };

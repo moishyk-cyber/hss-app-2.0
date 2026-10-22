@@ -7,7 +7,7 @@
 // here, same escape hatch as the business/contact/vendor comboboxes.
 // Menu renders through the shared DropMenu portal so the list card can't clip it.
 
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DropMenu, useDismiss, Spinner } from "@/lib/ui";
 import { setDeliveryTrucker } from "../orders/actions";
@@ -32,12 +32,17 @@ export function TruckerSelect({
 
   useDismiss(open, () => setOpen(false), [boxRef, menuRef]);
 
-  const known = [...new Set(optimistic ? [...truckers, optimistic] : truckers)].sort();
+  const known = useMemo(() => [...new Set(optimistic ? [...truckers, optimistic] : truckers)].sort(), [truckers, optimistic]);
   const trimmed = query.trim();
   const matches = trimmed
     ? known.filter((t) => t.toLowerCase().includes(trimmed.toLowerCase()))
     : known;
   const canAdd = trimmed !== "" && !known.some((t) => t.toLowerCase() === trimmed.toLowerCase());
+
+  function addNew() {
+    setOpen(false);
+    router.push(`/carriers-truckers/new?${new URLSearchParams({ name: trimmed, deliveryId })}`);
+  }
 
   function pick(next: string) {
     setOpen(false);
@@ -89,7 +94,7 @@ export function TruckerSelect({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  if (canAdd) pick(trimmed);
+                  if (canAdd) addNew();
                   else if (matches.length === 1) pick(matches[0]);
                 }
               }}
@@ -110,7 +115,7 @@ export function TruckerSelect({
                 </button>
               </li>
             ) : null}
-            {matches.map((t) => (
+            {matches.slice(0, 50).map((t) => (
               <li key={t} role="option" aria-selected={t === optimistic}>
                 <button
                   type="button"
@@ -123,14 +128,12 @@ export function TruckerSelect({
                 </button>
               </li>
             ))}
+            {matches.length > 50 && <li className="px-3 py-2 text-xs text-gray-dark">Type a name to narrow {matches.length.toLocaleString()} truckers.</li>}
             {canAdd ? (
               <li role="option" aria-selected={false}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    router.push(`/carriers-truckers/new?${new URLSearchParams({ name: trimmed, deliveryId })}`);
-                  }}
+                  onClick={addNew}
                   className="w-full border-t border-border px-3 py-2 text-left text-[13px] font-medium text-primary transition-colors hover:bg-hover"
                 >
                   ＋ Add “{trimmed}”

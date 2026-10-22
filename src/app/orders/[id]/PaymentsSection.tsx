@@ -9,13 +9,14 @@
 // "Mark paid" is no longer a bare one-click write (Sep 2 QA P0: a $2,500
 // payment got fired by a stray click): it opens a review dialog - amount,
 // invoice link, received date, method, who it's logged under - then confirms,
-// logs, and offers Undo. Paid rows keep a confirm-guarded "Mark unpaid" so the
-// mistake stays fixable after the toast is gone.
+// logs, and closes the review. Mark unpaid confirms removal of the invoice
+// and its received amount before applying the change.
 
 import { MoneyInput } from "@/lib/MoneyInput";
 import { useWorkflowSelection } from "@/lib/WorkflowSelection";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PaymentGate } from "@/lib/flow";
 import {
   addInvoice,
@@ -25,12 +26,13 @@ import {
   setPaymentQuickbooksRef,
 } from "@/lib/workflowActions";
 import { fmtDate, PAYMENT_METHODS, PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "../utils";
-import { PendingButton, ActionButton } from "@/lib/ui";
+import { PendingButton, ActionButton, EditIconButton } from "@/lib/ui";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { useToast } from "@/lib/toast";
 import { fmtUSD } from "@/lib/money";
 import { ymdToday } from "@/lib/dates";
 import TermsCard from "./TermsCard";
+import { InvoiceEditor } from "@/app/invoices/InvoiceEditor";
 import { InvoiceDueDate } from "@/app/invoices/InvoiceDueDate";
 
 export type Payment = {
@@ -55,6 +57,7 @@ export function MarkPaidControl({ payment, initialOpen = false, hideTrigger = fa
   const [method, setMethod] = useState("check");
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const router = useRouter();
 
   async function handleConfirm() {
     setPending(true);
@@ -67,11 +70,10 @@ export function MarkPaidControl({ payment, initialOpen = false, hideTrigger = fa
       }
       setOpen(false);
       onSaved?.();
+      router.refresh();
       toast({
         kind: "success",
         message: `${fmtUSD(payment.amount, { cents: true })} ${payment.type} payment marked paid`,
-        actionLabel: "Undo",
-        onAction: () => undoMarkPaymentPaid(payment.id),
       });
     } finally {
       setPending(false);
@@ -170,14 +172,16 @@ export function UnmarkPaidControl({ payment }: { payment: Payment }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const { toast } = useToast();
+  const router = useRouter();
 
   async function handleConfirm() {
     setPending(true);
     try {
-      const result = await undoMarkPaymentPaid(payment.id);
+      const result = await undoMarkPaymentPaid(payment.id, { amount: payment.amount, status: payment.status, dueDate: payment.dueDate ? new Date(payment.dueDate).toISOString().slice(0, 10) : "" });
       setOpen(false);
       if (result.ok) {
-        toast({ kind: "info", message: "Payment moved back to invoiced" });
+        router.refresh();
+        toast({ kind: "info", message: "Invoice removed and received amount cleared" });
       } else {
         toast({ kind: "error", message: result.message });
       }
@@ -199,15 +203,14 @@ export function UnmarkPaidControl({ payment }: { payment: Payment }) {
       </button>
       <ConfirmDialog
         open={open}
-        title="Move this payment back to invoiced?"
+        title="Mark unpaid and remove this invoice?"
         confirmLabel="Mark unpaid"
         danger
         pending={pending}
         onConfirm={handleConfirm}
         onClose={() => setOpen(false)}
       >
-        The {fmtUSD(payment.amount, { cents: true })} {payment.type} payment goes back to
-        &ldquo;invoiced&rdquo; and its paid date is cleared. The change is logged.
+        The {fmtUSD(payment.amount, { cents: true })} {payment.type} invoice and its received amount will be removed from HSS. The payment requirement and next step will be recalculated. This cannot be undone.
       </ConfirmDialog>
     </>
   );
@@ -246,13 +249,7 @@ export function QuickBooksLinkControl({ payment }: { payment: Payment }) {
         ) : (
           <span className="empty-value">no QuickBooks link</span>
         )}
-        <button
-          type="button"
-          className="text-gray transition-colors hover:text-ink hover:underline"
-          onClick={() => setEditing(true)}
-        >
-          {payment.quickbooksRef ? "Edit" : "Add link"}
-        </button>
+        <EditIconButton label="Edit QuickBooks link" onClick={() => setEditing(true)} />
       </span>
     );
   }
@@ -283,13 +280,11 @@ export default function PaymentsSection({
   payments: savedPayments,
   gate: savedGate,
   terms,
-  quote,
 }: {
   orderId: string;
   payments: Payment[];
   gate: PaymentGate;
-  terms: { termsNotes: string | null; paymentTerms: string | null };
-  quote: { quoteStatus: string; quoteUrl: string | null; quoteSentAt: Date | null };
+  terms: { termsNotes: string | null; paymentTerms: string | null; orderValue?: number | null };
 }) {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(savedPayments.length === 0);
@@ -319,27 +314,18 @@ export default function PaymentsSection({
 
   return (
     <div className="space-y-5">
-      <TermsCard
-        orderId={orderId}
-        termsNotes={terms.termsNotes}
-        paymentTerms={terms.paymentTerms}
-        quoteStatus={quote.quoteStatus}
-        quoteUrl={quote.quoteUrl}
-        quoteSentAt={quote.quoteSentAt}
-        showQuote={!step || step === "quote"}
-        showTerms={!step || step === "terms"}
-      />
+      <TermsCard orderId={orderId} termsNotes={terms.termsNotes} paymentTerms={terms.paymentTerms} orderValue={terms.orderValue} />
       <div id="payments" hidden={!!step && step !== "deposit"} className="space-y-5">
       <div className="text-sm font-medium text-ink">
         {gate.exempt
-          ? gate.reason
+          ? `${gate.reason} · Received ${fmtUSD(gate.paidTotal, { cents: true })}`
           : gate.requiredTotal != null
-          ? `Required ${fmtUSD(gate.requiredTotal, { cents: true })} · Paid ${fmtUSD(gate.paidTotal, { cents: true })} · Outstanding ${fmtUSD(gate.shortfall, { cents: true })}${
+          ? `Required ${fmtUSD(gate.requiredTotal, { cents: true })} · Received ${fmtUSD(gate.paidTotal, { cents: true })} · Outstanding ${fmtUSD(gate.shortfall, { cents: true })}${
               gate.invoiced ? "" : " · Nothing invoiced yet"
             }`
           : gate.open
-          ? "Payment received"
-          : gate.reason}
+          ? `Received ${fmtUSD(gate.paidTotal, { cents: true })}`
+          : `${gate.reason} · Received ${fmtUSD(gate.paidTotal, { cents: true })}`}
       </div>
 
       {payments.length === 0 ? (
@@ -352,7 +338,8 @@ export default function PaymentsSection({
             <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="w-16 shrink-0 capitalize text-sm text-ink">{p.type}</span>
-                <span className="text-sm text-gray-dark">{fmtUSD(p.amount, { cents: true })}</span>
+                <span className="inline-flex items-center gap-1 text-sm text-gray-dark">Invoice {fmtUSD(p.amount, { cents: true })}<InvoiceEditor payment={p} /></span>
+                <span className="text-sm text-gray-dark">Received {fmtUSD(p.status === "paid" ? p.amount : 0, { cents: true })}</span>
                 <span className={`badge ${PAYMENT_STATUS_COLORS[p.status] ?? "badge-gray"}`}>{p.status}</span>
                 {p.source === "terms" && <span className="badge badge-gray">from terms</span>}
                 {p.dueNote && <span className="text-xs text-gray-dark">{p.dueNote}</span>}

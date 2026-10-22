@@ -1,10 +1,11 @@
+import { ItemMetadata, ItemNotes, type ItemDetailsFields } from "@/lib/ItemDetails";
 import { DeleteIntakeButton } from "@/app/intake/DeleteIntakeButton";
 import { PriceCell } from "../rfq/RfqRow";
 import { fmtUSD } from "@/lib/money";
 import { itemIsPriced } from "@/lib/dealWorkflow";
 import { RFQ_STATUSES, labelFor } from "@/lib/constants";
 
-type PricingItem = { id: string; name: string; qty: number; unitCost: number | null; unitPrice: number | null; rfqStatus: string };
+type PricingItem = ItemDetailsFields & { id: string; name: string; qty: number; unitCost: number | null; unitPrice: number | null; rfqStatus: string };
 
 export function PricingItems({ items, editable, deletable = false }: { items: PricingItem[]; editable: boolean; deletable?: boolean }) {
   const active = items.filter(item => item.rfqStatus !== "removed");
@@ -14,9 +15,9 @@ export function PricingItems({ items, editable, deletable = false }: { items: Pr
       <p className="mt-1 text-xs text-gray-dark">{editable ? "Prices save when you leave the field or press Enter." : "Saved prices for the items on this order."}</p>
     </div>
     {!active.length ? <p className="p-5 text-sm text-gray-dark">No active items to price.</p> : <div className="overflow-x-auto"><table className="table-klyne">
-      <thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Pricing status</th>{deletable && <th><span className="sr-only">Actions</span></th>}</tr></thead>
+      <thead><tr><th>Item</th><th>Notes</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Pricing status</th>{deletable && <th><span className="sr-only">Actions</span></th>}</tr></thead>
       <tbody>{active.map(item => <tr id={`pricing-${item.id}`} key={item.id}>
-        <td className="font-semibold">{item.name}</td><td>{item.qty}</td>
+        <td className="item-name-cell"><div className="font-semibold">{item.name}</div><ItemMetadata item={item} /></td><td className="item-notes-cell"><ItemNotes item={item} /></td><td>{item.qty}</td>
         <td>{editable ? <PriceCell item={{ ...item, brand: null, leadTimeDate: null, stockStatus: "", backorderExpected: null, assigneeId: null, assignee: null }} /> : item.unitPrice != null ? fmtUSD(item.unitPrice, { cents: true }) : "Not priced"}</td>
         <td>{itemIsPriced(item) ? fmtUSD(item.qty * item.unitPrice!, { cents: true }) : "Pending"}</td>
         <td>{labelFor(RFQ_STATUSES, item.rfqStatus)}</td>

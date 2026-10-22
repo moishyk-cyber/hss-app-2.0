@@ -1,13 +1,13 @@
 import Link from "@/lib/IntentLink";
-import { OPPORTUNITY_STAGES } from "@/lib/constants";
+import { PIPELINE_WORKFLOW_OPTIONS } from "@/lib/pipelineWorkflow";
 import { SortHeader, TableRows } from "@/lib/CollectionViews";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { StageSelect } from "./StageSelect";
+import { WorkflowMoveSelect } from "./WorkflowMove";
 import type { KanbanCard } from "./KanbanBoard";
 import { fmtMoney } from "./_ui";
 
 const STAGE_ORDER = new Map<string, number>(
-  OPPORTUNITY_STAGES.map((s, i) => [s.value, i]),
+  PIPELINE_WORKFLOW_OPTIONS.map((s, i) => [s.value, i]),
 );
 
 /**
@@ -30,7 +30,7 @@ export function PipelineList({
     ? cards
     : [...cards].sort((a, b) => {
         const byStage =
-          (STAGE_ORDER.get(a.stage) ?? 99) - (STAGE_ORDER.get(b.stage) ?? 99);
+          (STAGE_ORDER.get(a.workflowStep) ?? 99) - (STAGE_ORDER.get(b.workflowStep) ?? 99);
         if (byStage !== 0) return byStage;
         return b.daysInStage - a.daysInStage;
       });
@@ -67,9 +67,9 @@ export function PipelineList({
             <SortHeader field="title">Deal</SortHeader>
             <SortHeader field="company">Company</SortHeader>
             <SortHeader field="value">Value</SortHeader>
-            <SortHeader field="stage">Stage</SortHeader>
+            <SortHeader field="stage">Next step</SortHeader>
             <SortHeader>Next action</SortHeader>
-            <SortHeader>Waiting</SortHeader>
+            <SortHeader>Age</SortHeader>
           </tr>
         </thead>
         <TableRows columns={6}>
@@ -77,7 +77,7 @@ export function PipelineList({
             <tr key={card.id}>
               <td>
                 <Link
-                  href={`/pipeline/${card.id}`}
+                  href={card.href}
                   className="font-medium hover:underline"
                 >
                   {card.title}
@@ -86,7 +86,7 @@ export function PipelineList({
               <td>{card.companyName ?? "—"}</td>
               <td className="tabular-nums">{fmtMoney(card.value)}</td>
               <td>
-                <StageSelect opportunityId={card.id} stage={card.stage} />
+                <WorkflowMoveSelect id={card.id} title={card.title} step={card.workflowStep} />
               </td>
               <td>
                 <BallInCourtBadge ball={card.ball} />

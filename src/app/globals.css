@@ -753,6 +753,13 @@ label > .field-label,
 .pagination > span {
   margin-right: auto;
 }
+.table-klyne td.collection-sentinel {
+  height: 1px;
+  padding: 0;
+  border: 0;
+}
+.collection-load-point { min-height: 2px; }
+.collection-scroll-spinner { display: flex; justify-content: center; padding: 12px; color: var(--color-gray-dark); }
 .kanban-board {
   display: flex;
   gap: 12px;
@@ -863,7 +870,7 @@ label > .field-label,
   min-width: 200px;
   max-width: 280px;
 }
-.rfq-table td:nth-child(3) {
+.rfq-table td:nth-child(4) {
   min-width: 220px;
 }
 .rfq-table td:last-child {
@@ -1567,6 +1574,28 @@ textarea.input-klyne { height:auto; min-height:96px; resize:vertical; }
 .rfq-item-brand { font-size:11px; line-height:1.3; }
 .app-sidebar > .sidebar-account:last-child { padding:0; font-size:inherit; }
 @media (min-width:641px) { .table-scroll { max-height:calc(100dvh - 94px); } }
+/* Flat collections use the space left by their actual header, including filters. */
+@media (min-width: 641px) {
+  .app-main:has(> div > .collection-header):has(> div > .table-scroll) {
+    overflow: hidden;
+  }
+  .app-main > div:has(> .collection-header):has(> .table-scroll) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .app-main > div:has(> .collection-header):has(> .table-scroll) > .collection-header {
+    flex-shrink: 0;
+  }
+  .app-main > div:has(> .collection-header) > .table-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: none;
+    overscroll-behavior: contain;
+  }
+}
 @media (max-width:640px) {
   .collection-header .collection-view-controls { gap:3px; }
   .collection-header .collection-view-controls .chip { padding:4px 6px; min-height:28px; font-size:11px; }
@@ -1863,7 +1892,7 @@ input.input-klyne[type="date"]::-webkit-calendar-picker-indicator { margin: 0 0 
 }
 
 /* Mouse focus should not become a dark frame in the native drag preview. */
-.kanban-card:has(:focus-visible) {
+.kanban-card:has(.kanban-card-title:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
@@ -1934,3 +1963,89 @@ input.input-klyne[type="date"]::-webkit-calendar-picker-indicator { margin: 0 0 
   .phonebook-page .collection-header .toolbar-row { grid-column: 1 / -1; grid-row: 3; }
   .phonebook-page .collection-header .collection-filter-row { grid-row: 4; }
 }
+
+/* Focused workflow forms reuse the record panel's controls in a centered modal. */
+.record-drawer-backdrop.workflow-form-backdrop { align-items:center; justify-content:center; padding:24px; }
+.record-drawer.workflow-form-dialog { width:min(1000px, 100%); height:auto; max-height:90dvh; border-radius:12px; overflow:hidden; animation:none; }
+.workflow-form-dialog .record-drawer-content { flex:1 1 auto; }
+@media (max-width:640px) {
+  .record-drawer-backdrop.workflow-form-backdrop { padding:12px; }
+  .record-drawer.workflow-form-dialog { max-height:calc(100dvh - 24px); }
+}
+
+/* A single record workspace before and after confirmation. */
+.record-workspace { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 2fr); gap:24px; align-items:start; }
+.record-workspace-sidebar, .record-workspace-editor { min-width:0; }
+.record-workspace-sidebar, .record-workspace-editor { display:flex; flex-direction:column; gap:24px; }
+.record-workspace-sidebar .deal-progress { margin-bottom:0; }
+.record-summary { padding:0 4px; font-size:13px; }
+.record-summary > div { display:grid; gap:4px; padding:12px 0; border-bottom:1px solid var(--border); }
+.record-summary dt { color:var(--gray-dark); }
+.record-summary dd { overflow-wrap:anywhere; }
+.pipeline-card-steps { list-style:none; margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--border); font-size:11px; }
+.pipeline-card-steps li { display:flex; align-items:baseline; gap:6px; padding:3px 0; }
+.pipeline-card-step-mark { color:var(--gray-dark); width:12px; flex-shrink:0; }
+.pipeline-card-steps [data-state="complete"] .pipeline-card-step-mark { color:var(--green); }
+.pipeline-card-step-status { margin-left:auto; color:var(--gray-dark); font-size:10px; white-space:nowrap; }
+.pipeline-card-steps [data-state="waiting"] .pipeline-card-step-status { color:var(--orange); }
+.pipeline-card-details { display:flex; flex-direction:column; gap:4px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); color:var(--gray-dark); font-size:11px; }
+@container (max-width:760px) {
+  .record-workspace { grid-template-columns:minmax(0,1fr); }
+}
+.deal-step-detail[hidden] { display:none; }
+
+.kanban-card:has(.record-card-heading) { padding:16px; }
+.record-card-heading { min-width:0; }
+.record-card-heading .kanban-card-title { padding-right:0; font-size:14px; line-height:1.5; }
+.kanban-card-title:focus-visible { outline:none; }
+.record-card-context { display:block; margin-top:4px; font-size:11px; line-height:1.5; color:var(--gray-dark); overflow-wrap:anywhere; }
+.record-card-context:hover { color:var(--ink); text-decoration:underline; }
+.record-card-customer { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px; line-height:1.5; color:var(--gray-dark); }
+.record-card-customer > span:last-child { min-width:0; overflow-wrap:anywhere; }
+.record-card-business-icon { display:flex; align-items:center; justify-content:center; width:24px; height:24px; flex-shrink:0; }
+.record-card-business-icon svg { width:20px; height:20px; }
+.record-card-facts { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; margin-top:16px; font-size:12px; }
+.record-card-facts > span:first-child { font-size:15px; line-height:1.4; }
+.record-card-facts .empty-value { font-size:12px; font-weight:400; }
+.record-card-facts > span:last-child { color:var(--gray-dark); white-space:nowrap; margin-left:auto; }
+.record-card-court { display:flex; align-items:center; gap:9px; margin-top:16px; padding-top:14px; border-top:1px solid var(--border); }
+.record-card-court > [aria-hidden] { width:28px; height:28px; font-size:12px; }
+.record-card-court > div { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; flex:1; }
+.record-card-court > div > span:first-child { font-size:11px; line-height:1.4; white-space:nowrap; }
+.record-card-court > div > span:last-child { font-size:12px; font-weight:500; line-height:1.5; overflow-wrap:anywhere; text-align:right; }
+.record-card-company-link:hover > span:last-child, .record-card-court:hover > div > span:last-child { text-decoration:underline; color:var(--ink); }
+.record-card-files { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:16px; }
+.record-card-files button { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:7px; min-width:0; min-height:66px; border-radius:6px; padding:10px 3px 8px; background:var(--surface-sunken); color:var(--gray-dark); font-size:10px; line-height:1.3; white-space:normal; text-align:center; cursor:pointer; }
+.record-card-files button:hover, .record-card-files button:focus-visible { background:var(--hover); color:var(--ink); }
+.record-card-files button:active { background:var(--border); }
+.record-card-files svg { width:20px; height:24px; flex-shrink:0; }
+.file-preview-backdrop { position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:24px; background:var(--overlay,rgba(0,0,0,.4)); }
+.file-preview-modal { width:min(1100px,100%); height:min(850px,90dvh); background:var(--surface); border:1px solid var(--border); border-radius:14px; display:flex; flex-direction:column; overflow:hidden; outline:none; }
+.file-preview-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 20px; border-bottom:1px solid var(--border); }
+.file-preview-header h2 { font-weight:600; font-size:16px; }
+.file-preview-header p { font-size:12px; color:var(--gray-dark); overflow-wrap:anywhere; }
+.file-preview-list { display:flex; gap:8px; overflow:auto; padding:12px 20px; border-bottom:1px solid var(--border); }
+.file-preview-list button { flex-shrink:0; }
+.file-preview-content { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; background:var(--surface-sunken); }
+.file-preview-content img { max-width:100%; max-height:100%; object-fit:contain; }
+.file-preview-content iframe { width:100%; height:100%; border:0; background:white; }
+.file-preview-loading { display:flex; align-items:center; justify-content:center; gap:8px; min-height:100px; font-size:13px; color:var(--gray-dark); }
+.file-preview-content > .file-preview-loading { position:absolute; inset:0; pointer-events:none; }
+@media(max-width:600px) { .file-preview-backdrop { padding:8px; } .file-preview-header { padding:12px; flex-wrap:wrap; } }
+.pdf-preview { display:flex; flex-direction:column; width:100%; height:100%; min-height:0; }
+.pdf-preview-controls { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px; padding:10px; border-bottom:1px solid var(--border); background:var(--surface); font-size:12px; }
+.pdf-preview-page { position:relative; flex:1; min-height:0; overflow:auto; padding:16px; }
+.pdf-preview-page canvas { display:block; margin:0 auto; background:white; }
+.pdf-preview-page > .file-preview-loading { position:absolute; inset:0; pointer-events:none; }
+
+/* Item notes have their own readable column; long text expands in place. */
+.item-name-cell { min-width:220px; vertical-align:top; }
+.item-metadata { margin-top:6px; color:var(--gray-dark); font-size:11px; line-height:1.5; font-weight:400; overflow-wrap:break-word; }
+.item-notes-cell { min-width:280px; width:320px; max-width:400px; vertical-align:top; }
+.item-notes-text, .item-notes-preview { white-space:pre-wrap; overflow-wrap:break-word; font-size:12px; line-height:1.6; color:var(--gray-dark); }
+.item-notes-disclosure { display:block; }
+.item-notes-toggle { display:block; width:fit-content; margin-top:6px; padding:0; font-size:12px; font-weight:500; color:var(--ink); cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.item-notes-toggle:hover { color:var(--gray-dark); }
+.team-notes-text { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.65; }
+
+.team-notes .item-notes-text, .team-notes .item-notes-preview { font-size:13px; }

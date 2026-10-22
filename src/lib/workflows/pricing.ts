@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { supplierQuoteProgress } from "../ballInCourt";
 import { RFQ_STATUSES, isValidValue } from "../constants";
 import { roundCents, toMoney } from "../money";
 import { reconcileOrderStatus, reconcileOrderValue } from "./orderState";
@@ -19,6 +20,7 @@ type PricingEffects = {
 export function createLineItemPricing(db: PrismaClient, effects: PricingEffects) {
   async function reconcile(db: Prisma.TransactionClient, item: { opportunityId: string | null; orderId: string | null }) {
     const events: Parameters<PricingEffects["audit"]>[] = [];
+    let quoteProgress: ReturnType<typeof supplierQuoteProgress> | null = null;
     if (item.opportunityId) {
       const deal = await db.opportunity.findUnique({
         where: { id: item.opportunityId },
@@ -27,6 +29,7 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
           lineItems: { select: { qty: true, unitPrice: true, rfqStatus: true } }
         },
       });
+      if (deal) quoteProgress = supplierQuoteProgress(deal.lineItems);
       if (deal && deal.stage !== "won" && deal.stage !== "lost") {
         const live = deal.lineItems.filter(i => i.rfqStatus !== "removed");
         const needsPricing = live.some(i => i.rfqStatus === "needs_pricing" || i.rfqStatus === "rfq_sent");
@@ -46,7 +49,7 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
       if (change) events.push(["order", item.orderId, "order_value_synced",
         `Order value updated from $${change.previous ?? 0} to $${change.total} to match priced line items`]);
     }
-    return events;
+    return { events, quoteProgress };
   }
 
   async function finish(result: { item: { opportunityId: string | null; orderId: string | null }; events: Parameters<PricingEffects["audit"]>[] }) {
@@ -57,6 +60,16 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
   }
 
   return {
+    /** Status edits need no before-price snapshot; update and reconciliation stay atomic. */
+    async setStatus(id: string, rfqStatus: string) {
+      if (!isValidValue(RFQ_STATUSES, rfqStatus)) throw new Error("Invalid RFQ status");
+      const result = await serialTransaction(db, async tx => {
+        const item = await tx.lineItem.update({ where: { id }, data: { rfqStatus } });
+        return { item, ...await reconcile(tx, item) };
+      });
+      await finish(result);
+      return result;
+    },
     async change(id: string, change: PricingChange) {
       const result = await serialTransaction(db, async tx => {
         const before = await tx.lineItem.findUnique({ where: { id } });
@@ -82,7 +95,7 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
             data = { rfqStatus: change.rfqStatus }; break;
         }
         const item = await tx.lineItem.update({ where: { id }, data });
-        return { item, before: { ...before, unitPrice: toMoney(before.unitPrice) }, events: await reconcile(tx, item) };
+        return { item, before: { ...before, unitPrice: toMoney(before.unitPrice) }, ...await reconcile(tx, item) };
       });
       await finish(result);
       return result;
@@ -92,7 +105,7 @@ export function createLineItemPricing(db: PrismaClient, effects: PricingEffects)
         const assigneeId = data.assigneeId === undefined && isPricingWork(data.rfqStatus ?? "needs_pricing")
           ? await getDefaultPricingAssignee(tx) : data.assigneeId ?? null;
         const item = await tx.lineItem.create({ data: { ...data, assigneeId } });
-        return { item, events: await reconcile(tx, item) };
+        return { item, ...await reconcile(tx, item) };
       });
       await finish(result);
       return result.item;

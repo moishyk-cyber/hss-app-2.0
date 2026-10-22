@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluatePaymentGate, canCompleteOrder } from "../src/lib/flowRules";
-const order = (required: number, amounts: number[]) => ({ orderType: "project", orderValue: 120, depositRequired: required, payments: amounts.map(amount => ({ amount, status: "paid" })), company: { requiresDeposit: true, depositPercent: 30 } });
+const order = (required: number, amounts: number[]) => ({ orderType: "project", orderValue: 120, depositRequired: required, payments: amounts.map(amount => ({ amount, status: "paid" })), company: { requiresDeposit: true, paymentTermsConfigured: true, depositPercent: 30 } });
 test("$35 cannot satisfy $36 and cannot close the order", () => {
   const input = order(36, [35]);
   const gate = evaluatePaymentGate(input);

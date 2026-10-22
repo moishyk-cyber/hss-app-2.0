@@ -1,4 +1,6 @@
 "use client";
+import { BackgroundStatus } from "@/lib/BackgroundStatus";
+import { useLaneTotal } from "@/lib/CollectionScope";
 
 import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +20,7 @@ export default function TaskBoard({ tasks, group, canEdit }: {
   group: TaskGrouping;
   canEdit: boolean;
 }) {
+  const total=useLaneTotal(group);
   const router = useRouter();
   const [cards, applyMove] = useOptimistic(tasks, (current, move: { id: string; field: TaskGrouping; value: string }) =>
     current.map(card => card.id === move.id ? { ...card, [move.field]: move.value } : card));
@@ -38,11 +41,12 @@ export default function TaskBoard({ tasks, group, canEdit }: {
   }
 
   return <div className="space-y-3" aria-busy={pending}>
+    <BackgroundStatus active={pending}/>
     {error && <FormAlert>{error}</FormAlert>}
     <div className="kanban-board" aria-label={`Tasks by ${group}`}>
       {lanes.map(lane => {
         const laneCards = cards.filter(card => card[group] === lane.value);
-        return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={laneCards.length} className={target === lane.value ? "is-drop-target" : ""}
+        return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={total(lane.value,laneCards.length,tasks.filter(row=>row[group]===lane.value).length)} className={target === lane.value ? "is-drop-target" : ""}
           onDragOver={event => {
             if (!canEdit || pending || !dragging) return;
             event.preventDefault();

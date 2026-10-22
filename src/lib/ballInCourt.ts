@@ -1,4 +1,4 @@
-// Ball-in-court: the nine-step full flow (sales through customer service) and
+// Ball-in-court: the approved eight-step full flow (sales through customer service) and
 // who holds the ball at each step. Pure - safe in server AND client components
 // (it imports the pure rules from @/lib/flowRules, never prisma).
 //
@@ -10,16 +10,14 @@ import { evaluatePaymentGate, liveLineItems, type FlowLineItem, type FlowOrder }
 import type { FlowStep } from "@/lib/FlowStepper";
 
 export const FLOW_STEPS = [
-  { key: "sales", label: "Sales", court: "sales" },
-  { key: "pricing", label: "Pricing", court: "office" },
-  { key: "close", label: "Close", court: "sales" },
-  { key: "quote", label: "Quote", court: "office" },
-  { key: "terms", label: "Terms", court: "sales" },
-  { key: "deposit", label: "Deposit", court: "billing" },
-  { key: "salesOrder", label: "Sales Order", court: "sales" },
-  { key: "pos", label: "POs", court: "purchasing" },
+  { key: "sales", label: "Intake", court: "sales" },
+  { key: "pricing", label: "Supplier Quotes", court: "office" },
+  { key: "clientQuote", label: "Client Quote", court: "sales" },
+  { key: "close", label: "Confirm Deal", court: "sales" },
+  { key: "deposit", label: "Payment", court: "billing" },
+  { key: "pos", label: "Purchase", court: "purchasing" },
   { key: "delivery", label: "Delivery", court: "purchasing" },
-  { key: "service", label: "Customer Service", court: "service" },
+  { key: "service", label: "Close Out", court: "service" },
 ] as const;
 
 export type FlowStepKey = (typeof FLOW_STEPS)[number]["key"];
@@ -56,12 +54,13 @@ export type Ball = {
 
 /** What orderBall() needs: the flow-engine order plus quote/terms/PO-link/issue facts. */
 export type OrderBallInput = Omit<FlowOrder, "lineItems"> & {
-  quoteStatus: string;
+  /** Historical fields are accepted for compatibility but never gate the approved workflow. */
+  quoteStatus?: string;
   salesOrderSentAt?: Date | null;
   /** Free-text terms written on the order (the Sales Order + Terms step). */
-  termsNotes: string | null;
+  termsNotes?: string | null;
   /** Legacy PAYMENT_TERMS value on orders closed before terms became free text. */
-  paymentTerms: string | null;
+  paymentTerms?: string | null;
   lineItems: (FlowLineItem & { purchaseOrderId: string | null })[];
   /** Service issues still open or in progress (see OPEN_SERVICE_ISSUE_STATUSES). */
   openIssueCount: number;
@@ -71,6 +70,8 @@ export type OpportunityBallInput = {
   stage: string;
   /** Current intake evidence, rather than the manually selected stage. */
   intakeComplete?: boolean;
+  clientQuoteCreated?: boolean;
+  clientQuoteSent?: boolean;
   salesperson?: { name: string; active?: boolean } | null;
   lineItems: { rfqStatus: string; unitPrice: number | null }[];
   /** The won order, when there is one (opportunityBall delegates to orderBall). */
@@ -85,6 +86,13 @@ export function closingHolder(salesperson: OpportunityBallInput["salesperson"]):
 /** Supplier quote readiness is tracked independently of dollar amounts. */
 export function itemHasQuote(item: { rfqStatus: string }): boolean {
   return ["quote_received", "priced_in_autoquotes", "approved"].includes(item.rfqStatus);
+}
+
+/** Shared supplier-quote completion evidence for detail guides and fast status saves. */
+export function supplierQuoteProgress(items: { rfqStatus: string }[]) {
+  const live = liveLineItems(items), pending = live.filter(item => !itemHasQuote(item));
+  return { total: live.length, received: live.length - pending.length,
+    state: !live.length ? "to_do" as const : !pending.length ? "complete" as const : pending.every(item => item.rfqStatus === "rfq_sent") ? "waiting" as const : "in_progress" as const };
 }
 
 export function itemIsPriced(item: { rfqStatus: string; unitPrice: number | null }): boolean {
@@ -105,15 +113,6 @@ function plural(n: number, one: string, many: string = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * The Sales Order + Terms step is satisfied once someone has written the terms
- * on the order. Orders closed before terms became free text carry a
- * PAYMENT_TERMS value instead - those count as set too.
- */
-export function hasOrderTerms(order: { termsNotes: string | null; paymentTerms: string | null }): boolean {
-  return (order.termsNotes?.trim().length ?? 0) > 0 || order.paymentTerms != null;
-}
-
 /** PO statuses that still need purchasing's attention. */
 const PO_OPEN_STATUSES = new Set(["draft", "sent", "acknowledged"]);
 
@@ -121,17 +120,11 @@ const PO_OPEN_STATUSES = new Set(["draft", "sent", "acknowledged"]);
 export function orderBall(order: OrderBallInput): Ball {
   if (order.status === "complete") return { step: null, court: null, hint: "Complete" };
 
-  if (order.quoteStatus === "needed") return ball("quote", "Prepare quote");
-  if (order.quoteStatus === "sent") return ball("quote", "Awaiting quote approval");
-
-  if (!hasOrderTerms(order)) return ball("terms", "Set terms");
-
   const gate = evaluatePaymentGate(order);
   if (!gate.open) return ball("deposit", gate.reason);
 
   const items = liveLineItems(order.lineItems);
-  const notOnPo = items.filter((i) => !i.purchaseOrderId).length;
-  if (notOnPo > 0 && !order.salesOrderSentAt) return ball("salesOrder", "Confirm sales order sent");
+  const notOnPo = items.filter((i) => !i.purchaseOrderId && i.deliveryStatus !== "arrived_complete").length;
   if (notOnPo > 0) return ball("pos", `${plural(notOnPo, "item")} not on a PO`);
   const openPos = order.purchaseOrders.filter((p) => PO_OPEN_STATUSES.has(p.status)).length;
   if (openPos > 0) return ball("pos", `${plural(openPos, "PO")} in progress`);
@@ -159,6 +152,7 @@ export function opportunityBall(opp: OpportunityBallInput): Ball {
   if (!items.length) return ball("sales", "Add requested items");
   const unpriced = items.filter((item) => !itemHasQuote(item)).length;
   if (unpriced > 0) return ball("pricing", `Get quotes for ${plural(unpriced, "item")}`);
+  if (!opp.clientQuoteCreated || !opp.clientQuoteSent) return { ...ball("clientQuote", opp.clientQuoteCreated ? "Send the client quote" : "Create the client quote"), holder: closingHolder(opp.salesperson) };
   return closeBall("Close the deal");
 }
 
@@ -178,11 +172,10 @@ function stepHref(key: FlowStepKey, opts: FullFlowOptions): string | undefined {
       return opts.dealHref;
     case "close":
       return opts.dealHref ? `${opts.dealHref}#close` : undefined;
-    case "quote":
-    case "terms":
+    case "clientQuote":
+      return opts.dealHref ? `${opts.dealHref}#client-quote` : undefined;
     case "deposit":
       return opts.orderHref ? `${opts.orderHref}#invoice` : undefined;
-    case "salesOrder":
     case "pos":
       return opts.orderHref ? `${opts.orderHref}#purchase-orders` : undefined;
     case "delivery":
@@ -193,7 +186,7 @@ function stepHref(key: FlowStepKey, opts: FullFlowOptions): string | undefined {
 }
 
 /**
- * The nine steps for FlowStepper: steps before the ball are done, the ball step
+ * The eight steps for FlowStepper: steps before the ball are done, the ball step
  * is current (blocked when it is the deposit gate), later steps upcoming. A null
  * ballStep (order complete) renders every step done.
  */

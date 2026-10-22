@@ -1,14 +1,19 @@
 "use client";
 
+import { CollectionTotal, useLaneTotal } from "./CollectionScope";
 import { useState, type ReactNode, type ComponentProps } from "react";
 
 /** Keeps server-rendered order cards while making the lane header interactive. */
-export function CollapsibleKanbanLane({ label, count, summary, children, className = "", ...props }: {
+export function CollapsibleKanbanLane({ label, count, totalField, totalValue, summary, children, className = "", ...props }: {
   label: string;
   count: number;
+  totalField?: string;
+  totalValue?: string;
   summary?: ReactNode;
   children: ReactNode;
 } & ComponentProps<"div">) {
+  const laneTotal=useLaneTotal(totalField??"");
+  const shownCount=totalField && totalValue ? laneTotal(totalValue,count) : count;
   const [collapsed, setCollapsed] = useState(false);
   return (
     <div {...props} className={`kanban-lane ${collapsed ? "is-collapsed" : ""} ${className}`}>
@@ -16,7 +21,7 @@ export function CollapsibleKanbanLane({ label, count, summary, children, classNa
         <h2 className="section-label !mb-0">{label}</h2>
         <div className="lane-summary flex items-center gap-2">
           {!collapsed && summary}
-          <span className="badge badge-gray">{count}</span>
+          <span className="badge badge-gray">{shownCount}</span>
           <button type="button" className="lane-collapse" aria-expanded={!collapsed}
             aria-label={`${collapsed ? "Expand" : "Collapse"} ${label}`}
             onClick={() => setCollapsed(value => !value)}>
@@ -24,7 +29,7 @@ export function CollapsibleKanbanLane({ label, count, summary, children, classNa
           </button>
         </div>
       </div>
-      {!collapsed && children}
+      {!collapsed && <CollectionTotal total={shownCount}>{children}</CollectionTotal>}
     </div>
   );
 }

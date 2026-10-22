@@ -1,4 +1,6 @@
 "use client";
+import { BackgroundStatus } from "@/lib/BackgroundStatus";
+import { useLaneTotal } from "@/lib/CollectionScope";
 
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +32,7 @@ export type DeliveryBoardRow = {
 };
 
 export default function DeliveryBoard({ deliveries, canEdit, group }: { deliveries: DeliveryBoardRow[]; canEdit: boolean; group: DeliveryGrouping }) {
+  const total=useLaneTotal(group === "mode" ? "mode" : "status");
   const router = useRouter();
   const { toast } = useToast();
   const board = useRef<HTMLDivElement>(null);
@@ -75,11 +78,12 @@ export default function DeliveryBoard({ deliveries, canEdit, group }: { deliveri
   }
 
   return <div className="space-y-3" aria-busy={pending || saving}>
+    <BackgroundStatus active={pending || saving}/>
     {error && <FormAlert>{error}</FormAlert>}
     <div ref={board} className="kanban-board" aria-label={`Deliveries by ${group}`}>
       {deliveryLanes(group).map(lane => {
         const laneCards = cards.filter(card => deliveryLane(card, group) === lane.value);
-        return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={laneCards.length} className={target === lane.value ? "is-drop-target" : ""}
+        return <CollapsibleKanbanLane key={lane.value} label={lane.label} count={total(lane.value,laneCards.length,deliveries.filter(row=>deliveryLane(row,group)===lane.value).length)} className={target === lane.value ? "is-drop-target" : ""}
           onDragOver={event => {
             if (!canDrag || pending || saving || !dragging) return;
             event.preventDefault(); event.dataTransfer.dropEffect = "move"; setTarget(lane.value);

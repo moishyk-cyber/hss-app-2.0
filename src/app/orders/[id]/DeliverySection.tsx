@@ -2,6 +2,7 @@
 
 // Order delivery rows link to full delivery pages; shipment fields follow the delivery mode.
 
+import { PickupLocationDropdown } from "@/lib/LocationDropdown";
 import { PartnerInput } from "@/app/deliveries/PartnerInput";
 import { DeliveryDestination } from "./DeliveryDestination";
 import type { DeliveryDestination as Destination } from "@/lib/deliveryDestination";
@@ -217,7 +218,6 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
 
   // Prefill the pickup address from the supplier's on-file address as a
   // starting point - still freely editable, since real pickup legs vary.
-  const pickupDefault = delivery.pickupAddress ?? delivery.purchaseOrder?.supplier?.deliveryAddress ?? "";
 
   async function handleSave(formData: FormData) {
     const result = await updateDelivery(delivery.id, {
@@ -313,15 +313,7 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
                 defaultValue={delivery.trucker ?? ""}
               />
             </label>
-            <label className="col-span-2 block">
-              <span className="field-label">Pickup address</span>
-              <input
-                name="pickupAddress"
-                className="input-klyne w-full px-2 py-1 text-xs"
-                placeholder="Pickup address"
-                defaultValue={pickupDefault}
-              />
-            </label>
+<PickupLocationDropdown current={delivery.pickupAddress} supplierAddress={delivery.purchaseOrder?.supplier?.deliveryAddress} />
             <label className="block">
               <span className="field-label">Delivery contact phone</span>
               <input

@@ -9,9 +9,10 @@
 // falls back to pasting a link - which always works.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { appMode } from './environmentMode';
 
 /** Private bucket holding every order/deal document upload. */
-const UPLOAD_BUCKET = "order-files";
+const UPLOAD_BUCKET = appMode() === 'dev' ? 'order-files-testing' : 'order-files';
 
 /** Hard cap on a single upload (matches the file input's client-side check). */
 export { MAX_UPLOAD_BYTES } from "./uploadPolicy";

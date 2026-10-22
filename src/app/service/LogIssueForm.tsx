@@ -10,6 +10,7 @@
 // Supports prefill from ?companyId / ?orderId (resolved server-side and passed
 // in as initialCompanyId / initialOrderId).
 
+import { EditIconButton } from "@/lib/ui";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BackLink } from "@/lib/BackLink";
@@ -55,13 +56,7 @@ function PickedRow({
         <span className="field-label !mb-0.5 block">{label}</span>
         <span className="block truncate text-[13px] text-ink">{value}</span>
       </div>
-      <button
-        type="button"
-        onClick={onChange}
-        className="shrink-0 text-xs text-primary transition-colors hover:underline"
-      >
-        change
-      </button>
+      <EditIconButton label={`Edit ${label}`} onClick={onChange} />
     </div>
   );
 }

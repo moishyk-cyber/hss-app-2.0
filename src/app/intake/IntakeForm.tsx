@@ -11,6 +11,8 @@
 // - Drafts survive. Everything typed autosaves to this browser, a refresh
 //   offers to restore it, and a successful submit clears it silently.
 
+import { EditIconButton } from "@/lib/ui";
+import { PaymentTermsField } from "@/lib/PaymentTermsField";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSignedUpload, finalizeUpload } from "../files/actions";
@@ -836,6 +838,10 @@ export function IntakeForm({
         <FormAlert>
           Nothing was saved - the quote due date has to be on or before the delivery due date.
         </FormAlert>
+      ) : error === "account_terms_required" ? (
+        <FormAlert>Nothing was saved. Set payment terms on the customer account before creating an order. Open the customer in Phone Book, save its account payment terms, then restore this draft and try again.</FormAlert>
+      ) : error === "payment_terms" ? (
+        <p role="alert" className="banner-alert">Payment terms need conversion or clarification. Restore your draft and review the terms before submitting.</p>
       ) : error === "save_failed" ? (
         <FormAlert>Something went wrong while saving. Please try again.</FormAlert>
       ) : error === "not_allowed" ? (
@@ -916,105 +922,12 @@ export function IntakeForm({
                     the business unless the caller unticks it.
                   */}
                   <div className="rounded-[10px] border border-border bg-panel p-3">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="section-label !mb-0">Location</span>
-                      {locationMode === "new" ? (
-                        <button
-                          type="button"
-                          onClick={() => resetLocation(selectedCompany)}
-                          className="text-xs text-gray-dark transition-colors hover:text-ink"
-                        >
-                          {companyLocations.length > 0
-                            ? "Use a saved location"
-                            : "Use the address on file"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLocationMode("new");
-                            setLocationId("");
-                          }}
-                          className="text-xs text-primary transition-colors hover:underline"
-                        >
-                          {companyLocations.length > 0
-                            ? "Add a location"
-                            : "Deliver somewhere else"}
-                        </button>
-                      )}
-                    </div>
-
-                    {locationMode === "new" ? (
-                      <div className="space-y-3">
-                        <label className="block">
-                          <span className={labelClass}>Name of location</span>
-                          <input
-                            name="locationName"
-                            autoFocus
-                            placeholder="e.g. Second store, Boro Park"
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className={labelClass}>Delivery address</span>
-                          <input
-                            name="deliveryAddress"
-                            placeholder="Where is this going?"
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="flex items-center gap-2 text-[13px] text-ink">
-                          <input
-                            type="checkbox"
-                            checked={saveLocation}
-                            onChange={(e) => setSaveLocation(e.target.checked)}
-                            className="h-4 w-4 rounded border-border accent-primary"
-                          />
-                          Save it as a location on {selectedCompany.name}
-                        </label>
-                      </div>
-                    ) : companyLocations.length > 0 ? (
-                      <>
-                        <div className="flex flex-wrap gap-2">
-                          {companyLocations.map((l) => (
-                            <button
-                              key={l.id}
-                              type="button"
-                              aria-pressed={l.id === locationId}
-                              onClick={() => setLocationId(l.id)}
-                              className={`rounded-lg border px-3 py-1.5 text-left text-[13px] transition-colors ${
-                                l.id === locationId
-                                  ? "border-primary bg-hover text-ink"
-                                  : "border-border bg-surface hover:bg-hover"
-                              }`}
-                            >
-                              <span className="font-medium">{l.name}</span>
-                              {l.isDefault ? (
-                                <span className="ml-1.5 text-xs text-gray">default</span>
-                              ) : null}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-[13px] text-ink">
-                          {selectedLocation ? (
-                            selectedLocation.address
-                          ) : (
-                            <span className="empty-value">Pick where this is going</span>
-                          )}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-[13px] text-ink">
-                        {selectedCompany.locationName ? (
-                          <span className="text-gray-dark">
-                            {selectedCompany.locationName} ·{" "}
-                          </span>
-                        ) : null}
-                        {selectedCompany.deliveryAddress ?? (
-                          <span className="empty-value">No delivery address on file</span>
-                        )}
-                      </p>
-                    )}
+                    <label className="block"><span className={labelClass}>Location</span><select aria-label="Location" className={inputClass} value={locationMode === "new" ? "__elsewhere__" : locationId || "__business__"} onChange={event => { if (event.target.value === "__elsewhere__") { setLocationMode("new"); setLocationId(""); } else { setLocationMode("existing"); setLocationId(event.target.value === "__business__" ? "" : event.target.value); } }}>
+                      <option value="__business__">Address on file{selectedCompany.deliveryAddress ? ` — ${selectedCompany.deliveryAddress}` : " — not provided"}</option>
+                      {companyLocations.map(location => <option key={location.id} value={location.id}>{location.name} — {location.address}</option>)}
+                      <option value="__elsewhere__">Deliver elsewhere…</option>
+                    </select></label>
+                    {locationMode === "new" ? <div className="mt-3 space-y-2"><label className="block"><span className={labelClass}>New delivery address</span><input name="deliveryAddress" placeholder="Where is this going?" className={inputClass} /></label><label className="flex items-center gap-2 text-xs text-gray-dark"><input type="checkbox" checked={saveLocation} onChange={event => setSaveLocation(event.target.checked)} />Save this address on {selectedCompany.name}</label></div> : <p className="mt-2 text-xs text-gray-dark">{selectedLocation?.address ?? selectedCompany.deliveryAddress ?? "Choose a location or deliver elsewhere."}</p>}
                     {/* The real values the action reads. */}
                     <input
                       type="hidden"
@@ -1326,15 +1239,7 @@ export function IntakeForm({
 
             {goesToPipeline ? null : (
               <div className="mt-4">
-                <label className="block min-w-56 flex-1">
-                  <span className={labelClass}>Customer terms</span>
-                  <textarea
-                    name="termsNotes"
-                    rows={3}
-                    placeholder="Enter the terms agreed with this customer in your own words…"
-                    className={inputClass}
-                  />
-                </label>
+                <PaymentTermsField />
               </div>
             )}
 
@@ -1394,28 +1299,9 @@ export function IntakeForm({
             </div>
           </div>
 
-          {orderType === "project" ? (
-            <details className="card card-flush mt-5">
-              <summary className="cursor-pointer px-4 py-3 marker:text-gray">
-                <span className="section-label !mb-0 !inline">Project details</span>
-              </summary>
-              <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className={labelClass}>Facility type</span>
-                  <input name="facilityType" className={inputClass} />
-                </label>
-                <label className="block">
-                  <span className={labelClass}>Menu</span>
-                  <input name="menu" className={inputClass} />
-                </label>
-                <label className="block">
-                  <span className={labelClass}>Dimensions of room</span>
-                  <input name="roomDimensions" className={inputClass} />
-                </label>
-                <label className="block">
-                  <span className={labelClass}>Wall measurements</span>
-                  <input name="wallMeasurements" className={inputClass} />
-                </label>
+          <section className="card card-flush mt-5" aria-label="Delivery and installation">
+            <h3 className="section-label px-4 pt-4">Delivery &amp; installation</h3>
+            <div className="grid grid-cols-1 gap-4 px-4 pb-4 sm:grid-cols-2">
                 <label className="block">
                   <span className={labelClass}>Delivery type</span>
                   <select
@@ -1462,6 +1348,33 @@ export function IntakeForm({
                     />
                   </div>
                 </div>
+              <label className="block sm:col-span-2"><span className={labelClass}>Floor note</span><input name="floorNote" placeholder="e.g. Ground floor, or 3rd floor with service elevator" className={inputClass} /></label>
+            </div>
+          </section>
+
+          {orderType === "project" ? (
+            <details className="card card-flush mt-5">
+              <summary className="cursor-pointer px-4 py-3 marker:text-gray">
+                <span className="section-label !mb-0 !inline">Project details</span>
+              </summary>
+              <div className="grid grid-cols-1 gap-4 border-t border-border px-4 py-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className={labelClass}>Facility type</span>
+                  <input name="facilityType" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Menu</span>
+                  <input name="menu" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Dimensions of room</span>
+                  <input name="roomDimensions" className={inputClass} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>Wall measurements</span>
+                  <input name="wallMeasurements" className={inputClass} />
+                </label>
+
               </div>
             </details>
           ) : null}
@@ -1554,13 +1467,7 @@ export function IntakeForm({
                   {salespersonName ?? "whoever is signed in"}
                 </span>
                 <span className="mx-1.5 text-gray">·</span>
-                <button
-                  type="button"
-                  onClick={() => setShowSalespersonPicker(true)}
-                  className="text-primary transition-colors hover:underline"
-                >
-                  change
-                </button>
+                <EditIconButton label="Edit salesperson" onClick={() => setShowSalespersonPicker(true)} />
                 {/* The picker is hidden, so the value still has to reach the action. */}
                 <input type="hidden" name="salespersonId" value={salespersonId} />
               </p>

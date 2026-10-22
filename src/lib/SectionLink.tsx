@@ -11,7 +11,7 @@ export function highlightSection(hash: string, source?: Element | null) {
   const panel = target.closest<HTMLElement>("[data-workflow-steps]");
   if (panel) {
     const keys = panel.dataset.workflowSteps!.split(",");
-    const destinations: Record<string, string> = { "#order-terms": "terms", "#payments": "deposit", "#quote-status": "quote", "#purchase-orders": "pos", "#delivery": "delivery", "#service": "service", "#order-complete": "service", "#order-intake": "sales", "#order-summary": "close" };
+    const destinations: Record<string, string> = { "#order-terms": "deposit", "#payments": "deposit", "#client-quote": "clientQuote", "#purchase-orders": "pos", "#delivery": "delivery", "#service": "service", "#order-complete": "service", "#order-intake": "sales", "#order-summary": "close" };
     const preferred = destinations[hash] ?? (hash === "#line-items" || hash.startsWith("#pricing-") ? "pricing" : keys[0]);
     panel.dispatchEvent(new CustomEvent("workflow:reveal", { bubbles: true, detail: { keys, preferred } }));
   }

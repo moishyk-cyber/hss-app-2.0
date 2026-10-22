@@ -13,6 +13,7 @@ test("invoice status windows preserve filters and include paid records beyond a 
     assert.deepEqual(clauses[0], where);
     return (clauses[1].id as { in: string[] }).in.map(id => ({ id }));
   }, where, 1, async condition => {
+    if (condition === where) return [{ id: "initial-1" }, { id: "initial-2" }];
     const clauses = condition.AND as Prisma.PaymentWhereInput[];
     assert.deepEqual(clauses[0], where);
     const status = String(clauses[1].status);

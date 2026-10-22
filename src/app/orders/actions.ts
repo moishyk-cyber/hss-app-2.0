@@ -1,7 +1,12 @@
 "use server";
 
-import { confirmSalesOrder, salesOrderRequired } from "@/lib/workflows/salesOrder";
-import { hasOrderTerms } from "@/lib/ballInCourt";
+import { verifiedPaymentInterpretation } from "@/lib/interpretPaymentTerms";
+import { paymentPlanAmounts } from "@/lib/paymentTerms";
+import { Prisma } from "@prisma/client";
+import { serialTransaction } from "@/lib/workflows/transaction";
+import { reconcileOrderStatus } from "@/lib/workflows/orderState";
+import { editInvoiceRecord, deleteInvoiceRecord, unpayInvoiceRecord, InvoiceEditError, type InvoiceRevision } from "@/lib/workflows/invoices";
+import { confirmSalesOrder } from "@/lib/workflows/salesOrder";
 import { fulfillment, lineItemPricing } from "@/lib/workflows";
 import { logPurchaseOrder, renamePurchaseOrder, poExpectedDate, savePoExpectedDate, poNumberProblem, isDuplicatePoNumber, duplicatePoNumberMessage } from "@/lib/workflows/purchaseOrders";
 import { prisma } from "@/lib/prisma";
@@ -18,9 +23,7 @@ import {
 } from "@/lib/flow";
 import {
   isValidValue,
-  labelFor,
   DELIVERY_STATUSES,
-  QUOTE_STATUSES,
 } from "@/lib/constants";
 import { plainMoney, roundCents, toMoney } from "@/lib/money";
 import { requirePermission } from "@/lib/permissionsServer";
@@ -35,6 +38,8 @@ async function log(linkedId: string, action: string, detail: string, meta?: Acti
 }
 
 function revalidateOrder(orderId: string) {
+  revalidatePath("/records/[id]", "page");
+  revalidatePath("/pipeline");
   revalidatePath("/invoices");
   revalidatePath(`/orders/${orderId}`);
   revalidatePath("/orders");
@@ -126,8 +131,6 @@ export async function markOrderComplete(orderId: string): Promise<ActionResult> 
     );
     if (!order) return { ok: false, message: "Order not found" };
 
-    if (!["accepted", "not_needed"].includes(order.quoteStatus)) return { ok: false, message: "Record customer quote acceptance before closing the order." };
-    if (!hasOrderTerms(order)) return { ok: false, message: "Save the agreed order terms before closing the order." };
     if (order._count.serviceIssues > 0) return { ok: false, message: "Resolve all open service issues before closing the order." };
     if (!canCompleteOrder(order)) {
       const gate = evaluatePaymentGate(order);
@@ -228,6 +231,26 @@ export async function addInvoice(
   }, "Could not add the invoice. Please try again.");
 }
 
+/** Invoice amount/date edits and deletion share the same payment gate reconciliation. */
+export async function editInvoice(paymentId: string, amount: number, dueDate: string, expected: InvoiceRevision): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit"); if (denied) return denied;
+  try {
+    const { previous, payment } = await editInvoiceRecord(prisma, paymentId, amount, dueDate, expected);
+    await log(payment.orderId, "invoice_edited", `${payment.type} invoice amount/date updated`, { previousValue: JSON.stringify(previous), newValue: JSON.stringify({ amount: toMoney(payment.amount), dueDate: payment.dueDate, status: payment.status }) });
+    revalidateOrder(payment.orderId);
+    return { ok: true };
+  } catch (error) { if (error instanceof InvoiceEditError) return { ok: false, message: error.message }; console.error("Invoice edit failed", error); return { ok: false, message: "Could not save the invoice. Please try again." }; }
+}
+export async function deleteInvoice(paymentId: string, expected: InvoiceRevision): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit"); if (denied) return denied;
+  try {
+    const payment = await deleteInvoiceRecord(prisma, paymentId, expected);
+    await log(payment.orderId, "invoice_deleted", `${payment.type} invoice of $${toMoney(payment.amount)} deleted`, { previousValue: JSON.stringify(plainMoney(payment)), newValue: null });
+    revalidateOrder(payment.orderId);
+    return { ok: true };
+  } catch (error) { if (error instanceof InvoiceEditError) return { ok: false, message: error.message }; console.error("Invoice delete failed", error); return { ok: false, message: "Could not delete the invoice. Please try again." }; }
+}
+
 export async function setPaymentDueDate(paymentId: string, input: string): Promise<ActionResult> {
   const denied = await requirePermission("payments.edit");
   if (denied) return denied;
@@ -257,6 +280,7 @@ export async function markPaymentInvoiced(paymentId: string): Promise<ActionResu
 export async function markPaymentPending(paymentId: string, expectedStatus: string): Promise<ActionResult> {
   const denied = await requirePermission("payments.edit");
   if (denied) return denied;
+  if (expectedStatus === "paid") return undoMarkPaymentPaid(paymentId);
   if (!["invoiced", "paid"].includes(expectedStatus)) return { ok: false, message: "Refresh the payment before changing its status." };
   return safeAction(async () => {
     const payment = await prisma.payment.update({
@@ -322,27 +346,16 @@ export async function markPaymentPaid(
   }, "Could not mark the payment paid. Please try again.");
 }
 
-/** Reverses markPaymentPaid: back to invoiced, date cleared, logged. */
-export async function undoMarkPaymentPaid(paymentId: string): Promise<ActionResult> {
-  const denied = await requirePermission("payments.edit");
-  if (denied) return denied;
-  return safeAction(async () => {
-    const existing = await prisma.payment.findUnique({ where: { id: paymentId } });
-    if (!existing) throw new Error("Payment not found");
-    if (existing.status !== "paid") return;
-    const payment = await prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: "invoiced", date: null },
-    });
-    await log(
-      payment.orderId,
-      "payment_unpaid",
-      `Payment (${payment.type}) of $${toMoney(payment.amount)} reverted to invoiced (paid was undone)`,
-      { previousValue: "paid", newValue: "invoiced" }
-    );
-    await recomputeOrderStatus(payment.orderId);
+/** Mark unpaid removes the invoice and its received money in one transaction. */
+export async function undoMarkPaymentPaid(paymentId: string, expected?: InvoiceRevision): Promise<ActionResult> {
+  const denied = await requirePermission("payments.edit"); if (denied) return denied;
+  try {
+    const payment = await unpayInvoiceRecord(prisma, paymentId, expected);
+    if (!payment) return { ok: true };
+    await log(payment.orderId, "payment_unpaid", `${payment.type} invoice of $${toMoney(payment.amount)} removed when marked unpaid`, { previousValue: JSON.stringify(plainMoney(payment)), newValue: null });
     revalidateOrder(payment.orderId);
-  }, "Could not undo the payment. Please try again.");
+    return { ok: true };
+  } catch (error) { if (error instanceof InvoiceEditError) return { ok: false, message: error.message }; console.error("Mark unpaid failed", error); return { ok: false, message: "Could not mark unpaid and remove the invoice. Please try again." }; }
 }
 
 export async function setLineItemDeliveryStatus(
@@ -448,7 +461,6 @@ export async function createPurchaseOrder(
     if (!order) throw new Error("Order not found");
     const gate = evaluatePaymentGate(plainMoney(order));
     if (!gate.open) return { ok: false, message: gate.reason };
-    if (!order.salesOrderSentAt) return { ok: false, message: salesOrderRequired };
 
     const vendor = await resolveVendor(supplierId, newVendorName);
     if (!vendor) throw new Error("Vendor not found");
@@ -600,7 +612,7 @@ export async function setOrderCompany(
     }
     await prisma.order.update({
       where: { id: orderId },
-      data: { companyId: company.id, contactId: null, locationId: null, deliveryAddress: null },
+      data: { companyId: company.id, contactId: null, locationId: null, deliveryAddress: null, intakeDeliveryAddress: null, intakeLocationName: null },
     });
     await log(
       orderId,
@@ -706,6 +718,51 @@ export async function createLocationForOrder(
   }, "Could not add the location. Please try again.");
 }
 
+/** The unified intake editor updates the current order rather than its old deal snapshot. */
+export async function setOrderTitle(orderId: string, value: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const title = cleanText(value, TEXT_LIMITS.short);
+  if (!title) return { ok: false, message: "Enter a title before saving." };
+  return safeAction(async () => {
+    await prisma.$transaction(async tx => {
+      const order = await tx.order.update({ where: { id: orderId }, data: { title } });
+      if (order.opportunityId) await tx.opportunity.update({ where: { id: order.opportunityId }, data: { title } });
+    });
+    await log(orderId, "order_title_set", "Order title updated");
+    revalidateOrder(orderId);
+  }, "Could not save the title. Please try again.");
+}
+
+export async function setOrderNotes(orderId: string, value: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  const notes = cleanText(value, TEXT_LIMITS.long);
+  return safeAction(async () => {
+    await prisma.order.update({ where: { id: orderId }, data: { notes: notes || null } });
+    await log(orderId, "order_notes_set", "Order notes updated");
+    revalidateOrder(orderId);
+  }, "Could not save the notes. Please try again.");
+}
+
+/** Delivery requirements remain editable for intakes created directly as orders. */
+export async function setOrderDeliveryDetail(orderId: string, field: 'deliveryType' | 'openingSize' | 'installationNeeded' | 'floorNote', value: string): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  if (!["deliveryType", "openingSize", "installationNeeded", "floorNote"].includes(field)) return { ok: false, message: "Choose a valid delivery field." };
+  if (field === "deliveryType" && value && !["curbside", "inside"].includes(value)) return { ok: false, message: "Choose curbside or inside delivery." };
+  if (field === "installationNeeded" && !["yes", "no"].includes(value)) return { ok: false, message: "Choose Yes or No." };
+  const data = field === "installationNeeded" ? { installationNeeded: value === "yes" } : { [field]: cleanText(value, field === "floorNote" ? TEXT_LIMITS.medium : TEXT_LIMITS.short) || null };
+  return safeAction(async () => {
+    await prisma.$transaction(async tx => {
+      const order = await tx.order.update({ where: { id: orderId }, data, select: { opportunityId: true } });
+      if (order.opportunityId) await tx.opportunity.update({ where: { id: order.opportunityId }, data });
+    });
+    await log(orderId, "order_delivery_details_set", "Delivery requirements updated");
+    revalidateOrder(orderId);
+  }, "Could not save delivery requirements. Please try again.");
+}
+
 export async function setOrderJobId(orderId: string, jobId: string): Promise<ActionResult> {
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
@@ -763,6 +820,31 @@ export async function setOrderDeliveryAddress(orderId: string, value: string): P
  * delivery leg actually reads, so picking a site copies its address across.
  * An empty id unlinks the order without touching the address it already has.
  */
+export async function setOrderDestination(orderId: string, choice: string, newAddress = ""): Promise<ActionResult> {
+  const denied = await requirePermission("orders.edit");
+  if (denied) return denied;
+  return safeAction(async () => {
+    await prisma.$transaction(async tx => {
+      const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { companyId: true, intakeDeliveryAddress: true, deliveryAddress: true } });
+      let deliveryAddress: string | null = null;
+      let locationId: string | null = null;
+      if (choice === "intake") {
+        deliveryAddress = order.intakeDeliveryAddress;
+        if (deliveryAddress && order.companyId) locationId = (await tx.location.findFirst({ where: { companyId: order.companyId, address: deliveryAddress }, select: { id: true } }))?.id ?? null;
+      } else if (choice === "elsewhere") deliveryAddress = cleanText(newAddress, TEXT_LIMITS.medium) || null;
+      else {
+        const location = await tx.location.findUnique({ where: { id: choice }, select: { id: true, companyId: true, address: true } });
+        if (!location || location.companyId !== order.companyId) throw new Error("That location does not belong to this business.");
+        locationId = location.id; deliveryAddress = location.address;
+      }
+      if (!deliveryAddress?.trim()) throw new Error("Enter a delivery address or choose a saved location.");
+      await tx.order.update({ where: { id: orderId }, data: { locationId, deliveryAddress } });
+    });
+    await log(orderId, "order_location_set", "Delivery destination updated");
+    revalidateOrder(orderId);
+  }, "Could not save the delivery location. Choose a valid location and try again.");
+}
+
 export async function setOrderLocation(orderId: string, locationId: string): Promise<ActionResult> {
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
@@ -828,65 +910,33 @@ export async function setPoAutoQuotesNumber(poId: string, value: string): Promis
   }
 }
 
-/**
- * The Invoice tab's quote row: quoteStatus + the link to the customer-facing
- * quote. Setting status to "sent" stamps quoteSentAt the first time only -
- * re-sending doesn't reset the clock.
- */
-export async function setOrderQuote(
-  orderId: string,
-  input: { quoteStatus: string; quoteUrl: string }
-): Promise<ActionResult> {
-  const denied = await requirePermission("quotes.edit");
-  if (denied) return denied;
-  if (!isValidValue(QUOTE_STATUSES, input.quoteStatus)) {
-    return { ok: false, message: "Pick a valid quote status." };
-  }
-  const url = input.quoteUrl.trim();
-  if (url && !/^https?:\/\//i.test(url)) {
-    return { ok: false, message: "The quote link should start with http:// or https://." };
-  }
-  return safeAction(async () => {
-    const existing = await prisma.order.findUnique({ where: { id: orderId }, select: { quoteSentAt: true } });
-    if (!existing) throw new Error("Order not found");
-    const stampSent = input.quoteStatus === "sent" && !existing.quoteSentAt;
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        quoteStatus: input.quoteStatus,
-        quoteUrl: url || null,
-        ...(stampSent ? { quoteSentAt: new Date() } : {}),
-      },
-    });
-    await log(
-      orderId,
-      "quote_updated",
-      `Quote set to ${labelFor(QUOTE_STATUSES, input.quoteStatus)}${url ? " (link attached)" : ""}`
-    );
-    revalidateOrder(orderId);
-  }, "Could not update the quote. Please try again.");
-}
-
-/**
- * The Invoice tab's Terms card save. Sep 4 (client): terms are one free-text
- * box that someone writes after reading the quote - nothing is derived from it
- * and no invoice is created (those are added by hand on the same tab).
- */
-export async function updateOrderTermsText(orderId: string, text: string): Promise<ActionResult> {
+/** Apply validated automatic interpretation; never trust a client-supplied schedule. */
+export async function updateOrderTermsText(orderId: string, text: string, token?: string, agreedTotal?: number): Promise<ActionResult> {
   const denied = await requirePermission("terms.edit");
   if (denied) return denied;
-  const trimmed = text.trim();
-  if (trimmed.length > 4000) {
-    return { ok: false, message: "Those terms are too long - keep them under 4000 characters." };
+  if (typeof text !== "string" || text.length > 4000) return { ok: false, message: "Keep payment terms under 4,000 characters." };
+  if (agreedTotal !== undefined) {
+    const priceDenied = await requirePermission("orders.edit"); if (priceDenied) return priceDenied;
+    if (!Number.isFinite(agreedTotal) || agreedTotal <= 0 || agreedTotal > 9999999999.99) return { ok: false, message: "Enter a valid agreed order total." };
   }
+  const trimmed = text.trim();
+  let interpretation: ReturnType<typeof verifiedPaymentInterpretation> | null = null;
+  try { interpretation = trimmed ? verifiedPaymentInterpretation(trimmed, token) : null; }
+  catch (error) { return { ok: false, message: (error as Error).message }; }
   return safeAction(async () => {
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { termsNotes: trimmed || null },
+    await serialTransaction(prisma, async tx => {
+      const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      const required = interpretation ? paymentPlanAmounts(interpretation.plan, agreedTotal ?? toMoney(order.orderValue)).requiredBeforePurchase : null;
+      await tx.order.update({ where: { id: orderId }, data: {
+        termsNotes: trimmed || null, paymentTerms: interpretation ? "custom" : null,
+        ...(agreedTotal !== undefined ? { orderValue: roundCents(agreedTotal) } : {}),
+        paymentPlan: interpretation ? interpretation.plan : Prisma.DbNull, depositRequired: required,
+      } });
+      await reconcileOrderStatus(tx, orderId);
     });
-    await log(orderId, "terms_updated", trimmed ? `Terms updated: ${trimmed}` : "Terms cleared");
+    await log(orderId, "terms_updated", trimmed ? `Payment terms applied (${interpretation!.model}): ${trimmed}` : "Custom payment terms cleared; account deposit rule applies");
     revalidateOrder(orderId);
-  }, "Could not save the terms. Please try again.");
+  }, "Could not save the payment terms. Please try again.");
 }
 
 /** Payment row inline edit: attach/replace/clear the QuickBooks link. */
@@ -923,16 +973,13 @@ export async function setPoExpectedDate(poId: string, value: string): Promise<Ac
   }, "Could not save the PO expected date. Please try again.");
 }
 
+/** Optional Purchase tracking; never a prerequisite for logging POs. */
 export async function setSalesOrderSent(orderId: string, sent: boolean): Promise<ActionResult> {
   const denied = await requirePermission("orders.edit");
   if (denied) return denied;
-  try {
+  return safeAction(async () => {
     await confirmSalesOrder(prisma, orderId, sent);
     await log(orderId, "sales_order_sent_set", sent ? "Sales order confirmed sent to customer" : "Sales order sent confirmation cleared");
     revalidateOrder(orderId);
-    revalidatePath("/pipeline");
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Could not save the sales order confirmation." };
-  }
+  }, "Could not save the sales order confirmation. Please try again.");
 }

@@ -7,6 +7,7 @@ import { PAYMENT_STATUS_COLORS, PAYMENT_TYPES } from "@/app/orders/utils";
 import { PAYMENT_STATUSES, labelFor } from "@/lib/constants";
 import { markPaymentInvoiced } from "@/app/orders/actions";
 import { MarkPaidControl, UnmarkPaidControl, QuickBooksLinkControl, type Payment } from "@/app/orders/[id]/PaymentsSection";
+import { InvoiceEditor } from "./InvoiceEditor";
 import { InvoiceDueDate } from "./InvoiceDueDate";
 
 export type InvoiceRowData = Payment & {
@@ -27,7 +28,7 @@ export function InvoiceRow({ payment, canEdit, today }: { payment: InvoiceRowDat
       {payment.order.jobId && <div className="text-xs text-gray-dark">Job {payment.order.jobId}</div>}</td>
     <td>{payment.order.company ? <Link href={`/companies/${payment.order.company.id}`} className="cell-link">{payment.order.company.name}</Link> : <span className="empty-value">No customer</span>}</td>
     <td>{labelFor(PAYMENT_TYPES, payment.type)}{payment.source === "terms" && <div className="text-xs text-gray-dark">From terms</div>}</td>
-    <td className="whitespace-nowrap">{fmtUSD(payment.amount, { cents: true })}</td>
+    <td className="whitespace-nowrap"><span className="inline-flex items-center gap-1">{fmtUSD(payment.amount, { cents: true })}{canEdit && <InvoiceEditor payment={payment} />}</span></td>
     <td><span className={`badge ${PAYMENT_STATUS_COLORS[payment.status] ?? "badge-gray"}`}>{labelFor(PAYMENT_STATUSES, payment.status)}</span></td>
     <td><InvoiceDueDate payment={payment} canEdit={canEdit} today={today} />{payment.dueNote && <div className="text-xs text-gray-dark">{payment.dueNote}</div>}</td>
     <td>{canEdit ? <QuickBooksLinkControl payment={payment} /> : payment.quickbooksRef ? <a href={payment.quickbooksRef} target="_blank" rel="noreferrer" className="text-blue hover:underline">View in QuickBooks</a> : <span className="empty-value">No QuickBooks link</span>}</td>

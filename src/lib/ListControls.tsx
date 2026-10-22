@@ -11,6 +11,8 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ListField } from "./listQuery";
 import { InstantSearch, Spinner } from "./ui";
+import { useCollectionSnapshot } from "./CollectionScope";
+import { collectionHref, stageCollectionQuery } from "./collectionNavigation";
 import { ToolbarIcon } from "./ToolbarIcon";
 import { FilterBuilder } from "./FilterBuilder";
 import {
@@ -40,15 +42,12 @@ export function ListControls({
   scopeControls?: ReactNode;
   scopeSelect?: { label: string; value: string; options: readonly { value: string; label: string }[]; param: string; clear?: string[]; extraParams?: Record<string, string> };
 }) {
+  const snapshot=useCollectionSnapshot();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const shownCount=snapshot ? ((params.get("view")??snapshot.defaultView)==="kanban" ? snapshot.boardTotal??snapshot.total : snapshot.total) : count;
   const [pending, startTransition] = useTransition();
-  const latest = useRef(params.toString());
-  const queryString = params.toString();
-  useEffect(() => {
-    if (!pending) latest.current = queryString;
-  }, [queryString, pending]);
   const rawTree = params.get("filter_tree");
   const baseTree = useMemo(
     () => readFilterTree(rawTree, fields),
@@ -89,14 +88,14 @@ export function ListControls({
     };
   }, []);
   function update(mutate: (query: URLSearchParams) => void) {
-    const query = new URLSearchParams(latest.current);
-    mutate(query);
-    query.delete("page");
-    query.delete("records");
-    latest.current = query.toString();
+    const query = stageCollectionQuery(query => {
+      mutate(query);
+      query.delete("page");
+      query.delete("records");
+    });
     startTransition(() => {
       previewTree(readFilterTree(query.get("filter_tree"), fields));
-      router.replace(query.size ? `${pathname}?${query}` : pathname, {
+      router.replace(collectionHref(query), {
         scroll: false,
       });
     });
@@ -134,8 +133,8 @@ export function ListControls({
       aria-label="Collection controls"
       aria-busy={pending}
     >
-      {count !== undefined && (
-        <span role="status" className="collection-count">{count}{hasMore ? "+" : ""}</span>
+      {shownCount !== undefined && (
+        <span role="status" className="collection-count">{shownCount}{!snapshot && hasMore ? "+" : ""}</span>
       )}
       <div className="toolbar-row">
         {children && <div className="collection-view-controls">{children}</div>}

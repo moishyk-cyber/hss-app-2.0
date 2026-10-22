@@ -22,13 +22,14 @@ test("lane windows keep all five statuses visible and preserve tracking filters 
     assert.deepEqual(clauses[0], where);
     return (clauses[1].id as { in: string[] }).in.map(id => ({ id }));
   }, where, 1, async conditions => {
+    if (conditions === where) return [{ id: "initial-1" }, { id: "initial-2" }];
     const clauses = conditions.AND as Prisma.DeliveryWhereInput[];
     assert.deepEqual(clauses[0], where);
     const status = String(clauses[1].status ?? clauses[1].mode);
     lanes.push(status);
     return [{ id: status }, { id: `${status}-older` }];
   });
-  assert.equal(fullReads, 2);
+  assert.equal(fullReads, 1);
   assert.equal(result.hasMore, true);
   assert.equal(result.rows.length, 8);
   assert.deepEqual(new Set(lanes), new Set(["pending", "scheduled", "in_transit", "delivered_partial", "delivered_full", "manufacturer_to_customer", "hss_to_customer", "manufacturer_to_hss_to_customer"]));

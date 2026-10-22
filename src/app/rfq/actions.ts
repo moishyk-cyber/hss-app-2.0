@@ -26,6 +26,7 @@ async function revalidateLineItem(lineItemId: string) {
     select: { opportunityId: true, orderId: true },
   });
   revalidatePath("/rfq");
+  revalidatePath("/pipeline");
   revalidatePath("/dashboard");
   if (item?.opportunityId) revalidatePath(`/pipeline/${item.opportunityId}`);
   if (item?.orderId) revalidatePath(`/orders/${item.orderId}`);

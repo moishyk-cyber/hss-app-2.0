@@ -99,10 +99,10 @@ test("old records establish a baseline without flooding the inbox", async () => 
   assert.equal(m.state().notification[0].kind,"pricing_ready");
 });
 
-test("orders notify billing and classify project deposit versus full order payment", async () => {
+test("orders notify billing according to the agreed deposit or full-payment amount", async () => {
   for(const orderType of ["project","order"]) {
     const data=seed();
-    const m=memoryDatabase({...data,payment:[],order:data.order.map(o=>({...o,orderType}))});
+    const m=memoryDatabase({...data,payment:[],order:data.order.map(o=>({...o,orderType,depositRequired:orderType==="order"?Number(o.orderValue):null}))});
     await syncRecordNotifications(m.db,"order","order",now);
     assert.equal(m.state().notification[0].userId,"billing");
     assert.equal(m.state().notification[0].kind,orderType==="project"?"awaiting_deposit":"awaiting_payment");

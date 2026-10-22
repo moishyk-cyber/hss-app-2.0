@@ -1,3 +1,5 @@
+import { MyItemsScroll } from "./MyItemsScroll";
+import type { MyItemKind } from "@/lib/myItemsTypes";
 import Link from "@/lib/IntentLink";
 import type { ReactNode } from "react";
 
@@ -32,6 +34,7 @@ export function QueueCard({
   viewAllLabel = "View all",
   rows,
   emptyText,
+  paging,
 }: {
   title: string;
   count: number;
@@ -39,7 +42,9 @@ export function QueueCard({
   viewAllLabel?: string;
   rows: QueueRow[];
   emptyText: ReactNode;
+  paging?: {kind:MyItemKind;cursor:string;hasMore:boolean};
 }) {
+  const rowItems=rows.map((row,i)=><li key={i} className="flex items-center justify-between gap-3 py-2 text-sm"><Link href={row.href} className="min-w-0 flex-1 truncate text-blue transition-colors hover:underline">{row.primary}</Link>{row.secondary&&<span className="shrink-0 truncate text-xs text-gray-dark">{row.secondary}</span>}{row.meta&&<span className="shrink-0 text-xs font-medium text-ink">{row.meta}</span>}</li>);
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-2">
@@ -54,17 +59,7 @@ export function QueueCard({
       {rows.length === 0 ? (
         <div className="empty-state mt-2">{emptyText}</div>
       ) : (
-        <ul className="mt-2 divide-y divide-border">
-          {rows.map((row, i) => (
-            <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <Link href={row.href} className="min-w-0 flex-1 truncate text-blue transition-colors hover:underline">
-                {row.primary}
-              </Link>
-              {row.secondary && <span className="shrink-0 truncate text-xs text-gray-dark">{row.secondary}</span>}
-              {row.meta && <span className="shrink-0 text-xs font-medium text-ink">{row.meta}</span>}
-            </li>
-          ))}
-        </ul>
+        paging ? <MyItemsScroll key={`${paging.kind}:${paging.cursor}`} {...paging} title={title}>{rowItems}</MyItemsScroll> : <ul className="mt-2 divide-y divide-border">{rowItems}</ul>
       )}
     </div>
   );

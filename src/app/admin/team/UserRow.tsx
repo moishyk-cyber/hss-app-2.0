@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { USER_ROLES, labelFor } from "@/lib/constants";
-import { BadgeSelect, OptimisticSelect, Spinner } from "@/lib/ui";
+import { BadgeSelect, OptimisticSelect, Spinner, EditIconButton } from "@/lib/ui";
 import { Avatar } from "@/lib/Avatar";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import type { ActionResult } from "@/lib/actionResult";
@@ -21,14 +21,6 @@ function MailIcon() {
         <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
       </svg>
     </span>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    </svg>
   );
 }
 
@@ -138,14 +130,7 @@ function EmailCell({ id, initial, name }: { id: string; initial: string; name: s
         <MailIcon />
         <span className="truncate">{initial}</span>
       </a>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        aria-label={`Edit ${initial}`}
-        className="shrink-0 text-gray transition-colors hover:text-ink"
-      >
-        <PencilIcon />
-      </button>
+      <EditIconButton label={`Edit ${initial}`} onClick={() => setEditing(true)} />
     </span>
   );
 }

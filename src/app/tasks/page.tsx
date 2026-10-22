@@ -1,5 +1,6 @@
 import TaskCollection from "./TaskCollection";
-import { loadTaskCollection } from "./collectionData";
+import { loadIndexedCollection } from "@/lib/loadIndexedCollection";
+import { CollectionSnapshot } from "@/lib/CollectionScope";
 import { can } from "@/lib/permissionsServer";
 import { collectionLimit } from "@/lib/CollectionWindow";
 import { getActiveUsers } from "@/lib/users";
@@ -127,10 +128,12 @@ export default async function TasksPage({
   const query = (where: Prisma.TaskWhereInput, take = limit + 1) => prisma.task.findMany({
     take, where, select, relationLoadStrategy: "join", orderBy: ordering,
   });
-  const queryIds = (where: Prisma.TaskWhereInput, take = limit + 1) => prisma.task.findMany({
-    take, where, select: { id: true }, orderBy: ordering,
-  });
-  const { rows: tasks, hasMore } = await loadTaskCollection(query, { AND: [where, nestedWhere ?? {}] }, limit, queryIds);
+  const indexWhere: Prisma.TaskWhereInput = { AND: [where, nestedWhere ?? {}] };
+  const indexOrder: Prisma.TaskOrderByWithRelationInput[] = ordering;
+  const collection=await loadIndexedCollection(JSON.stringify(["tasks-rows-v1",indexWhere,indexOrder]),
+    ()=>prisma.task.findMany({where:indexWhere,orderBy:indexOrder,select:{id:true,status:true,priority:true}}).then(rows=>rows.map(row=>({id:row.id,groups:{status:row.status,priority:row.priority}}))),
+    ids=>query({AND:[indexWhere,{id:{in:ids}}]},ids.length),limit);
+  const {rows: tasks,hasMore}=collection;
   const labelPromise = resolveLinkedLabels(tasks.filter(task => task.linkedType && task.linkedId)
     .map(task => ({ type: task.linkedType!, id: task.linkedId! })));
   const [labelMap, users, resolvedUserId] = await Promise.all([labelPromise, usersPromise, currentUserPromise]);
@@ -165,6 +168,6 @@ export default async function TasksPage({
   const validStatus =
     status && TASK_STATUSES.some((s) => s.value === status) ? status : null;
 
-  return <TaskCollection rows={rows} users={users} fields={fields} currentUserId={resolvedUserId}
-    canEdit={await canEditPromise} hasMore={hasMore} limit={limit} statusFilter={validStatus} />;
+  return <CollectionSnapshot data={collection.snapshot}><TaskCollection rows={rows} users={users} fields={fields} currentUserId={resolvedUserId}
+    canEdit={await canEditPromise} hasMore={hasMore} limit={limit} statusFilter={validStatus} /></CollectionSnapshot>;
 }

@@ -1,3 +1,4 @@
+import { databaseConnectionUrl } from "../src/lib/environmentMode";
 /**
  * HSS Kitchens — database seed.
  *
@@ -13,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ datasourceUrl: databaseConnectionUrl() });
 
 const EXPORT_DIR = join(__dirname, "monday-export");
 

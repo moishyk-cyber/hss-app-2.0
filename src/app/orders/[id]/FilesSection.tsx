@@ -1,4 +1,5 @@
 "use client";
+import { FilePreviewButton } from "@/lib/FilePreviewModal";
 
 // Files tab (and the same card on the deal page): every Document linked to this
 // record, plus the deal's own files when an order came from one - drawings and
@@ -25,7 +26,6 @@ import {
   createSignedUpload,
   deleteDocument,
   finalizeUpload,
-  getSignedDownloadUrl,
   type FileLinkedType,
 } from "../../files/actions";
 
@@ -82,45 +82,6 @@ function fmtSize(bytes: number | null): string | null {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function OpenUpload({ documentId }: { documentId: string }) {
-  const [pending, setPending] = useState(false);
-  const { toast } = useToast();
-
-  async function open() {
-    // The tab is opened synchronously so the browser credits it to the click,
-    // then pointed at the signed URL once it comes back (popup blockers).
-    const tab = window.open("", "_blank", "noopener,noreferrer");
-    setPending(true);
-    const result = await getSignedDownloadUrl(documentId);
-    setPending(false);
-    if (result.ok === false) {
-      tab?.close();
-      toast({ kind: "error", message: result.message });
-      return;
-    }
-    if (tab) tab.location.href = result.url;
-    else window.location.href = result.url;
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={open}
-      disabled={pending}
-      className={`btn btn-sm active:scale-[0.99] ${pending ? "cursor-progress opacity-60" : ""}`}
-    >
-      {pending ? (
-        <span className="inline-flex items-center gap-1.5">
-          <Spinner />
-          Open
-        </span>
-      ) : (
-        "Open"
-      )}
-    </button>
-  );
 }
 
 function DeleteFile({ doc }: { doc: FileDocData }) {
@@ -184,18 +145,7 @@ function FileRow({ doc, canDelete }: { doc: FileDocData; canDelete: boolean }) {
         {doc.note ? <span className="block text-[12px] text-gray-dark">{doc.note}</span> : null}
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        {doc.storagePath ? (
-          <OpenUpload documentId={doc.id} />
-        ) : (
-          <a
-            href={doc.fileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-sm active:scale-[0.99]"
-          >
-            Open
-          </a>
-        )}
+        <FilePreviewButton document={doc} />
         {canDelete ? <DeleteFile doc={doc} /> : null}
       </span>
     </div>

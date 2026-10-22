@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { unstable_rethrow, useRouter } from "next/navigation";
 import Link from "@/lib/IntentLink";
 import { FormFooter } from "@/lib/PageLayout";
 import { PendingButton } from "@/lib/ui";
@@ -18,10 +18,13 @@ export function PartnerForm({ initialKind = "", initialName = "", deliveryId, or
     if (!kind) { setError("Choose Carrier or Trucker."); return; }
     try {
       const result = originalName ? await renameDeliveryPartner(kind, originalName, name) : await addDeliveryPartner(kind, name, deliveryId);
+      // A successful rename redirects on the server; the action can resolve
+      // without a value while that navigation completes.
+      if (!result) return;
       if (!result.ok) { setError(result.message); return; }
       if (deliveryId) router.back(); else router.push("/carriers-truckers");
       router.refresh();
-    } catch { setError("Could not save the name. Please try again."); }
+    } catch (error) { unstable_rethrow(error); setError("Could not confirm the save. Refresh the list to check the name."); }
   }
   return <form action={add} className="space-y-6">
     {error && <p role="alert" className="banner-alert">{error}</p>}

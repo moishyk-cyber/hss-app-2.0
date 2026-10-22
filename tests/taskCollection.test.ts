@@ -23,13 +23,14 @@ test("task lane windows preserve parent, ownership, and nested filters before on
     const ids = (clauses[1].id as { in: string[] }).in;
     return ids.map(id => ({ id }));
   }, where, 1, async conditions => {
+    if (conditions === where) return [{ id: "initial-1" }, { id: "initial-2" }];
     const clauses = conditions.AND as Prisma.TaskWhereInput[];
     assert.deepEqual(clauses[0], where);
     const value = String(clauses[1].status ?? clauses[1].priority);
     lanes.push(value);
     return [{ id: value }, { id: `${value}-older` }];
   });
-  assert.equal(fullReads, 2);
+  assert.equal(fullReads, 1);
   assert.equal(result.hasMore, true);
   assert.equal(result.rows.length, 8);
   assert.deepEqual(new Set(lanes), new Set(["not_started", "in_progress", "done", "stuck", "low", "medium", "high", "critical"]));

@@ -1,11 +1,9 @@
+import { RecordCardBody } from "@/lib/RecordCardBody";
+import { KanbanLaneAmount } from "@/lib/KanbanLaneAmount";
 import { LaneItems } from "@/lib/CollectionViews";
 import { CollapsibleKanbanLane } from "@/lib/CollapsibleKanbanLane";
-import Link from "@/lib/IntentLink";
-import { ORDER_PHASES, ORDER_STATUSES, ORDER_STATUS_COLORS, labelFor } from "@/lib/constants";
-import { Avatar } from "@/lib/Avatar";
+import { ORDER_PHASES } from "@/lib/constants";
 import type { Ball } from "@/lib/ballInCourt";
-import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
-import { DueCell, fmtMoney } from "./utils";
 
 /**
  * One order on the board. Everything is resolved server-side - the board is
@@ -19,14 +17,18 @@ import { DueCell, fmtMoney } from "./utils";
  * record a payment, send a PO or schedule a delivery.
  */
 export type OrderCard = {
+  documents: import("@/lib/recordCardDocuments").RecordCardDocument[];
   id: string;
+  href: string;
   title: string;
   /** ORDER_PHASES value - which column. Derived by orderPhase() (@/lib/flowRules). */
   phase: string;
-  /** The precise ORDER_STATUSES value, still shown on the card as a badge. */
+  /** The precise order status, used for lane summaries. */
   status: string;
+  companyId: string | null;
   companyName: string | null;
   ownerName: string | null;
+  daysOpen: number;
   value: number | null;
   neededByDate: Date | null;
   paymentStatus: "none" | "pending" | "paid";
@@ -37,16 +39,10 @@ export type OrderCard = {
 
 /** Why a column is empty, in the language of what feeds it. */
 const EMPTY_HINT: Record<string, string> = {
-  deposit: "Orders land here when a deal is marked Won.",
   pos: "Nothing here - orders arrive once the deposit is paid.",
   delivery: "Nothing here - orders arrive once a PO ships or a delivery is scheduled.",
-  customer_service: "Nothing here - only delivered orders with open service issues appear here.",
+  service: "Delivered orders appear here until close out is complete.",
 };
-
-function money(amount: number | null): string | null {
-  if (amount == null) return null;
-  return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
 
 export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
   return (
@@ -56,21 +52,19 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
         const total = columnCards.reduce((sum, c) => sum + (c.value ?? 0), 0);
         const stuckCount = columnCards.filter((c) => c.status === "stuck").length;
 
-        // Four columns, so they share the width (flex-1) rather than taking the
+        // Three columns, so they share the width (flex-1) rather than taking the
         // pipeline's fixed w-72 and running off the right edge. The min-width
         // keeps them readable and hands the row back to overflow-x-auto once
         // the screen is too narrow to share.
         return (
-          <CollapsibleKanbanLane key={phase.value} label={phase.label} count={columnCards.length}
+          <CollapsibleKanbanLane key={phase.value} label={phase.label} count={columnCards.length} totalField="phase" totalValue={phase.value}
             summary={<>
                 {stuckCount > 0 ? (
                   <span className="badge badge-red" title={`${stuckCount} stuck`}>
                     {stuckCount} stuck
                   </span>
                 ) : null}
-                {total > 0 ? (
-                  <span className="text-xs tabular-nums text-gray">{money(total)}</span>
-                ) : null}
+                <KanbanLaneAmount field="phase" lane={phase.value} amount={total} />
             </>}>
 
             <LaneItems laneKey={`orders:${phase.value}`}>
@@ -80,64 +74,8 @@ export function OrdersKanbanBoard({ cards }: { cards: OrderCard[] }) {
                     key={card.id}
                     className="card-sunken card-interactive kanban-card relative"
                   >
-                    {/*
-                      Stretched link (same pattern as the pipeline cards and the
-                      order list rows): the whole card opens the order, not just
-                      the title text.
-                    */}
-                    <Link
-                      href={`/orders/${card.id}`}
-                      title={card.title}
-                      className="kanban-card-title block text-ink hover:underline after:absolute after:inset-0 after:content-['']"
-                    >
-                      {card.title}
-                    </Link>
+                    <RecordCardBody documents={card.documents} id={card.id} type="order" href={card.href} title={card.title} companyId={card.companyId} companyName={card.companyName} assigneeName={card.ownerName} value={card.value} daysOpen={card.daysOpen} ball={card.ball} />
 
-                    {/* Square avatar for the business, matching the directory rows. */}
-                    <div className="kanban-card-company flex items-center gap-2 text-xs text-gray">
-                      {card.companyName ? (
-                        <>
-                          <Avatar name={card.companyName} kind="business" size="sm" />
-                          <span className="min-w-0 truncate" title={card.companyName}>{card.companyName}</span>
-                        </>
-                      ) : (
-                        <span className="empty-value">no company</span>
-                      )}
-                    </div>
-
-                    <div className="kanban-card-facts flex items-center justify-between gap-2 text-xs">
-                      <span className="font-medium tabular-nums text-ink">
-                        {card.value == null ? <span className="empty-value">No value</span> : fmtMoney(card.value)}
-                      </span>
-                      <span className="text-gray">
-                        {card.neededByDate ? <DueCell neededByDate={card.neededByDate} status={card.status} paymentStatus={card.paymentStatus} /> : <span className="empty-value">No due date</span>}
-                      </span>
-                    </div>
-
-                    {/*
-                      The precise status still shows, so the four columns never
-                      hide which of the nine statuses an order actually sits on.
-                      A stuck order stays in its real phase and reads red here.
-                    */}
-                    <div className="kanban-card-status flex flex-wrap items-center gap-1.5">
-                      <span className={`badge ${ORDER_STATUS_COLORS[card.status] ?? "badge-gray"}`}>
-                        {labelFor(ORDER_STATUSES, card.status)}
-                      </span>
-                    </div>
-                    <div className="kanban-card-handoff">
-                      <BallInCourtBadge ball={card.ball} compact />
-                    </div>
-
-                    {card.itemSummary ? (
-                      <p className="kanban-card-note text-xs text-gray-dark">{card.itemSummary}</p>
-                    ) : null}
-
-                    {card.ownerName ? (
-                      <div className="kanban-card-owner flex items-center gap-1.5 text-xs text-gray">
-                        <Avatar name={card.ownerName} kind="person" size="sm" />
-                        <span className="min-w-0 truncate" title={card.ownerName}>{card.ownerName}</span>
-                      </div>
-                    ) : null}
                   </article>
                 );
               })}

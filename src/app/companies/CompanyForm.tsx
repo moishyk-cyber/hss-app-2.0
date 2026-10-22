@@ -13,6 +13,7 @@ type CompanyFormValues = {
   priorityClient?: boolean;
   requiresDeposit?: boolean;
   depositPercent?: number | null;
+  paymentTermsConfigured?: boolean;
   phone?: string | null;
   phoneExt?: string | null;
   cellPhone?: string | null;
@@ -100,10 +101,12 @@ export function CompanyForm({
         />
 
         {/* Deposit terms are per-account: they drive the payment staged when a deal is won. */}
-        <Checkbox
-          label="Requires deposit"
-          name="requiresDeposit"
-          defaultChecked={company?.requiresDeposit ?? true}
+        <Select
+          label="Account payment terms"
+          name="accountPaymentTerms"
+          includeBlank="Not set — orders blocked"
+          options={[{value:"deposit",label:"Deposit before purchase"},{value:"full",label:"Payment in full before purchase"},{value:"none",label:"No payment required before purchase"}]}
+          defaultValue={company?.paymentTermsConfigured ? (!company.requiresDeposit ? "none" : company.depositPercent === 100 ? "full" : "deposit") : ""}
         />
         <Field
           label="Deposit %"
@@ -113,7 +116,7 @@ export function CompanyForm({
           max={100}
           step={1}
           defaultValue={company?.depositPercent ?? 30}
-          hint="Only applies when a deposit is required."
+          hint="Used for deposit terms. Save account terms before creating an order; individual deals can override them."
         />
 
         <Field

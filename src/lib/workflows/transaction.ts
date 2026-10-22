@@ -7,7 +7,7 @@ export async function serialTransaction<T>(
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await db.$transaction(work, { isolationLevel: "Serializable" });
+      return await db.$transaction(work, { isolationLevel: "Serializable", maxWait: 10000, timeout: 15000 });
     } catch (error) {
       if (attempt >= 2 || !error || typeof error !== "object" ||
         !("code" in error) || error.code !== "P2034") throw error;

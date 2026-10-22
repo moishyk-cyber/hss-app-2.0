@@ -1,8 +1,9 @@
+import { databaseConnectionUrl } from "../src/lib/environmentMode";
 // One-time security hardening (Supabase advisor: rls_disabled_in_public).
 // Enables Row-Level Security on every public table. Our app connects as the
 // table owner via Prisma and is unaffected; this closes the PostgREST/API path.
 import { PrismaClient } from "@prisma/client";
-const p = new PrismaClient();
+const p = new PrismaClient({ datasourceUrl: databaseConnectionUrl() });
 
 async function main() {
   const tables: { tablename: string; rowsecurity: boolean }[] = await p.$queryRawUnsafe(

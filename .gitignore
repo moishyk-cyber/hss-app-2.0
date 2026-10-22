@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/qa-reports/
 
 # next.js
 /.next/
@@ -48,3 +49,6 @@ prisma/dev.db
 
 # Generated client deliverables (contain customer data - keep out of version control)
 *.xlsx
+
+# Generated from the installed PDF.js package by postinstall.
+/public/vendor/pdfjs/

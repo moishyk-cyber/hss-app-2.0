@@ -1,4 +1,6 @@
 "use client";
+import { ItemMetadata, ItemNotes, type ItemDetailsFields } from "@/lib/ItemDetails";
+import { useRfqStatusAction } from "@/lib/useRfqStatusAction";
 
 import { MoneyInput } from "@/lib/MoneyInput";
 
@@ -12,7 +14,6 @@ import { UserSelect } from "@/lib/UserSelect";
 import {
   markLineItemRemoved,
   setLineItemAssignee,
-  setLineItemRfqStatus,
   updateLineItemPricing,
 } from "./actions";
 import { LeadTimeCell, StockStatusCell } from "./StockCells";
@@ -20,7 +21,7 @@ import { LeadTimeCell, StockStatusCell } from "./StockCells";
 /** Amber past this many days sitting in the RFQ queue without a status change. */
 const RFQ_WAITING_THRESHOLD_DAYS = 7;
 
-type RfqItem = {
+type RfqItem = ItemDetailsFields & {
   opportunityId?: string | null;
   orderId?: string | null;
   id: string;
@@ -190,6 +191,7 @@ export default function RfqRow({
   daysWaiting: number;
 }) {
   const { toast } = useToast();
+  const saveStatus = useRfqStatusAction();
 
   async function handleRemove() {
     const previousStatus = item.rfqStatus;
@@ -199,7 +201,7 @@ export default function RfqRow({
         kind: "info",
         message: `"${item.name}" removed from the queue`,
         actionLabel: "Undo",
-        onAction: () => setLineItemRfqStatus(item.id, previousStatus),
+        onAction: () => saveStatus(item.id, previousStatus),
       });
     }
     return result;
@@ -210,13 +212,12 @@ export default function RfqRow({
       id={`li-${item.id}`}
       className="align-top scroll-mt-4 transition-colors hover:bg-hover"
     >
-      <td className="">
+      <td className="item-name-cell">
         <div className="rfq-item-name font-semibold text-ink">{item.name}</div>
         {/* The lead time itself is the editable date column - not repeated here. */}
-        {item.brand && (
-          <div className="rfq-item-brand text-gray">{item.brand}</div>
-        )}
+        <ItemMetadata item={item} />
       </td>
+      <td className="item-notes-cell"><ItemNotes item={item} /></td>
       <td className=" text-gray-dark">{item.qty}</td>
       <td className="">
         {parentHref ? (
@@ -259,7 +260,7 @@ export default function RfqRow({
           <BadgeSelect
             value={item.rfqStatus}
             options={RFQ_STATUSES}
-            action={(next) => setLineItemRfqStatus(item.id, next)}
+            action={(next) => saveStatus(item.id, next)}
             colorMap={RFQ_STATUS_COLORS}
             ariaLabel={`RFQ status for ${item.name}: ${labelFor(RFQ_STATUSES, item.rfqStatus)}`}
           />

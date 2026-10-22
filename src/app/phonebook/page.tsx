@@ -1,4 +1,6 @@
+import { shareRead } from "@/lib/shareRead";
 import { matchFilterTree } from "@/lib/nestedFilters";
+import { collectionLimit, MoreRecords } from "@/lib/CollectionWindow";
 import { SortHeader, TableRows } from "@/lib/CollectionViews";
 import { Suspense } from "react";
 import Link from "@/lib/IntentLink";
@@ -91,6 +93,7 @@ export default async function PhoneBookPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const limit=collectionLimit(params);
   const canImport = await can("phonebook.edit");
   const search = typeof params.q === "string" ? params.q.trim() : "";
   const { sortKey, sortDir, filters } = parseListQuery(
@@ -155,18 +158,22 @@ export default async function PhoneBookPage({
       : {}),
   };
 
+  const contactSelect = { id: true, firstName: true, lastName: true, email: true, phone: true, cellPhone: true, phoneExt: true } as const;
   const [companies, matchedContacts, unassigned, allCompanies] =
-    await Promise.all([
+    await shareRead(JSON.stringify(["phonebook-v1",companyWhere,contactMatch,typeFilter]),()=>Promise.all([
       prisma.company.findMany({
+        relationLoadStrategy:"join",
         where: companyWhere,
         orderBy: { name: "asc" },
-        include: {
-          contacts: { orderBy: [{ firstName: "asc" }, { lastName: "asc" }] },
+        select: {
+          id: true, name: true, type: true, locationName: true, deliveryAddress: true, billingAddress: true, email: true, phone: true, phoneExt: true, priorityClient: true,
+          contacts: { select: contactSelect, orderBy: [{ firstName: "asc" }, { lastName: "asc" }] },
         },
       }),
       // While searching, people rows come from THIS query - matching people only.
       search && contactMatch
         ? prisma.contact.findMany({
+            relationLoadStrategy:"join",
             where: {
               ...contactMatch,
               companyId: { not: null },
@@ -182,6 +189,7 @@ export default async function PhoneBookPage({
       typeFilter
         ? Promise.resolve([])
         : prisma.contact.findMany({
+            relationLoadStrategy:"join",
             where: { companyId: null, ...(contactMatch ?? {}) },
             orderBy: [{ firstName: "asc" }],
           }),
@@ -189,7 +197,7 @@ export default async function PhoneBookPage({
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
-    ]);
+    ]));
 
   // Businesses and their people flattened into one list, then alphabetised together.
   const rows: DirectoryRow[] = [];
@@ -247,7 +255,7 @@ export default async function PhoneBookPage({
   const visibleRows = (
     kindFilter ? rows.filter((r) => r.kind === kindFilter) : rows
   ).filter((row) =>
-    matchFilterTree(PHONEBOOK_FIELDS, params.filter_tree, {
+    (!filters.name || row.name.toLowerCase().includes(filters.name.toLowerCase())) && matchFilterTree(PHONEBOOK_FIELDS, params.filter_tree, {
       kind: row.kind,
       name: row.name,
       type: row.type,
@@ -278,7 +286,7 @@ export default async function PhoneBookPage({
     kindFilter === "business"
       ? []
       : unassigned.filter((contact) =>
-          matchFilterTree(PHONEBOOK_FIELDS, params.filter_tree, {
+          (!filters.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ").toLowerCase().includes(filters.name.toLowerCase())) && matchFilterTree(PHONEBOOK_FIELDS, params.filter_tree, {
             kind: "person",
             name: [contact.firstName, contact.lastName]
               .filter(Boolean)
@@ -343,13 +351,14 @@ export default async function PhoneBookPage({
               </tr>
             </thead>
             <TableRows columns={6}>
-              {sortedRows.map((row) => (
+              {sortedRows.slice(0,limit).map((row) => (
                 <DirectoryRowItem key={row.key} row={row} />
               ))}
             </TableRows>
           </table>
         </div>
       )}
+      <MoreRecords href="/phonebook" limit={limit} hasMore={sortedRows.length>limit}/>
 
       {shownUnassigned.length > 0 ? (
         <section className="mt-10">

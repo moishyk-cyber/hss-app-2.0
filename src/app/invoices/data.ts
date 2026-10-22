@@ -10,6 +10,7 @@ export function loadInvoiceCollection<Row extends { id: string }>(
   where: Prisma.PaymentWhereInput,
   limit: number,
   queryIds: (where: Prisma.PaymentWhereInput, take?: number) => Promise<{ id: string }[]> = query,
+  sorted = false,
 ) {
   return loadBoardCollection<Row, Prisma.PaymentWhereInput>(query, where, limit,
     PAYMENT_STATUSES.map(lane => ({ status: lane.value })), AND => ({ AND }), ids => ({ id: { in: ids } }), queryIds);

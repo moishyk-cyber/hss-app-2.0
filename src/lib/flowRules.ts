@@ -1,3 +1,5 @@
+import { readPaymentPlan, paymentPlanAmounts } from './paymentTerms';
+import { hasAccountPaymentTerms, ACCOUNT_TERMS_REQUIRED } from './accountPaymentTerms';
 // The pure half of the flow engine: payment-gate evaluation and derived order
 // status. Nothing here touches the database, so client components and the pure
 // ball-in-court module (@/lib/ballInCourt) can import it without dragging
@@ -13,20 +15,21 @@
 // ---------------------------------------------------------------------------
 
 type GatePayment = { status: string; amount: number };
-type GateCompany = { requiresDeposit: boolean; depositPercent: number } | null;
+type GateCompany = { requiresDeposit: boolean; depositPercent: number; paymentTermsConfigured?: boolean } | null;
 
 export type GateOrder = {
   orderType: string;
   orderValue: number | null;
   /** Agreed gate amount from the close dialog; overrides the company-percent formula. */
   depositRequired?: number | null;
+  paymentPlan?: unknown;
   payments: GatePayment[];
   company: GateCompany;
 };
 
 export type PaymentGate = {
   open: boolean;
-  /** True for no-deposit accounts (projects billed after delivery). */
+  /** True when the agreed terms require no payment before purchasing. */
   exempt: boolean;
   paidTotal: number;
   /** Dollars needed to open the gate; null when the order has no value to measure against. */
@@ -51,13 +54,21 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
     .filter((p) => p.status === "paid")
     .reduce((sum, p) => sum + cents(p.amount), 0) / 100;
   const invoiced = order.payments.length > 0;
-  const isProject = order.orderType === "project";
+  const plan = readPaymentPlan(order.paymentPlan);
+  let planRequired: number | null | undefined;
+  if (order.paymentPlan != null) {
+    try { if (!plan) throw new Error(); planRequired = paymentPlanAmounts(plan, order.orderValue).requiredBeforePurchase; }
+    catch { return { open: false, exempt: false, paidTotal, requiredTotal: null, shortfall: 0, invoiced, reason: "Review the payment terms before purchasing." }; }
+    if (planRequired === null) return { open: false, exempt: false, paidTotal, requiredTotal: null, shortfall: 0, invoiced, reason: "Set the order total to calculate the payment required before purchasing." };
+  }
+  if (planRequired === undefined && order.depositRequired == null && !hasAccountPaymentTerms(order.company)) {
+    return { open: false, exempt: false, paidTotal, requiredTotal: null, shortfall: 0, invoiced, reason: ACCOUNT_TERMS_REQUIRED };
+  }
   const requiresDeposit = order.company?.requiresDeposit ?? true;
-  const depositPercent = order.company?.depositPercent ?? 30;
+  const depositPercent = order.company?.depositPercent ?? 0;
 
-  // Trusted accounts: projects billed after delivery skip the gate entirely.
-  // (Mirrors markOpportunityWon, which stages no payment for these accounts.)
-  if (isProject && !requiresDeposit) {
+  // Explicit custom terms override the account rule for either order type.
+  if (planRequired === 0 || (planRequired === undefined && order.depositRequired == null && !requiresDeposit)) {
     return {
       open: true,
       exempt: true,
@@ -65,12 +76,12 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
       requiredTotal: null,
       shortfall: 0,
       invoiced,
-      reason: "No deposit required for this account - full payment collected after delivery",
+      reason: "No payment required before purchasing under the agreed terms",
     };
   }
 
   const value = order.orderValue ?? 0;
-  const agreed = order.depositRequired ?? null;
+  const agreed = planRequired ?? order.depositRequired ?? null;
   if (value <= 0 && agreed == null) {
     // Nothing to measure sufficiency against - fall back to "any paid payment".
     // With no payment rows at all there is nothing to chase yet - say so,
@@ -86,12 +97,8 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
       reason: open
         ? "Payment received"
         : !invoiced
-          ? isProject
-            ? "Nothing invoiced yet - add a deposit invoice and collect it before POs are sent"
-            : "Nothing invoiced yet - add an invoice and collect full payment before POs are sent"
-          : isProject
-            ? "Deposit required before POs are sent"
-            : "Full payment required before POs are sent",
+          ? "Nothing invoiced yet - set the order total and collect the required deposit before POs are sent"
+          : "Deposit required before POs are sent",
     };
   }
 
@@ -99,11 +106,10 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
   const requiredTotal =
     agreed != null
       ? cents(agreed) / 100
-      : isProject
-        ? cents((value * depositPercent) / 100) / 100
-        : cents(value) / 100;
+      : cents((value * depositPercent) / 100) / 100;
   const shortfall = Math.max(0, cents(requiredTotal) - cents(paidTotal)) / 100;
   const open = shortfall === 0;
+  const paymentLabel = requiredTotal >= value ? "Payment" : "Deposit";
   return {
     open,
     exempt: false,
@@ -113,9 +119,7 @@ export function evaluatePaymentGate(order: GateOrder): PaymentGate {
     invoiced,
     reason: open
       ? "Payment received"
-      : isProject
-        ? `Deposit of $${requiredTotal.toLocaleString()} required ($${shortfall.toLocaleString()} outstanding) before POs are sent`
-        : `Full payment of $${requiredTotal.toLocaleString()} required ($${shortfall.toLocaleString()} outstanding) before POs are sent`,
+      : `${paymentLabel} of $${requiredTotal.toLocaleString()} required ($${shortfall.toLocaleString()} outstanding) before POs are sent`,
   };
 }
 
@@ -180,13 +184,11 @@ export function deriveOrderStatus(order: FlowOrder): string {
 
 /**
  * ORDER_STATUSES -> ORDER_PHASES. The nine statuses the flow engine derives are
- * finer-grained than the four columns the client works the board by, so each
- * column owns a pair. "complete" is absent on purpose (see orderPhase), and so
+ * finer-grained than the three fulfillment columns. Payment remains on intake,
+ * while delivered work waits for explicit Close Out. "complete" is absent on purpose (see orderPhase), and so
  * is "stuck", which is an alarm rather than a phase.
  */
 const PHASE_BY_STATUS: Record<string, string> = {
-  new: "deposit",
-  awaiting_payment: "deposit",
   payment_received: "pos",
   pos_in_progress: "pos",
   in_transit: "delivery",
@@ -207,14 +209,12 @@ const PHASE_BY_STATUS: Record<string, string> = {
  */
 export function orderPhase(order: FlowOrder & { openIssueCount?: number }): string | null {
   if (order.status === "complete") return null;
+  if (order.status === "new" && evaluatePaymentGate(order).open) return "pos";
   // deriveOrderStatus never returns "complete" or "stuck", so this resolves in one hop.
   const status = order.status === "stuck" ? deriveOrderStatus(order) : order.status;
-  if (status === "delivered") {
-    if ((order.openIssueCount ?? 0) > 0) return "customer_service";
-    // An explicitly flagged order still needs attention until someone clears it.
-    return order.status === "stuck" ? "delivery" : null;
-  }
-  return PHASE_BY_STATUS[status] ?? "deposit";
+  if (status === "delivered") return "service";
+  // Payment belongs to the intake board until its saved requirements are met.
+  return PHASE_BY_STATUS[status] ?? null;
 }
 
 /**
@@ -242,5 +242,5 @@ export const FLOW_ORDER_INCLUDE = {
   purchaseOrders: true,
   lineItems: true,
   deliveries: true,
-  company: { select: { requiresDeposit: true, depositPercent: true } },
+  company: { select: { requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true } },
 } as const;

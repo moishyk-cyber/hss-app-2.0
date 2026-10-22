@@ -19,7 +19,7 @@ export const lineItemPricing = createLineItemPricing(prisma, {
 export const fulfillment = createFulfillment(prisma, {
   audit: (id, action, detail, meta) => logActivity("order", id, action, detail, meta),
   refresh: id => {
-    for (const path of [`/orders/${id}`, "/orders", "/dashboard", "/deliveries"]) revalidatePath(path);
+    for (const path of [`/orders/${id}`, "/orders", "/pipeline", "/dashboard", "/deliveries"]) revalidatePath(path);
   },
 });
 
