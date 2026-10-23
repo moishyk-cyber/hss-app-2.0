@@ -6,16 +6,23 @@ import { prisma } from "@/lib/prisma";
 
 export const SETTING_KEYS = [
   "account.ownerId",
+  "court.sales.assigneeId",
+  "court.pricing.assigneeId",
+  "court.clientQuote.assigneeId",
+  "court.close.assigneeId",
+  "court.deposit.assigneeId",
+  "court.pos.assigneeId",
+  "court.delivery.assigneeId",
+  "court.service.assigneeId",
+
   "service.defaultAssigneeId",
   "pricing.defaultAssigneeId",
   // "off" enforces the role matrix; anything else (unset included) means open
   // mode: every role can do everything. Open by default (Sep 3: "open it up
   // for everyone until I tell you otherwise").
   "permissions.openMode",
-  // Ball-in-court holders (Sep 4: "set the roles = ball in court"; later split
-  // to one row per pipeline stage with a multi-person pin). One role and a
-  // comma-separated list of optionally-pinned people per stage; read via
-  // @/lib/courtHolders, which fills in shipped defaults when these are unset.
+  // Historical keys retained for compatibility. Current assignment resolution
+  // uses only the single-person court.<step>.assigneeId keys above.
   "court.sales.role",
   "court.sales.userIds",
   "court.pricing.role",

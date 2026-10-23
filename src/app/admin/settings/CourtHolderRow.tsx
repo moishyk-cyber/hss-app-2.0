@@ -1,110 +1,47 @@
 "use client";
 
-// One row of the "Ball in court" card: a role select and a set of person
-// toggles (more than one person can hold a stage), saved together on change
-// via setStageHolder. Plain controls (not OptimisticSelect) because a row
-// edits two values together, not one.
-
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/lib/toast";
-import { USER_ROLES } from "@/lib/constants";
-import type { Role } from "@/lib/permissions";
 import type { FlowStepKey } from "@/lib/ballInCourt";
 import { setStageHolder } from "./actions";
 
-type UserOption = { id: string; name: string };
-
-export function CourtHolderRow({
-  step,
-  stepLabel,
-  role,
-  userIds,
-  users,
-}: {
-  step: FlowStepKey;
-  stepLabel: string;
-  role: Role;
-  userIds: string[];
-  users: UserOption[];
+export function CourtHolderRow({ step, stepLabel, userId, users }: {
+  step: FlowStepKey; stepLabel: string; userId: string; users: { id: string; name: string }[];
 }) {
-  const [optimisticRole, setOptimisticRole] = useState<Role>(role);
-  const [optimisticUserIds, setOptimisticUserIds] = useState<string[]>(userIds);
-  const [isPending, startTransition] = useTransition();
+  const [selected, setSelected] = useState(userId);
+  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-
-  function save(nextRole: Role, nextUserIds: string[]) {
-    const prevRole = optimisticRole;
-    const prevUserIds = optimisticUserIds;
-    setOptimisticRole(nextRole);
-    setOptimisticUserIds(nextUserIds);
+  const router = useRouter();
+  function save(next: string) {
+    const previous = selected;
+    setSelected(next);
     setError(null);
     startTransition(async () => {
-      const result = await setStageHolder(step, nextRole, nextUserIds);
-      if (result && result.ok === false) {
-        setOptimisticRole(prevRole);
-        setOptimisticUserIds(prevUserIds);
-        setError(result.message);
-      } else {
-        toast({ kind: "success", message: `${stepLabel} holder updated` });
+      try {
+        const result = await setStageHolder(step, next);
+        if (result && !result.ok) throw new Error(result.message);
+        toast({ kind: "success", message: `${stepLabel} assignee updated` });
+        router.refresh();
+      } catch (cause) {
+        setSelected(previous);
+        setError(cause instanceof Error ? cause.message : "Could not save. Please try again.");
       }
     });
   }
-
-  function togglePerson(id: string) {
-    const next = optimisticUserIds.includes(id)
-      ? optimisticUserIds.filter((u) => u !== id)
-      : [...optimisticUserIds, id];
-    save(optimisticRole, next);
-  }
-
-  return (
-    <li className="px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-[13.5px] font-medium text-ink">{stepLabel}</span>
-        <select
-          value={optimisticRole}
-          disabled={isPending}
-          onChange={(e) => save(e.target.value as Role, optimisticUserIds)}
-          aria-label={`${stepLabel} role`}
-          className="input-klyne w-auto py-1 text-[13px]"
-        >
-          {USER_ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
+  return <li className="px-4 py-3" aria-busy={pending}>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <label htmlFor={`assignee-${step}`} className="text-[13.5px] font-medium text-ink">{stepLabel}</label>
+      <div className="flex items-center gap-2">
+        {pending && <span role="status" className="text-xs text-gray-dark">Saving…</span>}
+        <select id={`assignee-${step}`} value={selected} disabled={pending} onChange={event => save(event.target.value)} className="input-klyne w-auto max-w-full py-1 text-[13px]">
+          {!users.some(user => user.id === selected) && <option value="" disabled>Select an active teammate</option>}
+          {users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
         </select>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {users.map((u) => {
-          const picked = optimisticUserIds.includes(u.id);
-          return (
-            <button
-              key={u.id}
-              type="button"
-              disabled={isPending}
-              aria-pressed={picked}
-              onClick={() => togglePerson(u.id)}
-              className={`rounded-lg border px-2.5 py-1 text-[13px] transition-colors disabled:opacity-50 ${
-                picked
-                  ? "border-primary bg-hover text-ink"
-                  : "border-border bg-surface text-gray-dark hover:bg-hover"
-              }`}
-            >
-              {u.name}
-            </button>
-          );
-        })}
-        {optimisticUserIds.length === 0 ? (
-          <span className="text-xs text-gray">Anyone in that role</span>
-        ) : null}
-      </div>
-      {error && (
-        <span role="alert" className="banner-alert mt-2 block px-2.5 py-1.5 text-xs">
-          {error}
-        </span>
-      )}
-    </li>
-  );
+    </div>
+    {step === "pricing" && <p className="mt-2 text-xs text-gray-dark">Also the default for new RFQ items. Existing item assignments are preserved.</p>}
+    {error && <p role="alert" className="banner-alert mt-2 px-2.5 py-1.5 text-xs">{error}</p>}
+  </li>;
 }

@@ -54,10 +54,15 @@ async function writeActivity(
         sourceScreen: meta?.sourceScreen ?? null,
       },
     });
-    // The durable audit row is saved before acknowledgement. Its notification
-    // work runs after the response and can still retry from this row on failure.
+    // Finish ordinary record handoffs before the next page reads My Items.
+    // The audit row remains the durable retry job if the database is temporarily unavailable.
+    let processed = false;
+    if (["opportunity", "order", "line_item", "service_issue"].includes(linkedType)) {
+      try { await processNotificationActivity(prisma, entry); processed = true; }
+      catch (error) { console.error("assignment/notification queued for retry", error); }
+    }
     after(async () => {
-      try { await processNotificationActivity(prisma, entry); }
+      try { if (!processed) await processNotificationActivity(prisma, entry); }
       catch (error) { console.error("notification delivery queued for retry", error); }
       invalidateSharedReads();
       try { await dispatchNotificationEmails(prisma); }

@@ -5,7 +5,7 @@ import { syncRecordNotifications, notifyDueTasks, markNotificationsRead, initial
 import { fixture, memoryDatabase } from "./memoryDatabase";
 
 const now = new Date("2026-10-15T12:00:00Z");
-const users = [ { id: "sales", role: "sales", active: true }, { id: "buyer", role: "purchasing", active: true }, { id: "billing", role: "billing", active: true }, { id: "inactive", role: "sales", active: false }, { id: "sales2", role: "sales", active: true } ];
+const users = [ { id: "sales", name: "Herman Freund", role: "sales", active: true }, { id: "buyer", name: "Chaim Schwartz", role: "purchasing", active: true }, { id: "billing", name: "Mrs Golderberger", role: "billing", active: true }, { id: "inactive", role: "sales", active: false }, { id: "sales2", role: "sales", active: true } ];
 const state: NoticeSnapshot = { step: "pricing", recipients: ["buyer"], pricingReady: false, salespersonIds: ["sales"], quoteReviewIds: ["buyer"], billingKind: "payment" };
 const deal = { title: "Kitchen", href: "/pipeline/deal", isDeal: true };
 function seed() {
@@ -20,12 +20,12 @@ test("new deals notify quote reviewers once without duplicating their ball-in-co
   assert.deepEqual(planNotifications(state,state,deal),[]);
 });
 
-test("supplier quotes complete hands off to salesperson and merges the closing alert", () => {
-  const ready={...state,step:"close" as const,recipients:["sales"],pricingReady:true};
+test("supplier quotes complete hands off to Client Quote and merges the stage alert", () => {
+  const ready={...state,step:"clientQuote" as const,recipients:["buyer"],pricingReady:true};
   const events=planNotifications(state,ready,deal);
   assert.deepEqual(events.map(e=>e.kind),["pricing_ready"]);
-  assert.deepEqual(events[0].recipientIds,["sales"]);
-  assert.equal(events[0].href,"/pipeline/deal#close");
+  assert.deepEqual(events[0].recipientIds,["buyer"]);
+  assert.equal(events[0].href,"/pipeline/deal?step=clientQuote");
   assert.deepEqual(planNotifications(ready,ready,deal),[]);
 });
 
@@ -47,7 +47,7 @@ test("deposit and full-payment reminders have distinct messages and links", () =
 });
 
 test("recipients follow active court pins and roles while closing ignores global overrides", () => {
-  assert.deepEqual(courtRecipients("pricing",null,users,{"court.pricing.userIds":"buyer,buyer,inactive"}),["buyer"]);
+  assert.deepEqual(courtRecipients("pricing",null,users,{"court.pricing.assigneeId":"buyer"}),["buyer"]);
   assert.deepEqual(courtRecipients("deposit",null,users,{}),["billing"]);
   assert.deepEqual(courtRecipients("close","sales",users,{"court.close.userIds":"buyer"}),["sales"]);
   assert.deepEqual(courtRecipients("close","inactive",users,{}),[]);
@@ -71,7 +71,7 @@ test("pricing transitions persist salesperson alerts and reentry can notify agai
   await syncRecordNotifications(m.db,"line_item","item",now);
   const ready=m.state().notification.filter(n=>n.kind==="pricing_ready");
   assert.equal(ready.length,1);
-  assert.equal(ready[0].userId,"sales");
+  assert.equal(ready[0].userId,"buyer");
   await m.db.lineItem.update({where:{id:"item"},data:{rfqStatus:"needs_pricing"}});
   await syncRecordNotifications(m.db,"line_item","item",now);
   await m.db.lineItem.update({where:{id:"item"},data:{rfqStatus:"approved"}});
@@ -154,10 +154,10 @@ test("activation baselines existing work once and preserves existing inbox/read 
 
 test("changing a court holder notifies its newly assigned user and acknowledges the retry entry", async () => {
   const data=seed();
-  const m=memoryDatabase({...data,opportunity:data.opportunity.map(d=>({...d,createdAt:new Date("2000-01-01")})),order:[],activityLog:[{id:"holder-change",linkedType:"setting",linkedId:"pricing",action:"court_holder_changed",notificationProcessedAt:null}]});
+  const m=memoryDatabase({...data,opportunity:data.opportunity.map(d=>({...d,createdAt:new Date("2000-01-01")})),order:[],activityLog:[{id:"holder-change",linkedType:"setting",linkedId:"court.pricing.assigneeId",action:"court_holder_changed",notificationProcessedAt:null}]});
   await syncRecordNotifications(m.db,"opportunity","deal",now);
-  await m.db.appSetting.create({data:{key:"court.pricing.userIds",value:"sales2"}});
-  await processNotificationActivity(m.db,{id:"holder-change",linkedType:"setting",linkedId:"pricing",action:"court_holder_changed"});
+  await m.db.appSetting.create({data:{key:"court.pricing.assigneeId",value:"sales2"}});
+  await processNotificationActivity(m.db,{id:"holder-change",linkedType:"setting",linkedId:"court.pricing.assigneeId",action:"court_holder_changed"});
   assert.equal(m.state().notification.length,1);
   assert.equal(m.state().notification[0].userId,"sales2");
   assert.equal(m.state().notification[0].kind,"ball_in_court");

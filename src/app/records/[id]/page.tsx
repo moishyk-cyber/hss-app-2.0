@@ -1,3 +1,4 @@
+import { getStageHolders, withJourneyHolders } from "@/lib/courtHolders";
 import { TeamNotes } from "@/lib/TeamNotes";
 import { recordPath } from "@/lib/recordPath";
 import { RecordWorkspace } from "@/lib/RecordWorkspace";
@@ -116,10 +117,10 @@ export default async function RecordDetailPage({
   const needsOrderRecovery = stage === "won" && !linkedOrder;
   const showClosePanel = (!closed || needsOrderRecovery) && canClose;
 
-  const journey = dealJourney(opportunity, {
+  const journey = withJourneyHolders(dealJourney(opportunity, {
     company: requirements["opportunity.companyId"],
     neededBy: requirements["opportunity.neededByDate"],
-  }, linkedOrder ? { id: linkedOrder.id, ...toOrderBallInput(linkedOrder) } : null);
+  }, linkedOrder ? { id: linkedOrder.id, ...toOrderBallInput(linkedOrder) } : null), await getStageHolders());
 
   const requestedStep = readWorkflowStep(workflow);
   const focusedStep = requestedStep && ["sales", "pricing", "clientQuote", "close"].includes(requestedStep) ? requestedStep : null;

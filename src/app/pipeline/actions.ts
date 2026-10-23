@@ -601,6 +601,7 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
           companyId: opportunity.companyId,
           contactId: opportunity.primaryContactId,
           ownerId,
+          createdById: current.createdById ?? current.salespersonId,
           orderType: opportunity.orderType,
           status: "new",
           orderValue: value,

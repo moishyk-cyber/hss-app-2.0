@@ -92,7 +92,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div
               role="status"
               aria-live="polite"
-              className="pointer-events-none fixed bottom-5 left-1/2 z-[80] flex w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4"
+              style={{ bottom: "calc(var(--notification-popup-height, 0px) + 1.25rem)" }}
+              className="pointer-events-none fixed left-1/2 z-[80] flex w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4"
             >
               {toasts.map((t) => (
                 <div

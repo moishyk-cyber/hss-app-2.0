@@ -10,7 +10,7 @@ function seed(value: string | null = "pricing-user") {
     { id: "pricing-user", name: "Pricing teammate", active: true },
     { id: "other-user", name: "Other teammate", active: true },
     { id: "inactive-user", name: "Inactive teammate", active: false },
-  ], appSetting: value ? [{ id: "pricing-setting", key: "pricing.defaultAssigneeId", value }] : [] };
+  ], appSetting: value ? [{ id: "pricing-setting", key: "court.pricing.assigneeId", value }] : [] };
 }
 
 test("default remains unassigned until selected; inactive or deleted teammates are ignored", async () => {
@@ -48,7 +48,7 @@ test("changing the default affects future items without reassigning previous wor
   const m = memoryDatabase(seed());
   const pricing = createLineItemPricing(m.db, effects);
   const first = await pricing.add({ opportunityId: "deal", name: "Oven", qty: 1 });
-  await m.db.appSetting.update({ where: { key: "pricing.defaultAssigneeId" }, data: { value: "other-user" } });
+  await m.db.appSetting.update({ where: { key: "court.pricing.assigneeId" }, data: { value: "other-user" } });
   const second = await pricing.add({ opportunityId: "deal", name: "Fryer", qty: 1 });
   assert.equal(first.assigneeId, "pricing-user");
   assert.equal(m.state().lineItem.find(item => item.id === first.id)?.assigneeId, "pricing-user");

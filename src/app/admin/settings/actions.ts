@@ -6,9 +6,8 @@ import { logActivity } from "@/lib/log";
 import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { REQUIRABLE_FIELDS, type RequirableEntity, type RequirableField } from "@/lib/fieldRequirements";
 import { requirePermission } from "@/lib/permissionsServer";
-import { setSetting, type SettingKey } from "@/lib/settings";
-import { isRole } from "@/lib/permissions";
-import { labelFor, USER_ROLES } from "@/lib/constants";
+import { setSetting } from "@/lib/settings";
+import { STAGE_ASSIGNEE_KEYS } from "@/lib/stageAssignments";
 import { FLOW_STEPS, type FlowStepKey } from "@/lib/ballInCourt";
 
 /** Every place a required-field change could change what a form demands. */
@@ -56,55 +55,21 @@ export async function setFieldRequired(
 // ball-in-court holders. Stored in AppSetting via @/lib/settings.
 // ---------------------------------------------------------------------------
 
-const STEP_SETTING_KEYS: Record<FlowStepKey, { role: SettingKey; userIds: SettingKey }> = {
-  sales: { role: "court.sales.role", userIds: "court.sales.userIds" },
-  pricing: { role: "court.pricing.role", userIds: "court.pricing.userIds" },
-  close: { role: "court.close.role", userIds: "court.close.userIds" },
-  clientQuote: { role: "court.clientQuote.role", userIds: "court.clientQuote.userIds" },
-  deposit: { role: "court.deposit.role", userIds: "court.deposit.userIds" },
-  pos: { role: "court.pos.role", userIds: "court.pos.userIds" },
-  delivery: { role: "court.delivery.role", userIds: "court.delivery.userIds" },
-  service: { role: "court.service.role", userIds: "court.service.userIds" },
-};
-
-/** "Ball in court" card - one row per pipeline stage, saved on change. */
-export async function setStageHolder(
-  step: string,
-  role: string,
-  userIds: string[]
-): Promise<ActionResult> {
+/** A single automatic assignee per stage. Closing stays specific to the deal. */
+export async function setStageHolder(step: string, userId: string): Promise<ActionResult> {
   const denied = await requirePermission("admin.manage");
   if (denied) return denied;
-
-  if (!(step in STEP_SETTING_KEYS)) return { ok: false, message: "Not a recognised stage." };
-  if (step === "close") return { ok: false, message: "Closing follows the salesperson assigned to each deal. Update the deal’s salesperson instead." };
-  const s = step as FlowStepKey;
-  if (!isRole(role)) return { ok: false, message: "Not a valid role." };
-
-  const ids = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
-  if (ids.length > 0) {
-    const active = await prisma.user.findMany({
-      where: { id: { in: ids }, active: true },
-      select: { id: true },
-    });
-    if (active.length !== ids.length) return { ok: false, message: "Pick active teammates." };
-  }
-
+  if (!FLOW_STEPS.some(entry => entry.key === step)) return { ok: false, message: "Not a recognised stage." };
+  if (step === "close") return { ok: false, message: "Reassign the salesperson on the deal to change who confirms it." };
   return safeAction(async () => {
-    const keys = STEP_SETTING_KEYS[s];
-    await Promise.all([setSetting(keys.role, role), setSetting(keys.userIds, ids.join(","))]);
-    const stepLabel = FLOW_STEPS.find((f) => f.key === s)?.label ?? s;
-    await logActivity(
-      "setting",
-      step,
-      "court_holder_changed",
-      `${stepLabel} ball-in-court holder set to ${labelFor(USER_ROLES, role)}${
-        ids.length > 0 ? ` (pinned to ${ids.length} ${ids.length === 1 ? "person" : "people"})` : ""
-      }`
-    );
-    revalidatePath("/admin/settings");
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, active: true } });
+    if (!user?.active) throw new Error("Pick an active teammate.");
+    const key = STAGE_ASSIGNEE_KEYS[step as FlowStepKey];
+    await setSetting(key, user.id);
+    const label = FLOW_STEPS.find(entry => entry.key === step)!.label;
+    await logActivity("setting", key, "court_holder_changed", `${label} automatically assigned to ${user.name}`);
     revalidatePath("/", "layout");
-  }, "Could not save that stage holder. Please try again.");
+  }, "Could not save that stage assignee. Please try again.");
 }
 
 /** "Customer service default assignee" select - the fallback used by /service intake. */
@@ -127,21 +92,7 @@ export async function setServiceDefaultAssignee(userId: string): Promise<ActionR
   }, "Could not save the default assignee. Please try again.");
 }
 
-/** Default teammate for new quote/pricing line items. Existing assignments stay intact. */
+/** Compatibility for older clients; the Supplier Quotes setting is the source of truth. */
 export async function setPricingDefaultAssignee(userId: string): Promise<ActionResult> {
-  const denied = await requirePermission("admin.manage");
-  if (denied) return denied;
-  if (userId) {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, active: true } });
-    if (!user?.active) return { ok: false, message: "Pick an active teammate." };
-  }
-  return safeAction(async () => {
-    const before = await prisma.appSetting.findUnique({ where: { key: "pricing.defaultAssigneeId" } });
-    await setSetting("pricing.defaultAssigneeId", userId);
-    await logActivity("setting", "pricing.defaultAssigneeId", "setting_changed",
-      `Default pricing assignee set to ${userId || "unassigned"}`,
-      { previousValue: before?.value ?? null, newValue: userId || null });
-    revalidatePath("/admin/settings");
-    revalidatePath("/intake");
-  }, "Could not save the default pricing assignee. Please try again.");
+  return setStageHolder("pricing", userId);
 }

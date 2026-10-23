@@ -7,7 +7,7 @@ import { REQUIRABLE_FIELDS, getFieldRequirements } from "@/lib/fieldRequirements
 import { getSettings } from "@/lib/settings";
 import { FLOW_STEPS } from "@/lib/ballInCourt";
 import { getStageHolders } from "@/lib/courtHolders";
-import { setFieldRequired, setServiceDefaultAssignee, setPricingDefaultAssignee } from "./actions";
+import { setFieldRequired, setServiceDefaultAssignee } from "./actions";
 import { CourtHolderRow } from "./CourtHolderRow";
 
 export const dynamic = "force-dynamic";
@@ -41,8 +41,8 @@ export default async function AdminSettingsPage() {
       <div>
         <h2 className="section-label">Ball in court</h2>
         <p className="page-sub">
-          Who the ball-in-court badge names at each stage of the flow. Pin one or more people,
-          or leave a stage with nobody pinned to show the role instead.
+          One person owns each card. Stage changes automatically update their assignment and notify them.
+          Anyone can submit an intake. Confirm Deal starts with its creator and follows the deal’s salesperson.
         </p>
       </div>
       <div className="card card-flush overflow-hidden">
@@ -53,36 +53,18 @@ export default async function AdminSettingsPage() {
                 <span className="text-[13.5px] font-medium text-ink">{s.label}</span>
                 <span className="text-[13px] text-gray-dark">Deal’s salesperson</span>
               </div>
-              <p className="mt-2 text-xs text-gray-dark">Closing follows the salesperson assigned to each deal.</p>
+              <p className="mt-2 text-xs text-gray-dark">Defaults to the intake creator. Reassign the salesperson on the deal to hand closing to someone else.</p>
             </li> :
             <CourtHolderRow
               key={s.key}
               step={s.key}
               stepLabel={s.label}
-              role={stageHolders[s.key].role ?? "sales"}
-              userIds={stageHolders[s.key].userIds}
+              userId={stageHolders[s.key].userId ?? ""}
               users={users}
             />
           ))}
         </ul>
       </div>
-
-      <section className="card space-y-3" aria-labelledby="pricing-assignee-heading">
-        <div>
-          <h2 id="pricing-assignee-heading" className="section-label">Default pricing assignee</h2>
-          <p className="page-sub">
-            Assign new quote and pricing items to this teammate automatically. Existing assignments
-            stay unchanged, and individual items can still be reassigned in the RFQ queue.
-            Leave unassigned until the client confirms who should receive the work.
-          </p>
-        </div>
-        <UserSelect
-          value={settings["pricing.defaultAssigneeId"] ?? ""}
-          users={users}
-          action={setPricingDefaultAssignee}
-          ariaLabel="Default pricing assignee"
-        />
-      </section>
 
       <div className="card space-y-3">
         <div>

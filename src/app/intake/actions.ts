@@ -160,6 +160,7 @@ export async function submitIntake(formData: FormData) {
     const inactiveAssignee = await requireActiveAssignee(pickedSalespersonId);
     if (inactiveAssignee) redirect("/intake?error=inactive_salesperson");
   }
+  const createdById = await currentUserId();
   const salespersonId = await resolveSalesperson();
 
   async function resolveSalesperson(): Promise<string | null> {
@@ -371,6 +372,7 @@ export async function submitIntake(formData: FormData) {
           companyId,
           primaryContactId: contactId,
           salespersonId,
+          createdById,
           stage: "new",
           orderType,
           // Carry the form's real answer. Hard-coding true told the RFQ queue every
@@ -426,6 +428,7 @@ export async function submitIntake(formData: FormData) {
         companyId,
         contactId,
         ownerId: salespersonId,
+        createdById,
         orderType,
         status: "new",
         orderValue: null,

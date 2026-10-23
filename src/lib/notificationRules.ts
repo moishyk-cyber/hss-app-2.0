@@ -1,7 +1,7 @@
-import { isRole } from "./permissions";
+import { stageAssignee } from "./stageAssignments";
 import { FLOW_STEPS, type FlowStepKey } from "./ballInCourt";
 
-export type NotificationUser = { id: string; role: string; active: boolean };
+export type NotificationUser = { id: string; name?: string; role: string; active: boolean };
 export type NoticeSnapshot = {
   step: FlowStepKey | null;
   recipients: string[];
@@ -16,17 +16,10 @@ export function activeRecipients(ids: readonly string[], users: NotificationUser
   return [...new Set(ids)].filter(id => users.some(user => user.id === id && user.active)).sort();
 }
 
-/** Resolve the same configured people/role as ball in court; closing always follows the salesperson. */
+/** The notice goes to the same single teammate as the card and My Items. */
 export function courtRecipients(step: FlowStepKey | null, salespersonId: string | null, users: NotificationUser[], settings: Record<string, string>) {
-  if (!step) return [];
-  if (step === "close" || step === "clientQuote") return salespersonId ? activeRecipients([salespersonId], users) : [];
-  const pinned = activeRecipients((settings[`court.${step}.userIds`] ?? "").split(",").map(id => id.trim()), users);
-  if (pinned.length) return pinned;
-  const court = FLOW_STEPS.find(s => s.key === step)!.court;
-  const fallback = court === "office" || court === "service" ? "purchasing" : court;
-  const savedRole = settings[`court.${step}.role`];
-  const role = isRole(savedRole) ? savedRole : fallback;
-  return users.filter(user => user.active && user.role === role).map(user => user.id).sort();
+  const user = stageAssignee(step, salespersonId, users, settings);
+  return user ? [user.id] : [];
 }
 
 function signature(snapshot: NoticeSnapshot) {
@@ -37,7 +30,7 @@ export function planNotifications(previous: NoticeSnapshot | null, next: NoticeS
   const notices: NoticeInput[] = [];
   if (!previous && record.isDeal) notices.push({ kind: "quote_review", title: "New deal — verify quotes", message: `Review the requested items and supplier quotes for ${record.title}.`, href: record.href, recipientIds: next.quoteReviewIds });
   const pricingReady = record.isDeal && next.pricingReady && !previous?.pricingReady;
-  if (pricingReady) notices.push({ kind: "pricing_ready", title: "Quotes ready — close or confirm", message: `Supplier quotes are ready for ${record.title}. Review and confirm the deal.`, href: `${record.href}#close`, recipientIds: next.salespersonIds });
+  if (pricingReady) notices.push({ kind: "pricing_ready", title: "Supplier quotes ready — prepare client quote", message: `Supplier quotes are ready for ${record.title}. Prepare and send the client quote.`, href: `${record.href}?step=clientQuote`, recipientIds: next.recipients });
   if (next.step && (!previous || signature(previous) !== signature(next))) {
     const alreadyNotified = notices.flatMap(notice => notice.recipientIds);
     const unchangedStep = previous?.step === next.step && previous.billingKind === next.billingKind;

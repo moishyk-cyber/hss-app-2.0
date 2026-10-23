@@ -1,3 +1,5 @@
+import { STAGE_ASSIGNEE_KEYS } from "./stageAssignments";
+import { FLOW_STEPS, type FlowStepKey } from "./ballInCourt";
 import { saveNotificationRows } from "./notificationEmailQueue";
 import { isDeepStrictEqual } from "node:util";
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -12,15 +14,15 @@ import { activeRecipients, courtRecipients, planNotifications, taskDueCutoff, ty
 type Db = Prisma.TransactionClient;
 type Config = { users: NotificationUser[]; settings: Record<string, string>; startedAt: Date; requirements: { company: boolean; neededBy: boolean } };
 const START_KEY = "notifications.startedAt";
-const ORDER_INCLUDE = { ...ORDER_BALL_INCLUDE, opportunity: { select: { salespersonId: true } } } satisfies Prisma.OrderInclude;
+const ORDER_INCLUDE = { ...ORDER_BALL_INCLUDE, opportunity: { select: { salespersonId: true, createdById: true } } } satisfies Prisma.OrderInclude;
 const DEAL_INCLUDE = { lineItems: true } satisfies Prisma.OpportunityInclude;
 type OrderRow = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 type DealRow = Prisma.OpportunityGetPayload<{ include: typeof DEAL_INCLUDE }>;
-type RecordNotice = { key: string; snapshot: NoticeSnapshot; title: string; href: string; isDeal: boolean; createdAt: Date };
+type RecordNotice = { key: string; snapshot: NoticeSnapshot; title: string; href: string; isDeal: boolean; createdAt: Date; opportunityId?: string | null };
 
 async function config(db: Db): Promise<Config> {
   const [users, settings, requirements] = await Promise.all([
-    db.user.findMany({ where: { active: true }, select: { id: true, role: true, active: true } }),
+    db.user.findMany({ where: { active: true }, select: { id: true, name: true, role: true, active: true } }),
     db.appSetting.findMany({ where: { OR: [{ key: { startsWith: "court." } }, { key: "pricing.defaultAssigneeId" }, { key: START_KEY }] } }),
     db.fieldRequirement.findMany({ where: { entity: "opportunity" } }),
   ]);
@@ -32,21 +34,18 @@ function orderNotice(row: OrderRow, conf: Config): RecordNotice {
   const order = plainMoney(row);
   const facts: OrderBallInput = orderBallInput(order);
   const ball = orderBall(order.status === "complete" && !orderCanClose(facts) ? { ...facts, status: "delivered" } : facts);
-  const recipients = courtRecipients(ball.step, row.opportunity?.salespersonId ?? row.ownerId, conf.users, conf.settings);
-  if (ball.step === "deposit") recipients.push(...conf.users.filter(u => u.role === "billing").map(u => u.id));
+  const recipients = courtRecipients(ball.step, row.opportunity?.salespersonId ?? row.ownerId ?? row.createdById, conf.users, conf.settings);
   const gate = evaluatePaymentGate(order);
   const deposit = gate.requiredTotal != null && order.orderValue ? gate.requiredTotal < order.orderValue : order.orderType === "project";
-  return { key: `order:${row.id}`, title: row.title, href: `/orders/${row.id}`, isDeal: false, createdAt: row.createdAt,
+  return { key: `order:${row.id}`, title: row.title, href: `/orders/${row.id}`, isDeal: false, createdAt: row.createdAt, opportunityId: row.opportunityId,
     snapshot: { step: ball.step, recipients: [...new Set(recipients)].sort(), pricingReady: false, salespersonIds: [], quoteReviewIds: [], billingKind: deposit ? "deposit" : "payment" } };
 }
 
 function dealNotice(row: DealRow, conf: Config): RecordNotice {
   const items = row.lineItems.filter(i => i.rfqStatus !== "removed");
   const ball = opportunityBall({ stage: row.stage, clientQuoteCreated: row.clientQuoteCreated, clientQuoteSent: row.clientQuoteSent, lineItems: items.map(i => ({ rfqStatus: i.rfqStatus, unitPrice: null })), intakeComplete: intakeIssues({ ...row, lineItems: items.map(i => ({ ...i, unitPrice: null })) }, conf.requirements).length === 0 });
-  const assignees = activeRecipients(items.flatMap(i => i.assigneeId ? [i.assigneeId] : []), conf.users);
-  const defaultAssignee = activeRecipients([conf.settings["pricing.defaultAssigneeId"] ?? ""], conf.users);
   return { key: `opportunity:${row.id}`, title: row.title, href: `/pipeline/${row.id}`, isDeal: true, createdAt: row.createdAt,
-    snapshot: { step: ball.step, recipients: courtRecipients(ball.step, row.salespersonId, conf.users, conf.settings), pricingReady: row.stage !== "lost" && items.length > 0 && items.every(itemHasQuote), salespersonIds: activeRecipients(row.salespersonId ? [row.salespersonId] : [], conf.users), quoteReviewIds: assignees.length ? assignees : defaultAssignee.length ? defaultAssignee : courtRecipients("pricing", null, conf.users, conf.settings), billingKind: "payment" } };
+    snapshot: { step: ball.step, recipients: courtRecipients(ball.step, row.salespersonId, conf.users, conf.settings), pricingReady: row.stage !== "lost" && items.length > 0 && items.every(itemHasQuote), salespersonIds: activeRecipients(row.salespersonId ? [row.salespersonId] : [], conf.users), quoteReviewIds: courtRecipients(ball.step, row.salespersonId, conf.users, conf.settings), billingKind: "payment" } };
 }
 
 async function loadRecord(db: Db, kind: string, id: string, conf: Config): Promise<RecordNotice | null> {
@@ -74,6 +73,83 @@ async function loadRecord(db: Db, kind: string, id: string, conf: Config): Promi
   return null;
 }
 
+/** Persist the same single assignment as the notice; mirror linked deals without changing sales ownership. */
+async function saveAssignment(db: Db, record: RecordNotice) {
+  const [kind, id] = record.key.split(":");
+  const data = { courtStep: record.snapshot.step, courtAssigneeId: record.snapshot.recipients[0] ?? null };
+  const changed = { OR: [{ courtStep: { not: data.courtStep } }, ...(data.courtStep ? [{ courtStep: null }] : []), { courtAssigneeId: { not: data.courtAssigneeId } }, ...(data.courtAssigneeId ? [{ courtAssigneeId: null }] : [])] };
+  const where = { id, ...changed };
+  if (kind === "order") {
+    await db.order.updateMany({ where, data });
+    if (record.opportunityId) await db.opportunity.updateMany({ where: { id: record.opportunityId, ...changed }, data });
+  } else await db.opportunity.updateMany({ where, data });
+}
+
+/** One-time/repair baseline. Batched writes avoid 10,000 individual workflow transactions and send no historical alerts. */
+export async function initializeStageAssignments(db: PrismaClient) {
+  const conf = await config(db);
+  const [deals, orders] = await Promise.all([
+    db.opportunity.findMany({ where: { stage: { not: "won" } }, include: DEAL_INCLUDE }),
+    db.order.findMany({ include: ORDER_INCLUDE }),
+  ]);
+  const records = [...deals.map(row => dealNotice(row, conf)), ...orders.map(row => orderNotice(row, conf))];
+  const groups = new Map<string, RecordNotice[]>();
+  for (const record of records) {
+    const key = `${record.key.split(":")[0]}:${record.snapshot.step}:${record.snapshot.recipients[0] ?? ""}`;
+    const group = groups.get(key) ?? [];
+    group.push(record);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const data = { courtStep: group[0].snapshot.step, courtAssigneeId: group[0].snapshot.recipients[0] ?? null };
+    const ids = group.map(record => record.key.split(":")[1]);
+    if (group[0].isDeal) await db.opportunity.updateMany({ where: { id: { in: ids } }, data });
+    else {
+      await db.order.updateMany({ where: { id: { in: ids } }, data });
+      await db.opportunity.updateMany({ where: { id: { in: group.flatMap(record => record.opportunityId ? [record.opportunityId] : []) } }, data });
+    }
+  }
+  // Preserve versions while replacing old multi-recipient snapshots. No email/in-app flood on rollout.
+  for (let start = 0; start < records.length; start += 250) {
+    const batch = records.slice(start, start + 250);
+    await serialTransaction(db, async tx => {
+      const existing = await tx.notificationState.findMany({ where: { key: { in: batch.map(row => row.key) } } });
+      const versions = new Map(existing.map(row => [row.key, row.version]));
+      await tx.notificationState.deleteMany({ where: { key: { in: batch.map(row => row.key) } } });
+      await tx.notificationState.createMany({ data: batch.map(record => ({ key: record.key, version: versions.get(record.key) ?? 0, snapshot: record.snapshot as Prisma.InputJsonValue })) });
+    });
+  }
+  return { records: records.length };
+}
+
+/** A settings change hands off existing cards in bulk, with one notice per affected record. */
+async function reassignConfiguredStage(db: PrismaClient, step: FlowStepKey) {
+  await serialTransaction(db, async tx => {
+    const conf = await config(tx);
+    const assigneeId = courtRecipients(step, null, conf.users, conf.settings)[0] ?? null;
+    const filter = { courtStep: step, OR: [{ courtAssigneeId: { not: assigneeId } }, ...(assigneeId ? [{ courtAssigneeId: null }] : [])] };
+    const [deals, orders] = await Promise.all([
+      tx.opportunity.findMany({ where: { ...filter, stage: { notIn: ["won", "lost"] } }, select: { id: true, title: true } }),
+      tx.order.findMany({ where: { ...filter, status: { not: "complete" } }, select: { id: true, title: true, opportunityId: true } }),
+    ]);
+    const records = [...deals.map(row => ({ ...row, key: `opportunity:${row.id}` })), ...orders.map(row => ({ ...row, key: `order:${row.id}` }))];
+    const states = await tx.notificationState.findMany({ where: { key: { in: records.map(row => row.key) } } });
+    const stateByKey = new Map(states.map(row => [row.key, row]));
+    const changed = records.flatMap(record => {
+      const previous = stateByKey.get(record.key);
+      if (!previous) return [];
+      const snapshot = { ...previous.snapshot as NoticeSnapshot, recipients: assigneeId ? [assigneeId] : [] };
+      return [{ record, previous, snapshot }];
+    });
+    const data = { courtAssigneeId: assigneeId };
+    await tx.opportunity.updateMany({ where: { id: { in: [...deals.map(row => row.id), ...orders.flatMap(row => row.opportunityId ? [row.opportunityId] : [])] } }, data });
+    await tx.order.updateMany({ where: { id: { in: orders.map(row => row.id) } }, data });
+    await tx.notificationState.deleteMany({ where: { key: { in: changed.map(row => row.record.key) } } });
+    await tx.notificationState.createMany({ data: changed.map(({ record, previous, snapshot }) => ({ key: record.key, version: previous.version + 1, snapshot: snapshot as Prisma.InputJsonValue })) });
+    await saveNotificationRows(tx, changed.flatMap(({ record, previous, snapshot }) => planNotifications(previous.snapshot as NoticeSnapshot, snapshot, { title: record.title, href: `/records/${record.id}`, isDeal: false }).flatMap(notice => notice.recipientIds.map(userId => ({ userId, eventKey: `${record.key}:${previous.version + 1}:${notice.kind}`, kind: notice.kind, title: notice.title, message: notice.message, href: notice.href })))));
+  });
+}
+
 /** Save the workflow snapshot and all recipient deliveries atomically. Serializable retries prevent duplicate handoffs. */
 export async function syncRecordNotifications(db: PrismaClient, kind: string, id: string, now = new Date()) {
   if (!["opportunity", "order", "line_item", "service_issue"].includes(kind)) return;
@@ -83,6 +159,7 @@ export async function syncRecordNotifications(db: PrismaClient, kind: string, id
         const conf = await config(tx);
         const record = await loadRecord(tx, kind, id, conf);
         if (!record) return;
+        await saveAssignment(tx, record);
         const previous = await tx.notificationState.findUnique({ where: { key: record.key } });
         const snapshot = record.snapshot;
         if (previous && isDeepStrictEqual(previous.snapshot, snapshot)) return;
@@ -107,7 +184,10 @@ export async function processNotificationActivity(db: PrismaClient, entry: { id:
   const teamChanged = entry.linkedType === "user" && ["user_created", "user_updated", "user_status_changed", "user_deleted", "user_deactivated_with_reassignment"].includes(entry.action ?? "");
   const requirementsChanged = entry.linkedType === "field_requirement" && entry.linkedId.startsWith("opportunity.");
   const accountChanged = entry.linkedType === "company" && entry.action === "company_updated";
-  if (courtChanged || teamChanged || requirementsChanged || accountChanged) {
+  const configuredStep = FLOW_STEPS.find(step => STAGE_ASSIGNEE_KEYS[step.key] === entry.linkedId);
+  if (courtChanged && configuredStep && configuredStep.key !== "close") {
+    await reassignConfiguredStage(db, configuredStep.key);
+  } else if (courtChanged || teamChanged || requirementsChanged || accountChanged) {
     const company = accountChanged ? { companyId: entry.linkedId } : {};
     const [deals, orders] = await Promise.all([
       db.opportunity.findMany({ where: { stage: { notIn: ["won", "lost"] }, ...company }, select: { id: true } }),

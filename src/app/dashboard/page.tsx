@@ -124,8 +124,8 @@ export default async function DashboardPage({
   // My Items queries in the same parallel batch without matching any row.
   const userId = await currentUserId();
   const mineId = userId ?? "__no_identity__";
-  const myDealWhere: Prisma.OpportunityWhereInput = { salespersonId: mineId, stage: { notIn: ["won", "lost"] } };
-  const myOrderWhere: Prisma.OrderWhereInput = { ownerId: mineId, status: { not: "complete" } };
+  const myDealWhere: Prisma.OpportunityWhereInput = { courtAssigneeId: mineId, stage: { notIn: ["won", "lost"] } };
+  const myOrderWhere: Prisma.OrderWhereInput = { courtAssigneeId: mineId, status: { not: "complete" } };
   const myTaskWhere: Prisma.TaskWhereInput = { assigneeId: mineId, status: { not: "done" } };
   const myPricingWhere: Prisma.LineItemWhereInput = { assigneeId: mineId, rfqStatus: { in: RFQ_QUEUE_VALUES }, OR: [
     { orderId: { not: null } }, { opportunityId: null }, { opportunity: { stage: { notIn: ["won", "lost"] } } },

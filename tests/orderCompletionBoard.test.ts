@@ -13,7 +13,7 @@ const delivered: OrderBallInput = {
 
 test("delivered orders wait in Close Out without creating a customer service issue", () => {
   assert.equal(orderPhase(delivered), "service");
-  assert.deepEqual(orderBall(delivered), { step: null, court: null, hint: "Ready to complete" });
+  assert.deepEqual(orderBall(delivered), { step: "service", court: "service", hint: "Close out the order" });
 });
 test("Customer Service receives delivered orders only when a real open issue exists", () => {
   assert.equal(orderPhase({ ...delivered, openIssueCount: 1 }), "service");

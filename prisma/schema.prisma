@@ -123,6 +123,10 @@ model Contact {
 }
 
 model Opportunity {
+  // Current workflow assignment is independent of the permanent salesperson/owner.
+  courtAssigneeId String?
+  courtStep       String?
+  createdById     String?
   id               String    @id @default(cuid())
   title            String
   company          Company?  @relation(fields: [companyId], references: [id])
@@ -168,6 +172,7 @@ model Opportunity {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @default(now()) @updatedAt
 
+  @@index([courtAssigneeId])
   @@index([stage])
   @@index([primaryContactId])
   @@index([companyId])
@@ -233,6 +238,10 @@ model LineItem {
 }
 
 model Order {
+  // Current workflow assignment is independent of the permanent salesperson/owner.
+  courtAssigneeId String?
+  courtStep       String?
+  createdById     String?
   id             String       @id @default(cuid())
   title          String
   opportunity    Opportunity? @relation(fields: [opportunityId], references: [id])
@@ -283,6 +292,7 @@ model Order {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @default(now()) @updatedAt
 
+  @@index([courtAssigneeId])
   @@index([status])
   @@index([companyId])
   @@index([opportunityId])

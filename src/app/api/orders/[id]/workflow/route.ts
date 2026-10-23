@@ -1,3 +1,4 @@
+import { getStageHolders, withJourneyHolders } from "@/lib/courtHolders";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/permissionsServer";
 import { ORDER_BALL_INCLUDE, orderBallInput, evaluatePaymentGate } from "@/lib/flow";
@@ -51,7 +52,7 @@ export const POST = createOrderWorkflowEndpoint({
   snapshot: async id => {
     const order = plainMoney(await prisma.order.findUnique({ where: { id }, include: { ...ORDER_BALL_INCLUDE, owner: { select: { name: true, active: true } }, opportunity: { select: { clientQuoteCreated: true, clientQuoteSent: true, salesperson: { select: { name: true, active: true } } } } } }));
     if (!order) throw new Error("Order not found after save");
-    const steps = dealJourney({ id, title: order.title, stage: "won", clientQuoteCreated: order.opportunity?.clientQuoteCreated, clientQuoteSent: order.opportunity?.clientQuoteSent, salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id });
+    const steps = withJourneyHolders(dealJourney({ id, title: order.title, stage: "won", clientQuoteCreated: order.opportunity?.clientQuoteCreated, clientQuoteSent: order.opportunity?.clientQuoteSent, salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id }), await getStageHolders());
     return { steps, payments: order.payments, gate: evaluatePaymentGate(order) };
   },
 });

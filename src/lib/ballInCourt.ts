@@ -135,7 +135,7 @@ export function orderBall(order: OrderBallInput): Ball {
   if (notArrived > 0) return ball("delivery", `${plural(notArrived, "item")} not yet arrived`);
 
   if (order.openIssueCount > 0) return ball("service", plural(order.openIssueCount, "open issue"));
-  return { step: null, court: null, hint: "Ready to complete" };
+  return ball("service", "Close out the order");
 }
 
 /** Where the ball sits on a deal; a won deal hands over to its order. */
@@ -152,7 +152,7 @@ export function opportunityBall(opp: OpportunityBallInput): Ball {
   if (!items.length) return ball("sales", "Add requested items");
   const unpriced = items.filter((item) => !itemHasQuote(item)).length;
   if (unpriced > 0) return ball("pricing", `Get quotes for ${plural(unpriced, "item")}`);
-  if (!opp.clientQuoteCreated || !opp.clientQuoteSent) return { ...ball("clientQuote", opp.clientQuoteCreated ? "Send the client quote" : "Create the client quote"), holder: closingHolder(opp.salesperson) };
+  if (!opp.clientQuoteCreated || !opp.clientQuoteSent) return ball("clientQuote", opp.clientQuoteCreated ? "Send the client quote" : "Create the client quote");
   return closeBall("Close the deal");
 }
 

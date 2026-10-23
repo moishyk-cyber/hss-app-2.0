@@ -28,7 +28,7 @@ import { PricingItems } from "@/app/pipeline/PricingItems";
 import { WorkflowSelectionProvider, WorkflowPanel } from "@/lib/WorkflowSelection";
 import { BallInCourtBadge } from "@/lib/BallInCourtBadge";
 import { orderBall } from "@/lib/ballInCourt";
-import { getStageHolders, withHolder } from "@/lib/courtHolders";
+import { getStageHolders, withHolder, withJourneyHolders } from "@/lib/courtHolders";
 import { ActivityHistory, getActivityEntries } from "@/lib/ActivityHistory";
 import { startOrderSupportingReads } from "@/app/orders/[id]/supportingData";
 import { OrderFiles, OrderService, OrderPurchasing, OrderDelivery, OrderCompanyEditor, OrderContactEditor, SectionLoading } from "@/app/orders/[id]/SupportingSections";
@@ -128,7 +128,7 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
 
   // Both record pages use the same journey and step labels.
   // Completed sales work is reviewed in place; order work opens its local tab.
-  const steps = dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", clientQuoteCreated: order.opportunity?.clientQuoteCreated, clientQuoteSent: order.opportunity?.clientQuoteSent, salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }).map(step => {
+  const steps = withJourneyHolders(dealJourney({ id: order.opportunityId ?? order.id, title: order.title, stage: "won", clientQuoteCreated: order.opportunity?.clientQuoteCreated, clientQuoteSent: order.opportunity?.clientQuoteSent, salesperson: order.opportunityId ? order.opportunity?.salesperson : order.owner, companyId: order.companyId, neededByDate: order.neededByDate, lineItems: order.lineItems }, { company: false, neededBy: false }, { ...orderBallInput(order), id: order.id }), holders).map(step => {
     // Sales-side work is historical once the order exists. Review it in place.
     if (["sales", "pricing", "close"].includes(step.key)) return { ...step, state: "complete" as const, action: undefined, checks: [{ label: step.key === "sales" ? "Request captured and carried into this order" : step.key === "pricing" ? "Supplier quotes reviewed before order creation" : "Deal confirmed and order created", complete: true, href: step.key === "sales" ? "#order-intake" : step.key === "pricing" ? "#line-items" : "#order-summary" }], description: step.key === "sales" ? "Review the intake details below." : step.key === "pricing" ? "Review the requested items below." : "The customer decision is recorded and this order was created." };
     const localHref = (href: string) => href === `/orders/${order.id}` ? "#order-summary" : href.replace(`/orders/${order.id}`, "");

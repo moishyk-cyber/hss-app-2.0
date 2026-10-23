@@ -8,7 +8,7 @@ const ready: OpportunityBallInput = {
   stage: "estimating", intakeComplete: true, clientQuoteCreated: true, clientQuoteSent: true, salesperson: { name: "Salesperson A", active: true },
   lineItems: [{ rfqStatus: "quote_received", unitPrice: 100 }],
 };
-const holders = Object.fromEntries(FLOW_STEPS.map(step => [step.key, { role: "purchasing", userIds: ["office"], userNames: ["Office teammate"] }])) as StageHolders;
+const holders = Object.fromEntries(FLOW_STEPS.map(step => [step.key, { userId: "office", userName: "Office teammate" }])) as StageHolders;
 
 test("completed pricing hands closing to the deal salesperson even while its stage is Estimating or New", () => {
   for (const stage of ["new", "info_missing", "estimating", "proposal_sent", "revisions_needed", "negotiation"]) {
@@ -69,7 +69,7 @@ test("won orders keep their original salesperson in the historical closing step 
 
 test("supplier readiness hands the ball to Client Quote before Confirm Deal", () => {
  const draft=opportunityBall({...ready,clientQuoteCreated:false,clientQuoteSent:false});
- assert.equal(draft.step,"clientQuote");assert.equal(draft.holder,"Salesperson A");
+ assert.equal(draft.step,"clientQuote");assert.equal(withHolder(draft, holders).holder,"Office teammate");
  assert.equal(opportunityBall({...ready,clientQuoteSent:false}).step,"clientQuote");
  assert.equal(opportunityBall(ready).step,"close");
 });

@@ -1,109 +1,33 @@
-// Ball-in-court holders: which role (and optionally one or more specific
-// people) sit in each pipeline stage's court right now. Settings-backed, with
-// shipped defaults baked in here (not the DB) so every badge reads sensibly
-// before an admin configures anything (Sep 4 client decision: "in the
-// settings we need to set the roles = ball in court"; later split to one row
-// per stage with a multi-person pin).
-
 import { cache } from "react";
 import { getActiveUsers } from "@/lib/users";
-import { getSettings, type SettingKey } from "@/lib/settings";
-import { USER_ROLES, labelFor } from "@/lib/constants";
-import { isRole, type Role } from "@/lib/permissions";
+import { getSettings } from "@/lib/settings";
 import { FLOW_STEPS, type Ball, type FlowStepKey } from "@/lib/ballInCourt";
+import { stageAssignee, STAGE_ASSIGNEE_KEYS } from "./stageAssignments";
 
-/**
- * Shipped defaults - who normally sits in each stage's court until an admin
- * says otherwise from Admin > Settings. Mirrors each step's team (see
- * FLOW_STEPS' `court`); Sam runs purchasing and service today, so both
- * default to the purchasing role.
- */
-const DEFAULT_STEP_ROLES: Record<FlowStepKey, Role> = {
-  sales: "sales",
-  pricing: "purchasing",
-  close: "sales",
-  clientQuote: "sales",
-  deposit: "billing",
-  pos: "purchasing",
-  delivery: "purchasing",
-  service: "purchasing",
-};
-
-const STEPS_LIST = FLOW_STEPS.map((s) => s.key);
-
-const STEP_SETTING_KEYS: Record<FlowStepKey, { role: SettingKey; userIds: SettingKey }> = {
-  sales: { role: "court.sales.role", userIds: "court.sales.userIds" },
-  pricing: { role: "court.pricing.role", userIds: "court.pricing.userIds" },
-  close: { role: "court.close.role", userIds: "court.close.userIds" },
-  clientQuote: { role: "court.clientQuote.role", userIds: "court.clientQuote.userIds" },
-  deposit: { role: "court.deposit.role", userIds: "court.deposit.userIds" },
-  pos: { role: "court.pos.role", userIds: "court.pos.userIds" },
-  delivery: { role: "court.delivery.role", userIds: "court.delivery.userIds" },
-  service: { role: "court.service.role", userIds: "court.service.userIds" },
-};
-
-export type StageHolder = { role: Role | null; userIds: string[]; userNames: string[] };
+export type StageHolder = { userId: string | null; userName: string | null };
 export type StageHolders = Record<FlowStepKey, StageHolder>;
 
-/** Parse the comma-separated userIds setting value into a clean id list. */
-function parseUserIds(raw: string | null): string[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-/**
- * Read settings and the request-shared team directory concurrently. Falls back to the shipped default role -
- * and no pinned people - for any stage left unset; never throws (an
- * unreachable table reads the same as unset, same as getSettings/getSetting).
- */
 export const getStageHolders = cache(async (): Promise<StageHolders> => {
-  const keys = STEPS_LIST.flatMap((s) => [STEP_SETTING_KEYS[s].role, STEP_SETTING_KEYS[s].userIds]);
   const [settings, users] = await Promise.all([
-    getSettings(keys),
-    getActiveUsers().catch(() => []),
+    getSettings(Object.values(STAGE_ASSIGNEE_KEYS)), getActiveUsers(),
   ]);
-
-  const pending: Record<FlowStepKey, { role: Role; userIds: string[] }> = {} as Record<
-    FlowStepKey,
-    { role: Role; userIds: string[] }
-  >;
-  for (const s of STEPS_LIST) {
-    const roleValue = settings[STEP_SETTING_KEYS[s].role];
-    const role = isRole(roleValue) ? roleValue : DEFAULT_STEP_ROLES[s];
-    const userIds = parseUserIds(settings[STEP_SETTING_KEYS[s].userIds]);
-    pending[s] = { role, userIds };
-  }
-
-  const nameById = new Map(users.map((u) => [u.id, u.name]));
-
-  const holders = {} as StageHolders;
-  for (const s of STEPS_LIST) {
-    const { role, userIds } = pending[s];
-    // Pinned ids that no longer resolve (deactivated/deleted users) drop out,
-    // same as if nobody had been pinned there.
-    const resolvedIds = userIds.filter((id) => nameById.has(id));
-    holders[s] = {
-      role,
-      userIds: resolvedIds,
-      userNames: resolvedIds.map((id) => nameById.get(id)!),
-    };
-  }
-  return holders;
+  return Object.fromEntries(FLOW_STEPS.map(({ key }) => {
+    const user = stageAssignee(key, null, users, settings);
+    return [key, { userId: user?.id ?? null, userName: user?.name ?? null }];
+  })) as StageHolders;
 });
 
-/** The pinned people's names if any, else the role label, else the step name. */
 export function holderLabel(step: FlowStepKey, holders: StageHolders): string {
-  const h = holders[step];
-  if (h.userNames.length > 0) return h.userNames.join(", ");
-  if (h.role) return labelFor(USER_ROLES, h.role);
-  return FLOW_STEPS.find((s) => s.key === step)?.label ?? step;
+  return holders[step].userName ?? "Unassigned";
 }
 
-/** Fill a configured holder only when the record has no specific holder. */
 export function withHolder(ball: Ball, holders: StageHolders): Ball {
-  if (!ball.step || ball.holder) return ball;
+  if (!ball.step) return ball;
+  if (ball.step === "close") return ball;
   return { ...ball, holder: holderLabel(ball.step, holders) };
+}
+
+/** Use the configured person in the detail guide too; closing retains the deal's salesperson. */
+export function withJourneyHolders<T extends { key: string; owner: string }>(steps: T[], holders: StageHolders): T[] {
+  return steps.map(step => step.key === "close" || !(step.key in holders) ? step : { ...step, owner: holderLabel(step.key as FlowStepKey, holders) });
 }
