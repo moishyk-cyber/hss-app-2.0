@@ -1,3 +1,6 @@
+import { CustomerInfoCard, CustomerInfoProvider } from "@/lib/CustomerInfoCard";
+import { customerInfo } from "@/lib/customerInfo";
+import { FileLinkPreview } from "@/lib/FilePreviewModal";
 import { TeamNotes } from "@/lib/TeamNotes";
 import { IntakeEditor } from "@/app/pipeline/[id]/edit/IntakeEditor";
 import { RecordWorkspace } from "@/lib/RecordWorkspace";
@@ -31,7 +34,7 @@ import { orderBall } from "@/lib/ballInCourt";
 import { getStageHolders, withHolder, withJourneyHolders } from "@/lib/courtHolders";
 import { ActivityHistory, getActivityEntries } from "@/lib/ActivityHistory";
 import { startOrderSupportingReads } from "@/app/orders/[id]/supportingData";
-import { OrderFiles, OrderService, OrderPurchasing, OrderDelivery, OrderCompanyEditor, OrderContactEditor, SectionLoading } from "@/app/orders/[id]/SupportingSections";
+import { OrderCustomerPo, OrderFiles, OrderService, OrderPurchasing, OrderDelivery, OrderCompanyEditor, OrderContactEditor, SectionLoading } from "@/app/orders/[id]/SupportingSections";
 import { evaluatePaymentGate, ORDER_BALL_INCLUDE, orderBallInput } from "@/lib/flow";
 import { dealJourney, orderCanClose } from "@/lib/dealWorkflow";
 import { plainMoney } from "@/lib/money";
@@ -62,7 +65,7 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
         company: {
           select: {
             id: true,
-            name: true,
+            name: true, phone: true, phoneExt: true, cellPhone: true, email: true, billingAddress: true, deliveryAddress: true,
             requiresDeposit: true,
             depositPercent: true,
             paymentTermsConfigured: true,
@@ -75,7 +78,7 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
         },
         contact: true,
         owner: true,
-        location: { select: { name: true, address: true } },
+        location: { select: { name: true, address: true, contactName: true, contactPhone: true } },
         opportunity: { select: { notes: true, clientQuoteCreated: true, clientQuoteSent: true, clientQuoteUrl: true, companyId: true, locationName: true, salesperson: { select: { name: true, active: true } } } },
         payments: true,
         deliveries: { orderBy: { createdAt: "asc" } },
@@ -88,7 +91,7 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
           },
           orderBy: { createdAt: "asc" },
         },
-        purchaseOrders: { orderBy: { createdAt: "asc" } },
+        purchaseOrders: { include: { supplier: { select: { name: true, deliveryAddress: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] },
       },
     }).then(row => row),
     getActiveUsers(),
@@ -103,6 +106,7 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
   // client sections below, which only take plain numbers.
   const order = plainMoney(orderRow);
   if (!order) notFound();
+  const customer = customerInfo(order);
 
   const canEditIntake = await can("orders.edit");
   const gate = evaluatePaymentGate(order);
@@ -318,14 +322,14 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
   );
 
   if (focusedStep) return (
-    <DeliveryPartnersProvider partners={await getDeliveryPartners()}>
+    <CustomerInfoProvider value={customer}><DeliveryPartnersProvider partners={await getDeliveryPartners()}>
       <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={[focusedStep]} initialKey={focusedStep}>
         <div className="pipeline-detail space-y-5">
-          <WorkflowStepHeader title={order.title} step={steps.find(step => step.key === focusedStep)!} />
+          <WorkflowStepHeader title={order.title} step={steps.find(step => step.key === focusedStep)!} /><CustomerInfoCard />
           {focusedStep === "sales" && <>{intakeEditor}{order.opportunityId && <IntakeEditor projectOnly params={Promise.resolve({ id: order.opportunityId })} searchParams={Promise.resolve({})} />}</>}
           {focusedStep === "pricing" && <PricingItems items={order.lineItems} editable={isOpen} />}
-          {focusedStep === "clientQuote" && <section className="card"><h2 className="section-label">Client Quote</h2><p>{order.opportunity?.clientQuoteSent ? "Client quote sent." : "Order confirmed before this step was required."}</p>{order.opportunity?.clientQuoteUrl && <a href={order.opportunity.clientQuoteUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm">Open client quote</a>}</section>}
-          {focusedStep === "close" && <section className="card"><h2 className="section-label">Confirm Deal</h2><p>Deal confirmed. Agreed total: {order.orderValue == null ? "Not set" : `$${Number(order.orderValue).toLocaleString("en-US")}`}.</p></section>}
+          {focusedStep === "clientQuote" && <section className="card"><h2 className="section-label">Client Quote</h2><p>{order.opportunity?.clientQuoteSent ? "Client quote sent." : "Order confirmed before this step was required."}</p>{order.opportunity?.clientQuoteUrl && <FileLinkPreview url={order.opportunity.clientQuoteUrl} name="Client quote" kind="quote" label="Open client quote" />}</section>}
+          {focusedStep === "close" && <section className="card"><h2 className="section-label">Confirm Deal</h2><p>Deal confirmed. Agreed total: {order.orderValue == null ? "Not set" : `$${Number(order.orderValue).toLocaleString("en-US")}`}.</p><Suspense fallback={<SectionLoading name="Customer PO" />}><OrderCustomerPo orderId={order.id} opportunityId={order.opportunityId} /></Suspense></section>}
           {focusedStep === "deposit" && <PaymentsSection orderId={order.id} payments={order.payments} gate={gate} terms={{ termsNotes: order.termsNotes, paymentTerms: order.paymentTerms, orderValue: order.orderValue }} />}
           {focusedStep === "pos" && <Suspense fallback={<RequirementsSpinner />}>
             <OrderPurchasing orderId={order.id} data={supporting} purchaseOrderIds={order.purchaseOrders.map(po => po.id)} unassignedLineItems={unassignedLineItems} gate={gate} salesOrderSentAt={order.salesOrderSentAt} />
@@ -341,18 +345,18 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
           </>}
         </div>
       </WorkflowSelectionProvider>
-    </DeliveryPartnersProvider>
+    </DeliveryPartnersProvider></CustomerInfoProvider>
   );
 
   return (
-    <DeliveryPartnersProvider partners={await getDeliveryPartners()}>
+    <CustomerInfoProvider value={customer}><DeliveryPartnersProvider partners={await getDeliveryPartners()}>
     <WorkflowSelectionProvider orderId={order.id} revision={JSON.stringify([order.updatedAt, order.payments, steps])} stepKeys={steps.map(step => step.key)} initialKey={readWorkflowStep(query.step) ?? ball.step ?? "delivery"}>
     <div className="pipeline-detail space-y-8">
       <DetailHeader backHref={backHref} backLabel={backHref === "/pipeline" ? "Back to Pipeline" : "Back to Orders"} title={order.title}
         subtitle={<>{order.company ? <Link href={`/companies/${order.company.id}`}>{order.company.name}</Link> : "No linked business"}{order.contact && <> · {order.contact.firstName} {order.contact.lastName ?? ""}</>}</>}
         badges={<><span className="badge badge-gray capitalize">{order.orderType}</span><BallInCourtBadge ball={ball}/></>}
         action={primaryAction} secondary={canEditIntake && !order.opportunityId && isOpen && !order.payments.length && !order.purchaseOrders.length && !order.deliveries.length && !order._count.serviceIssues ? <DeleteIntakeButton id={order.id} kind="order" name={order.title} /> : undefined}/>
-      <RecordWorkspace navigation={<DealProgress steps={steps} lost={false} />} summary={<div className="space-y-5"><TeamNotes notes={order.notes} intakeNotes={order.opportunity?.notes} /><section className="card"><h2 className="section-label">Order details</h2><dl className="record-summary">
+      <RecordWorkspace navigation={<DealProgress steps={steps} lost={false} />} summary={<div className="space-y-5"><CustomerInfoCard /><TeamNotes notes={order.notes} intakeNotes={order.opportunity?.notes} /><section className="card"><h2 className="section-label">Order details</h2><dl className="record-summary">
         <div><dt>Status</dt><dd>{order.status.replaceAll("_", " ")}</dd></div>
         <div><dt>Owner</dt><dd>{order.owner?.name ?? "Unassigned"}</dd></div>
         <div><dt>Business</dt><dd>{order.company?.name ?? "No linked business"}</dd></div>
@@ -369,11 +373,11 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
         <section id="client-quote" className="card space-y-3">
           <h2 className="section-label">Client Quote</h2>
           <p className="text-sm text-gray-dark">{order.opportunity?.clientQuoteSent ? "The client quote was recorded before confirming this deal." : "This order was already confirmed before the client quote step was introduced, or was created directly."}</p>
-          {order.opportunity?.clientQuoteUrl && <a href={order.opportunity.clientQuoteUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm">Open client quote</a>}
+          {order.opportunity?.clientQuoteUrl && <FileLinkPreview url={order.opportunity.clientQuoteUrl} name="Client quote" kind="quote" label="Open client quote" />}
 
         </section>
       </WorkflowPanel>
-      <WorkflowPanel when={["close"]}><section id="confirmed-deal" className="card space-y-3"><h2 className="section-label">Confirm Deal</h2><p>The deal is confirmed. Its agreed total is {order.orderValue == null ? "not set" : `$${Number(order.orderValue).toLocaleString("en-US")}`}.</p><p className="text-sm text-gray-dark">Payment, terms and fulfillment are managed in this workspace.</p></section></WorkflowPanel>
+      <WorkflowPanel when={["close"]}><section id="confirmed-deal" className="card space-y-3"><h2 className="section-label">Confirm Deal</h2><p>The deal is confirmed. Its agreed total is {order.orderValue == null ? "not set" : `$${Number(order.orderValue).toLocaleString("en-US")}`}.</p><p className="text-sm text-gray-dark">Payment, terms and fulfillment are managed in this workspace.</p><Suspense fallback={<SectionLoading name="Customer PO" />}><OrderCustomerPo orderId={order.id} opportunityId={order.opportunityId} /></Suspense></section></WorkflowPanel>
       <WorkflowPanel when={["pricing"]}>
         <PricingItems items={order.lineItems} editable={isOpen} deletable={canEditIntake && !order.opportunityId && isOpen && !order.payments.length && !order.purchaseOrders.length && !order.deliveries.length} />
       </WorkflowPanel>
@@ -460,6 +464,6 @@ export async function RecordOrderContent({ id, query, backHref = "/orders" }: { 
       <Suspense fallback={<SectionLoading name="order activity" />}><ActivityHistory linkedType="order" linkedId={order.id} title="Order activity" entries={activity} collapsible /></Suspense>
     </div>
     </WorkflowSelectionProvider>
-    </DeliveryPartnersProvider>
+    </DeliveryPartnersProvider></CustomerInfoProvider>
   );
 }

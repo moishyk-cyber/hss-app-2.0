@@ -4,7 +4,7 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs
 import { Spinner } from './ui';
 
 /** Load the PDF renderer only when a PDF is opened, with one page in memory on screen. */
-export function PdfPreview({ url }: { url: string }) {
+export function PdfPreview({ url, onError }: { url: string; onError?: (message: string) => void }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -24,10 +24,10 @@ export function PdfPreview({ url }: { url: string }) {
         task = library.getDocument({ url, cMapUrl: "/vendor/pdfjs/cmaps/", cMapPacked: true, standardFontDataUrl: "/vendor/pdfjs/standard_fonts/", wasmUrl: "/vendor/pdfjs/wasm/" });
         const document = await task.promise;
         if (active) setPdf(document);
-      } catch { if (active) { setError('This PDF could not be previewed here. Use Open in new tab to view it.'); setBusy(false); } }
+      } catch { if (active) { const message = 'This PDF could not be loaded. Try again, or upload the PDF directly if its link requires permission.'; setError(message); onError?.(message); setBusy(false); } }
     })();
     return () => { active = false; void task?.destroy().catch(() => {}); };
-  }, [url]);
+  }, [url, onError]);
   useEffect(() => {
     if (!pdf) return;
     let active = true;
@@ -48,10 +48,10 @@ export function PdfPreview({ url }: { url: string }) {
         render = documentPage.render({ canvas: target, viewport, transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0] });
         const [content] = await Promise.all([documentPage.getTextContent(), render.promise]);
         if (active) { setText(content.items.map(item => 'str' in item ? item.str : '').join(' ')); setBusy(false); }
-      } catch { if (active) { setError('Could not display this page. Use Open in new tab to view the file.'); setBusy(false); } }
+      } catch { if (active) { const message = 'This PDF page could not be displayed. Try again, or upload a fresh copy of the PDF.'; setError(message); onError?.(message); setBusy(false); } }
     })();
     return () => { active = false; render?.cancel(); };
-  }, [pdf, page, zoom]);
+  }, [pdf, page, zoom, onError]);
   return <div className="pdf-preview">
     {pdf && <div className="pdf-preview-controls"><button type="button" className="btn btn-sm" disabled={page <= 1 || busy} onClick={() => { setBusy(true); setPage(page - 1); }}>Previous page</button><span>Page {page} of {pdf.numPages}</span><button type="button" className="btn btn-sm" disabled={page >= pdf.numPages || busy} onClick={() => { setBusy(true); setPage(page + 1); }}>Next page</button><button type="button" className="btn btn-sm" aria-label="Zoom out" disabled={zoom <= .5 || busy} onClick={() => { setBusy(true); setZoom(value => value - .25); }}>−</button><button type="button" className="btn btn-sm" aria-label="Zoom in" disabled={zoom >= 3 || busy} onClick={() => { setBusy(true); setZoom(value => value + .25); }}>+</button></div>}
     <div ref={area} className="pdf-preview-page">{error ? <p role="alert" className="p-5 text-sm">{error}</p> : <><canvas ref={canvas} aria-label={`PDF page ${page}`} /><p className="sr-only">{text}</p>{busy && <div role="status" className="file-preview-loading"><Spinner /> Loading PDF…</div>}</>}</div>

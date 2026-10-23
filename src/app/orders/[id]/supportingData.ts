@@ -42,7 +42,7 @@ export function startOrderSupportingReads(orderId: string, db = prisma) {
           orderBy: { createdAt: "asc" },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     }).then(plainMoney),
     items: db.lineItem.findMany({
       where: { orderId },

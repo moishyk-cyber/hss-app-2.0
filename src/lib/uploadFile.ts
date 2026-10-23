@@ -3,6 +3,26 @@ import { uploadProblem } from "./uploadPolicy";
 type Result = { ok: true } | { ok: false; message: string };
 type Signed = { uploadUrl: string; storagePath: string };
 export type UploadAttempt = { file: File; signed: Signed; uploaded: boolean };
+type UploadOperations = {
+  start: () => Promise<(Signed & { ok: true }) | { ok: false; message: string }>;
+  finish: (signed: Signed) => Promise<Result>;
+  fetch?: typeof fetch;
+};
+
+/** Validate the whole selection first; callers remove successes so retries only
+ * resume the remaining files, retaining a failed file's finalization attempt. */
+export async function uploadFiles(files: File[], attempt: { current: UploadAttempt | null }, operations: (file: File) => UploadOperations, onUploaded: (file: File) => void): Promise<Result> {
+  for (const file of files) {
+    const problem = uploadProblem(file);
+    if (problem) return { ok: false, message: `${file.name}: ${problem}` };
+  }
+  for (const file of files) {
+    const result = await uploadFile(file, attempt, operations(file));
+    if (!result.ok) return { ok: false, message: `${file.name}: ${result.message}` };
+    onUploaded(file);
+  }
+  return { ok: true };
+}
 
 /** Only metadata reaches server actions; bytes go directly to private storage.
  * Retain the attempt so a failed Document save can retry without uploading twice.
@@ -10,11 +30,7 @@ export type UploadAttempt = { file: File; signed: Signed; uploaded: boolean };
 export async function uploadFile(
   file: File,
   attempt: { current: UploadAttempt | null },
-  operations: {
-    start: () => Promise<(Signed & { ok: true }) | { ok: false; message: string }>;
-    finish: (signed: Signed) => Promise<Result>;
-    fetch?: typeof fetch;
-  },
+  operations: UploadOperations,
 ): Promise<Result> {
   const problem = uploadProblem(file);
   if (problem) return { ok: false, message: problem };

@@ -1,4 +1,6 @@
 "use client";
+import { FileDropzone } from "@/lib/FileDropzone";
+import { FileLabel } from "@/lib/FileLabel";
 import { FilePreviewButton } from "@/lib/FilePreviewModal";
 
 // Files tab (and the same card on the deal page): every Document linked to this
@@ -8,15 +10,16 @@ import { FilePreviewButton } from "@/lib/FilePreviewModal";
 // Two ways to add a file:
 //  - "Paste a link" - any http(s) URL (Google Drive share links are labeled as
 //    such), which always works.
-//  - "Upload a file" - PDF or image, max 25 MB. The browser asks the server for
+//  - "Upload a file" - PDF, Word (.docx), or image, max 20 MB. The browser asks the server for
 //    a signed upload URL, PUTs the bytes straight to Supabase Storage (they
 //    never pass through the app server), then the server records the Document.
 //    With no storage configured this mode says so and points at links instead.
 
 import { useRef, useState } from "react";
-import { DOCUMENT_KINDS, labelFor } from "@/lib/constants";
-import { uploadFile, type UploadAttempt } from "@/lib/uploadFile";
-import { UPLOAD_ACCEPT } from "@/lib/uploadPolicy";
+import { documentKindLabel } from "@/lib/documentKind";
+import { DOCUMENT_KINDS } from "@/lib/constants";
+import { uploadFiles, type UploadAttempt } from "@/lib/uploadFile";
+import { TEXT_LIMITS } from "@/lib/input";
 import { fmtDateUTC } from "@/lib/dates";
 import { ConfirmDialog } from "@/lib/ConfirmDialog";
 import { FormAlert, PendingButton, Spinner } from "@/lib/ui";
@@ -53,7 +56,6 @@ const KIND_COLORS: Record<string, string> = {
   other: "badge-gray",
 };
 
-const ACCEPT = UPLOAD_ACCEPT;
 
 function hostOf(url: string): string | null {
   try {
@@ -132,17 +134,17 @@ function FileRow({ doc, canDelete }: { doc: FileDocData; canDelete: boolean }) {
   const size = fmtSize(doc.sizeBytes);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
-      <span className={`badge shrink-0 ${KIND_COLORS[doc.kind] ?? "badge-gray"}`}>
-        {labelFor(DOCUMENT_KINDS, doc.kind)}
+      <span className={`badge file-type-label ${KIND_COLORS[doc.kind] ?? "badge-gray"}`}>
+        <FileLabel text={documentKindLabel(doc)} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13.5px] font-medium text-ink">{displayName(doc)}</span>
+        <FileLabel text={displayName(doc)} className="text-[13.5px] font-medium text-ink" />
         <span className="block text-[12px] text-gray-dark">
           {sourceLabel(doc)}
           {size ? ` · ${size}` : ""} · {fmtDateUTC(doc.uploadedAt)}
           {doc.uploadedBy ? ` · ${doc.uploadedBy}` : ""}
         </span>
-        {doc.note ? <span className="block text-[12px] text-gray-dark">{doc.note}</span> : null}
+        {doc.kind !== "other" && doc.note ? <span className="block text-[12px] text-gray-dark">{doc.note}</span> : null}
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <FilePreviewButton document={doc} />
@@ -152,19 +154,27 @@ function FileRow({ doc, canDelete }: { doc: FileDocData; canDelete: boolean }) {
   );
 }
 
-function KindSelect({ defaultValue }: { defaultValue: string }) {
-  return (
+function FileDetailsFields({ defaultKind, withFileName = false }: { defaultKind: string; withFileName?: boolean }) {
+  const [kind, setKind] = useState(defaultKind);
+  const [values, setValues] = useState({ note: "", customType: "" });
+  const custom = kind === "other";
+  const purpose = custom ? "customType" : "note";
+  return <div className="flex flex-wrap items-end gap-3">
     <label className="block w-40">
-      <span className="field-label">Kind</span>
-      <select name="kind" defaultValue={defaultValue} className="input-klyne w-full">
-        {DOCUMENT_KINDS.map((k) => (
-          <option key={k.value} value={k.value}>
-            {k.label}
-          </option>
-        ))}
+      <span className="field-label">File type</span>
+      <select name="kind" value={kind} onChange={event => setKind(event.target.value)} className="input-klyne w-full">
+        {DOCUMENT_KINDS.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
       </select>
     </label>
-  );
+    {withFileName && <label className="block min-w-48 flex-1">
+      <span className="field-label">File name</span>
+      <input name="fileName" placeholder="Optional" className="input-klyne w-full" />
+    </label>}
+    <label className={`block min-w-48 flex-1 ${withFileName ? "basis-full" : ""}`}>
+      <span className="field-label">{custom ? "Custom file type" : "Note"}</span>
+      <input name="note" value={values[purpose]} onChange={event => setValues(previous => ({ ...previous, [purpose]: event.target.value }))} maxLength={custom ? TEXT_LIMITS.short : TEXT_LIMITS.medium} placeholder={custom ? "e.g. Warranty or Site photo" : "Add a note (optional)"} className="input-klyne w-full" />
+    </label>
+  </div>;
 }
 
 export default function FilesSection({
@@ -204,7 +214,7 @@ export default function FilesSection({
   const [mode, setMode] = useState<"link" | "upload">("link");
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [chosenFiles, setChosenFiles] = useState<File[]>([]);
   const uploadLock = useRef(false);
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
@@ -230,25 +240,24 @@ export default function FilesSection({
 
   async function submitUpload(formData: FormData) {
     setError(null);
-    const file = fileRef.current?.files?.[0] ?? null;
-    if (!file) {
+    if (!chosenFiles.length) {
       setError("Pick a file to upload.");
       return;
     }
     const kind = String(formData.get("kind") ?? "other");
     const note = String(formData.get("note") ?? "");
-    const result = await uploadFile(file, uploadAttempt, {
+    const result = await uploadFiles(chosenFiles, uploadAttempt, file => ({
       start: () => createSignedUpload(linkedType, linkedId, file.name, file.type, file.size),
       finish: (signed) => finalizeUpload(linkedType, linkedId, {
         storagePath: signed.storagePath, fileName: file.name,
         mimeType: file.type, sizeBytes: file.size, kind, note,
       }),
-    });
+    }), file => setChosenFiles(previous => previous.filter(selected => selected !== file)));
     if (result.ok === false) {
       setError(result.message);
       return;
     }
-    toast({ kind: "success", message: "File uploaded." });
+    toast({ kind: "success", message: chosenFiles.length === 1 ? "File uploaded." : "Files uploaded." });
     setFormKey((k) => k + 1);
     setAdding(false);
   }
@@ -318,17 +327,7 @@ export default function FilesSection({
                   className="input-klyne w-full"
                 />
               </label>
-              <div className="flex flex-wrap items-end gap-3">
-                <KindSelect defaultValue={defaultKind} />
-                <label className="block min-w-48 flex-1">
-                  <span className="field-label">File name</span>
-                  <input name="fileName" placeholder="Optional" className="input-klyne w-full" />
-                </label>
-              </div>
-              <label className="block">
-                <span className="field-label">Note</span>
-                <input name="note" placeholder="Optional" className="input-klyne w-full" />
-              </label>
+              <FileDetailsFields defaultKind={defaultKind} withFileName />
               <div className="flex justify-end gap-2">
                 <button type="button" className="btn" onClick={() => setAdding(false)}>
                   Cancel
@@ -353,23 +352,14 @@ export default function FilesSection({
               finally { uploadLock.current = false; setUploading(false); }
             }}>
               <fieldset disabled={uploading} className="space-y-3">
-                <label className="block">
-                  <span className="field-label">File * (PDF or image, max 25 MB)</span>
-                  <input ref={fileRef} type="file" accept={ACCEPT} required className="input-klyne w-full" />
-                </label>
-                <div className="flex flex-wrap items-end gap-3">
-                  <KindSelect defaultValue={defaultKind} />
-                  <label className="block min-w-48 flex-1">
-                    <span className="field-label">Note</span>
-                    <input name="note" placeholder="Optional" className="input-klyne w-full" />
-                  </label>
-                </div>
+                <FileDropzone files={chosenFiles} onChange={files => { setChosenFiles(files); setError(null); }} disabled={uploading} />
+                <FileDetailsFields defaultKind={defaultKind} />
                 <div className="flex justify-end gap-2">
                   <button type="button" className="btn" onClick={() => setAdding(false)}>
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary active:scale-[0.99]" disabled={uploading} aria-busy={uploading}>
-                    {uploading ? <><Spinner /> Uploading…</> : "Upload"}
+                    {uploading ? <><Spinner /> Uploading…</> : chosenFiles.length > 1 ? `Upload ${chosenFiles.length} files` : "Upload"}
                   </button>
                 </div>
               </fieldset>
@@ -383,7 +373,7 @@ export default function FilesSection({
         {docs.length === 0 ? (
           <div className={compact ? "text-xs text-gray-dark" : "empty-state"}>{emptyText}</div>
         ) : (
-          <div className="divide-y divide-border rounded-lg border border-border px-4">
+          <div className={`file-attachments-list ${compact ? "file-attachments-list-compact" : ""} divide-y divide-border rounded-lg border border-border px-4`} role="region" aria-label={ownLabel} tabIndex={0}>
             {docs.map((doc) => (
               <FileRow key={doc.id} doc={doc} canDelete />
             ))}
@@ -394,7 +384,7 @@ export default function FilesSection({
       {!compact && inheritedDocs.length > 0 && (
         <div className="space-y-2">
           <h4 className="field-label">{inheritedLabel}</h4>
-          <div className="divide-y divide-border rounded-lg border border-border px-4">
+          <div className="file-attachments-list divide-y divide-border rounded-lg border border-border px-4" role="region" aria-label={inheritedLabel} tabIndex={0}>
             {inheritedDocs.map((doc) => (
               <FileRow key={doc.id} doc={doc} canDelete />
             ))}

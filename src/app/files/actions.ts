@@ -18,7 +18,7 @@ import { safeAction, type ActionResult } from "@/lib/actionResult";
 import { logActivity } from "@/lib/log";
 import { currentUser, requirePermission } from "@/lib/permissionsServer";
 import { currentUserName } from "@/lib/identityServer";
-import { DOCUMENT_KINDS, labelFor } from "@/lib/constants";
+import { documentKindLabel } from "@/lib/documentKind";
 import {
   createSignedDownloadUrl,
   removeObject,
@@ -95,7 +95,7 @@ export async function createLinkDocument(
       linkedType,
       linkedId,
       "document_linked",
-      `${labelFor(DOCUMENT_KINDS, doc.kind)} link added${fileName ? `: ${fileName}` : ""}`
+      `${documentKindLabel(doc)} link added${fileName ? `: ${fileName}` : ""}`
     );
     await revalidateFor(linkedType, linkedId);
   }, "Could not save that link. Please try again.");
@@ -156,7 +156,7 @@ export async function finalizeUpload(
       linkedType,
       linkedId,
       "document_uploaded",
-      `${labelFor(DOCUMENT_KINDS, input.kind)} uploaded: ${fileName}`
+      `${documentKindLabel(doc)} uploaded: ${fileName}`
     );
     await revalidateFor(linkedType, linkedId);
   }, "Could not save that upload. Please try again.");
@@ -205,7 +205,7 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
       doc.linkedType,
       doc.linkedId,
       "document_deleted",
-      `${labelFor(DOCUMENT_KINDS, doc.kind)} removed${doc.fileName ? `: ${doc.fileName}` : ""}`
+      `${documentKindLabel(doc)} removed${doc.fileName ? `: ${doc.fileName}` : ""}`
     );
     await revalidateFor(doc.linkedType, doc.linkedId);
   }, "Could not delete that file. Please try again.");

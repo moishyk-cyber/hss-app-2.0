@@ -48,15 +48,15 @@ export const PIPELINE_DETAIL_INCLUDE = {
   // locations feed the Close panel's picker (and the Location row below).
   company: {
     select: {
-      id: true, name: true, requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true,
+      id: true, name: true, phone: true, phoneExt: true, cellPhone: true, email: true, billingAddress: true, deliveryAddress: true, requiresDeposit: true, depositPercent: true, paymentTermsConfigured: true,
       locations: {
         select: { id: true, name: true, address: true },
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
       },
     },
   },
-  location: { select: { id: true, name: true, address: true } },
-  primaryContact: { select: { firstName: true, lastName: true } },
+  location: { select: { id: true, name: true, address: true, contactName: true, contactPhone: true } },
+  primaryContact: { select: { firstName: true, lastName: true, phone: true, phoneExt: true, cellPhone: true, email: true } },
   salesperson: { select: { name: true, active: true } },
   lineItems: { orderBy: { createdAt: "asc" } },
   orders: { select: { id: true, title: true, ...ORDER_BALL_SELECT }, orderBy: { createdAt: "asc" } },

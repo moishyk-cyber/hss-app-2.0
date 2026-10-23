@@ -16,8 +16,9 @@ import { PaymentTermsField } from "@/lib/PaymentTermsField";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createSignedUpload, finalizeUpload } from "../files/actions";
-import { uploadFile, type UploadAttempt } from "@/lib/uploadFile";
-import { UPLOAD_ACCEPT, uploadProblem } from "@/lib/uploadPolicy";
+import { FileDropzone } from "@/lib/FileDropzone";
+import { uploadFiles, type UploadAttempt } from "@/lib/uploadFile";
+import { uploadProblem } from "@/lib/uploadPolicy";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BackLink } from "@/lib/BackLink";
 import { FormAlert, PendingButton } from "@/lib/ui";
@@ -409,29 +410,28 @@ export function IntakeForm({
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
   const router = useRouter();
-  const drawingFileRef = useRef<HTMLInputElement>(null);
+  const [chosenFiles, setChosenFiles] = useState<File[]>([]);
   const uploadAttempt = useRef<UploadAttempt | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [savedIntake, setSavedIntake] = useState<{
     result: Awaited<ReturnType<typeof submitIntake>>;
-    file: File | null;
+    files: File[];
     kind: string;
   } | null>(null);
 
   async function attachFile(saved: NonNullable<typeof savedIntake>) {
-    if (saved.file) {
-      const file = saved.file;
-      const result = await uploadFile(file, uploadAttempt, {
+    if (saved.files.length) {
+      const result = await uploadFiles(saved.files, uploadAttempt, file => ({
         start: () => createSignedUpload(saved.result.type, saved.result.id, file.name, file.type, file.size),
         finish: signed => finalizeUpload(saved.result.type, saved.result.id, {
           storagePath: signed.storagePath, fileName: file.name, mimeType: file.type,
           sizeBytes: file.size, kind: saved.kind,
         }),
-      });
+      }), file => setSavedIntake(previous => previous ? { ...previous, files: previous.files.filter(selected => selected !== file) } : previous));
       if (!result.ok) { setUploadError(result.message); return; }
     }
     if (saved.result.attachmentWarning) {
-      setSavedIntake({ ...saved, file: null });
+      setSavedIntake({ ...saved, files: [] });
       setUploadError(saved.result.attachmentWarning);
       return;
     }
@@ -439,14 +439,13 @@ export function IntakeForm({
   }
 
   async function createIntake(formData: FormData) {
-    const file = drawingFileRef.current?.files?.[0] ?? null;
-    const problem = file ? uploadProblem(file) : null;
+    const problem = chosenFiles.map(file => uploadProblem(file)).find(Boolean);
     if (problem) { setUploadError(problem); saveDraftNow(false); return; }
     setUploadError(null);
     // The picker has no name so React never serializes its bytes into an action.
     formData.delete("drawingFile");
     const result = await submitIntake(formData);
-    const saved = { result, file, kind: orderType === "project" ? "drawing" : "other" };
+    const saved = { result, files: chosenFiles, kind: orderType === "project" ? "drawing" : "other" };
     clearDraft();
     setSavedIntake(saved);
     await attachFile(saved);
@@ -786,7 +785,7 @@ export function IntakeForm({
       <p role="status" className="text-sm font-medium">Your {savedIntake.result.type === "opportunity" ? "opportunity" : "order"} has been created.</p>
       {uploadError ? <FormAlert>{uploadError}</FormAlert> : <p role="status">Saving attachment…</p>}
       <div className="flex flex-wrap gap-2">
-        {savedIntake.file && uploadError && <PendingButton className="btn btn-primary" pendingText="Retrying upload…">Retry upload</PendingButton>}
+        {savedIntake.files.length > 0 && uploadError && <PendingButton className="btn btn-primary" pendingText="Retrying upload…">Retry upload</PendingButton>}
         {uploadError && <Link href={savedIntake.result.href} className="btn">Open saved record</Link>}
       </div>
     </form>;
@@ -797,8 +796,7 @@ export function IntakeForm({
       ref={formRef}
       action={createIntake}
       onSubmit={event => {
-        const file = drawingFileRef.current?.files?.[0];
-        const problem = file ? uploadProblem(file) : null;
+        const problem = chosenFiles.map(file => uploadProblem(file)).find(Boolean);
         if (problem) {
           event.preventDefault();
           setUploadError(problem);
@@ -1273,28 +1271,16 @@ export function IntakeForm({
                   />
                 </label>
                 <span className="intake-attachment-or" aria-hidden="true">or</span>
-                <label className="block min-w-0">
-                  <span className={labelClass}>Upload a file</span>
-                  <input
-                    ref={drawingFileRef}
-                    type="file"
-                    disabled={!uploadsEnabled}
-                    accept={UPLOAD_ACCEPT}
-                    onChange={event => {
-                      uploadAttempt.current = null;
-                      const file = event.target.files?.[0];
-                      setUploadError(file ? uploadProblem(file) : null);
-                    }}
-                    aria-describedby="attachment-help"
-                    className={`${inputClass} intake-attachment-file`}
-                  />
-                </label>
+                <div className="min-w-0">
+                  <span className={labelClass}>Upload files</span>
+                  <FileDropzone files={chosenFiles} disabled={!uploadsEnabled} onChange={files => { uploadAttempt.current = null; setChosenFiles(files); setUploadError(files.map(file => uploadProblem(file)).find(Boolean) ?? null); }} />
+                </div>
               </div>
               {!uploadsEnabled && <p role="status" className="mt-2 text-xs text-gray">File uploads are not configured. Paste a link instead.</p>}
               <span id="attachment-help" className="mt-2 block text-xs text-gray">
                 {orderType === "project"
-                  ? "PDF or image · maximum 25 MB. You can also paste a link, or leave this blank."
-                  : "PDF or image (the client’s PO, a quote, a photo) · maximum 25 MB. You can also paste a link, or leave this blank."}
+                  ? "PDF, Word (.docx), or image · maximum 20 MB. You can also paste a link, or leave this blank."
+                  : "PDF, Word (.docx), or image (the client’s PO, a quote, a photo) · maximum 20 MB. You can also paste a link, or leave this blank."}
               </span>
             </div>
           </div>

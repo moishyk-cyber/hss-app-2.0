@@ -2,7 +2,7 @@ import 'server-only';
 import { prisma } from './prisma';
 import type { PreviewDocument } from './filePreview';
 
-export type RecordCardDocument = PreviewDocument & { kind: string };
+export type RecordCardDocument = PreviewDocument & { kind: string; note?: string | null };
 /** Fetch attachments once for the visible records, including their intake and POs. */
 export async function recordCardDocuments(records: { id: string; type: 'opportunity' | 'order' }[]) {
   const result = new Map<string, RecordCardDocument[]>();
@@ -18,7 +18,7 @@ export async function recordCardDocuments(records: { id: string; type: 'opportun
     { linkedType: 'opportunity', linkedId: { in: allDealIds } },
     { linkedType: 'order', linkedId: { in: orders.map(order => order.id) } },
     { linkedType: 'purchase_order', linkedId: { in: orders.flatMap(order => order.purchaseOrders.map(po => po.id)) } },
-  ] }, select: { id: true, kind: true, fileName: true, fileUrl: true, storagePath: true, mimeType: true, linkedType: true, linkedId: true }, orderBy: [{ uploadedAt: 'asc' }, { id: 'asc' }] });
+  ] }, select: { id: true, kind: true, note: true, fileName: true, fileUrl: true, storagePath: true, mimeType: true, linkedType: true, linkedId: true }, orderBy: [{ uploadedAt: 'asc' }, { id: 'asc' }] });
   const byTarget = new Map<string, RecordCardDocument[]>();
   for (const { linkedType, linkedId, ...doc } of docs) {
     const key = `${linkedType}:${linkedId}`;

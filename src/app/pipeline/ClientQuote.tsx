@@ -1,6 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { FileLinkPreview } from "@/lib/FilePreviewModal";
+import { safePreviewUrl } from "@/lib/filePreview";
 import { Spinner } from "@/lib/ui";
 
 export function ClientQuote({ id, created, sent, url, editable }: {
@@ -39,6 +41,7 @@ export function ClientQuote({ id, created, sent, url, editable }: {
       {error && <p role="alert" className="banner-alert">{error}</p>}
       <div className="flex items-center gap-3">
         {editable && <button type="submit" className="btn btn-primary btn-sm" disabled={saving || uncertain}>{saving ? <><Spinner />Saving…</> : "Save client quote"}</button>}
+        {safePreviewUrl(values.url) && <FileLinkPreview url={values.url} name="Client quote" kind="quote" label="Preview client quote" />}
         {uncertain && <button type="button" className="btn btn-sm" onClick={()=>window.location.reload()}>Reload saved details</button>}
         {(message || refreshing) && <span role="status" className="text-xs text-gray-dark">{refreshing ? "Updating workflow…" : message}</span>}
       </div>

@@ -36,6 +36,15 @@ export async function OrderFiles({ orderId, opportunityId }: { orderId: string; 
     inheritedLabel="From the deal" uploadsEnabled={uploadsConfigured()} />;
 }
 
+export async function OrderCustomerPo({ orderId, opportunityId }: { orderId: string; opportunityId: string | null }) {
+  const documents = await prisma.document.findMany({ where: { kind: 'customer_po', OR: [
+    { linkedType: 'order', linkedId: orderId },
+    ...(opportunityId ? [{ linkedType: 'opportunity', linkedId: opportunityId }] : []),
+  ] }, orderBy: { uploadedAt: 'desc' } });
+  return <div className="space-y-2"><div className="flex items-baseline gap-2"><h3 className="field-label !mb-0">Customer PO</h3><span className="text-xs text-gray-dark">Optional</span></div><FilesSection linkedType="order" linkedId={orderId} docs={documents}
+    ownLabel="Customer PO" uploadsEnabled={uploadsConfigured()} compact defaultKind="customer_po" addLabel="+ Attach Customer PO" emptyText="No Customer PO attached." /></div>;
+}
+
 export async function OrderService({ issues, ...props }:
   Omit<ComponentProps<typeof OrderIssuesPanel>, "issues"> & { issues: OrderSupportingReads["issues"] }) {
   const rows = await issues;

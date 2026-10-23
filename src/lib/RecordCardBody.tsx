@@ -3,16 +3,17 @@ import { useState } from 'react';
 import Link from './IntentLink';
 import { Avatar } from './Avatar';
 import { COURTS, type Ball } from './ballInCourt';
+import { FileLabel } from './FileLabel';
 import { FilePreviewModal } from './FilePreviewModal';
-import { DOCUMENT_KINDS, labelFor } from './constants';
+import { documentKindLabel } from './documentKind';
 import type { RecordCardDocument } from './recordCardDocuments';
 
 function CardFiles({ documents }: { documents: RecordCardDocument[] }) {
   const [selected, setSelected] = useState<RecordCardDocument | null>(null);
   if (!documents.length) return null;
-  return <><div className="record-card-files relative z-10" aria-label="Record documents">{documents.map(doc => <button type="button" key={doc.id} onClick={() => setSelected(doc)} title={doc.fileName ?? undefined} aria-label={`View ${labelFor(DOCUMENT_KINDS, doc.kind)}: ${doc.fileName ?? 'File'}`}>
+  return <><div className="record-card-files relative z-10" aria-label="Record documents">{documents.map(doc => <button type="button" key={doc.id} onClick={() => setSelected(doc)} aria-label={`View ${documentKindLabel(doc)}: ${doc.fileName ?? 'File'}`}>
     <svg viewBox="0 0 24 28" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M5 1h10l7 7v17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2Z"/><path d="M15 1v7h7M7 13h11M7 18h11M7 23h7"/></svg>
-    <span>{labelFor(DOCUMENT_KINDS, doc.kind)}</span></button>)}</div>{selected && <FilePreviewModal key={selected.id} title={labelFor(DOCUMENT_KINDS, selected.kind)} documents={[selected]} onClose={() => setSelected(null)} />}</>;
+    <FileLabel text={documentKindLabel(doc)} detail={doc.fileName} focusable={false} /></button>)}</div>{selected && <FilePreviewModal key={selected.id} title={documentKindLabel(selected)} documents={[selected]} onClose={() => setSelected(null)} />}</>;
 }
 export function RecordCardBody({ documents, href, title, companyId, companyName, value, daysOpen, ball, ballHref, context }: {
   ballHref?: string; context?: { label: string; href: string }; documents: RecordCardDocument[]; id: string; type: 'opportunity' | 'order'; href: string; title: string; companyId: string | null; companyName: string | null; assigneeName: string | null; value: number | null; daysOpen: number; ball: Ball;

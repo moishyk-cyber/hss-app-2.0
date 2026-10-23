@@ -2,6 +2,7 @@
 
 // Order delivery rows link to full delivery pages; shipment fields follow the delivery mode.
 
+import { CustomerInfoCard } from "@/lib/CustomerInfoCard";
 import { PickupLocationDropdown } from "@/lib/LocationDropdown";
 import { PartnerInput } from "@/app/deliveries/PartnerInput";
 import { DeliveryDestination } from "./DeliveryDestination";
@@ -213,6 +214,7 @@ export function DeliveryDetail({ delivery, orderId, destination }: { delivery: D
  */
 function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
   const [mode, setMode] = useState(delivery.mode);
+  const [pickupAddress, setPickupAddress] = useState(delivery.pickupAddress || delivery.purchaseOrder?.supplier?.deliveryAddress || '');
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -239,6 +241,7 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
 
   return (
     <form action={handleSave} className="space-y-2 border-t border-border pt-4">
+      <CustomerInfoCard pickups={[{ label: "Pickup for this delivery", address: pickupAddress || null }]} deliveryPhone={delivery.deliveryContactPhone} />
       {error && <div className="banner-warn">{error}</div>}
 
       <label className="block">
@@ -313,7 +316,7 @@ function DeliveryDetailsForm({ delivery }: { delivery: Delivery }) {
                 defaultValue={delivery.trucker ?? ""}
               />
             </label>
-<PickupLocationDropdown current={delivery.pickupAddress} supplierAddress={delivery.purchaseOrder?.supplier?.deliveryAddress} />
+<PickupLocationDropdown current={delivery.pickupAddress} supplierAddress={delivery.purchaseOrder?.supplier?.deliveryAddress} onChange={setPickupAddress} />
             <label className="block">
               <span className="field-label">Delivery contact phone</span>
               <input
@@ -399,6 +402,7 @@ function StockDeliveryForm({
 
   return (
     <form action={handleCreate} className="space-y-3 rounded-lg border border-border bg-panel p-3">
+      <CustomerInfoCard pickups={[{ label: "HSS stock pickup", address: null }]} />
       <div className="section-label">New delivery from HSS stock</div>
       <p className="text-xs text-gray-dark">
         For items already sitting in the warehouse - HSS pickup straight to the customer, no purchase order.

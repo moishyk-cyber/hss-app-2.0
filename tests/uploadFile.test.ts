@@ -1,11 +1,38 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { uploadFile, type UploadAttempt } from "../src/lib/uploadFile";
-import { MAX_UPLOAD_BYTES, uploadProblem } from "../src/lib/uploadPolicy";
+import { uploadFiles, uploadFile, type UploadAttempt } from "../src/lib/uploadFile";
+import { DOCX_MIME, MAX_UPLOAD_BYTES, uploadProblem } from "../src/lib/uploadPolicy";
 import { createAttachments, type FileLinkedType } from "../src/lib/workflows/attachments";
 import { memoryDatabase, fixture } from "./memoryDatabase";
 
 const pdf = () => new File(["%PDF-1.7\n", new Uint8Array(2 * 1024 * 1024)], "drawing.pdf", { type: "application/pdf" });
+
+test("multiple attachments resume failed finalization without duplicating earlier files or uploading bytes twice", async () => {
+  let remaining = [pdf(), new File(['word'], 'terms.docx', { type: DOCX_MIME })];
+  const attempt = { current: null as UploadAttempt | null };
+  const stored: string[] = [], finalized: string[] = [];
+  let fail = true;
+  const operations = (file: File) => ({
+    start: async () => ({ ...signed, storagePath: file.name }),
+    fetch: async () => { stored.push(file.name); return new Response('{}'); },
+    finish: async () => {
+      if (file.name === 'terms.docx' && fail) { fail = false; throw new Error('Disconnected'); }
+      finalized.push(file.name); return success;
+    },
+  });
+  const uploaded = (file: File) => { remaining = remaining.filter(selected => selected !== file); };
+  assert.equal((await uploadFiles(remaining, attempt, operations, uploaded)).ok, false);
+  assert.deepEqual(remaining.map(file => file.name), ['terms.docx']);
+  assert.equal((await uploadFiles(remaining, attempt, operations, uploaded)).ok, true);
+  assert.equal(remaining.length, 0);
+  assert.deepEqual(stored, ['drawing.pdf', 'terms.docx']);
+  assert.deepEqual(finalized, ['drawing.pdf', 'terms.docx']);
+});
+
+test("an invalid selection stops the whole batch before sending any file", async () => {
+  const result = await uploadFiles([pdf(), new File(['bad'], 'script.js', { type: 'text/javascript' })], { current: null }, () => { assert.fail('No upload should start'); }, () => { assert.fail('No file should be saved'); });
+  assert.equal(result.ok, false);
+});
 const signed = { ok: true as const, uploadUrl: "https://storage.example/upload?token=temporary", storagePath: "order/order/drawing.pdf" };
 const success = { ok: true as const };
 
@@ -28,7 +55,7 @@ for (const [surface, linkedType, linkedId] of [
       remove: async path => { objects.delete(path); },
     });
     const target = { linkedType: linkedType as FileLinkedType, linkedId, uploadedBy: "Sales" };
-    for (const file of [pdf(), new File([new Uint8Array([137, 80, 78, 71])], "photo.png", { type: "image/png" })]) {
+    for (const file of [pdf(), new File([new Uint8Array([137, 80, 78, 71])], "photo.png", { type: "image/png" }), new File(["word document fixture"], "terms.docx", { type: DOCX_MIME })]) {
       const metadata = { fileName: file.name, mimeType: file.type, sizeBytes: file.size };
       const result = await uploadFile(file, { current: null }, {
         start: async () => ({ ok: true, ...await attachments.start(target, metadata) }),
@@ -45,10 +72,10 @@ for (const [surface, linkedType, linkedId] of [
       assert.deepEqual(result, success);
     }
     const documents = m.state().document;
-    assert.equal(documents.length, 2);
+    assert.equal(documents.length, 3);
     assert.ok(documents.every(document => document.linkedType === linkedType && document.linkedId === linkedId && document.source === "upload"));
     assert.equal(documents[0].sizeBytes, pdf().size);
-    assert.equal(objects.size, 2);
+    assert.equal(objects.size, 3);
   });
 }
 
@@ -101,4 +128,13 @@ test("failed Document save retries finalization without sending the bytes twice"
   assert.deepEqual(await uploadFile(file, attempt, operations), success);
   assert.deepEqual({ starts, uploads, saves }, { starts: 1, uploads: 1, saves: 2 });
   assert.equal(attempt.current, null);
+});
+
+test("image uploads are limited to formats the in-app image viewer supports", () => {
+  for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml', 'image/bmp']) {
+    assert.equal(uploadProblem({ name: 'picture', type, size: 100 }), null);
+  }
+  for (const type of ['image/heic', 'image/tiff']) {
+    assert.match(uploadProblem({ name: 'picture', type, size: 100 })!, /Convert HEIC or TIFF/);
+  }
 });

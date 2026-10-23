@@ -18,6 +18,13 @@
 // and writes what was agreed; nothing is invoiced automatically. The invoices
 // are added by hand on the order's Invoice tab.
 
+import { FileDropzone } from "@/lib/FileDropzone";
+import { FilePreviewButton } from "@/lib/FilePreviewModal";
+import { FileLabel } from "@/lib/FileLabel";
+import { uploadFiles, type UploadAttempt } from "@/lib/uploadFile";
+import { uploadProblem } from "@/lib/uploadPolicy";
+import { createSignedUpload, finalizeUpload } from "@/app/files/actions";
+import type { PreviewDocument } from "@/lib/filePreview";
 import { EditIconButton } from "@/lib/ui";
 import { useWorkflowFormCompletion } from "@/lib/WorkflowFormContext";
 import { MoneyInput } from "@/lib/MoneyInput";
@@ -42,7 +49,7 @@ type WonSummary = {
   locationName: string;
   address: string;
   neededBy: string;
-  poNumber: string;
+  customerPoFiles: string[];
 };
 
 /** A prefilled answer: shown as a line of text until "change" reveals the input. */
@@ -68,6 +75,8 @@ function SummaryRow({
 
 export function ClosePanel({
   opportunityId,
+  customerPoDocuments = [],
+  uploadsEnabled = true,
   prerequisiteIssues,
   requiresDeposit,
   depositPercent,
@@ -81,6 +90,8 @@ export function ClosePanel({
   locations,
 }: {
   opportunityId: string;
+  customerPoDocuments?: PreviewDocument[];
+  uploadsEnabled?: boolean;
   prerequisiteIssues: ValidationIssue[];
   isProject: boolean;
   /** Company.requiresDeposit - the account's own deposit rule, which still gates the POs. */
@@ -124,7 +135,8 @@ export function ClosePanel({
   }, [defaultNeededBy]);
   const [terms, setTerms] = useState("");
   const conversion = usePaymentTermsConversion(terms);
-  const [poNumber, setPoNumber] = useState("");
+  const [customerPoFiles, setCustomerPoFiles] = useState<File[]>([]);
+  const customerPoUpload = useRef<UploadAttempt | null>(null);
 
   // An answer that is already on the deal opens closed; a missing one opens as
   // an input, because that is the only thing the close is actually waiting for.
@@ -145,7 +157,8 @@ export function ClosePanel({
   function validateWon() {
     setAttempted(true);
     const own = closeIssues({ value: numericValue, address, neededBy }, "won");
-    const issues = [...prerequisiteIssues.filter(i => i.field !== "neededByDate"), ...own, ...(termsProblem ? [{ field: "termsNotes", message: termsProblem }] : [])];
+    const fileProblem = customerPoFiles.map(file => uploadProblem(file)).find(Boolean);
+    const issues = [...(fileProblem ? [{ field: "customerPo", message: fileProblem }] : []), ...prerequisiteIssues.filter(i => i.field !== "neededByDate"), ...own, ...(termsProblem ? [{ field: "termsNotes", message: termsProblem }] : [])];
     if (own.some(i => i.field === "value")) setEditPrice(true);
     if (own.some(i => i.field === "neededByDate")) setEditNeededBy(true);
     setValidation(issues);
@@ -154,7 +167,7 @@ export function ClosePanel({
 
   function openWonConfirm() {
     if (submitting || !validateWon()) return;
-    setWonSummary({ value: numericValue, terms: terms.trim(), locationName: locationName.trim(), address: address.trim(), neededBy, poNumber: poNumber.trim() });
+    setWonSummary({ value: numericValue, terms: terms.trim(), locationName: locationName.trim(), address: address.trim(), neededBy, customerPoFiles: [...customerPoDocuments.map(doc => doc.fileName ?? "Customer PO"), ...customerPoFiles.map(file => file.name)] });
   }
 
   function confirmWon() {
@@ -186,7 +199,7 @@ export function ClosePanel({
     }
     requestAnimationFrame(() => {
       const form = closingAs === "won" ? wonFormRef.current : lostFormRef.current;
-      const input = issue?.field === "value" ? form?.querySelector<HTMLElement>('input[inputmode="decimal"]') : issue?.field === "deliveryAddress" ? form?.querySelector<HTMLElement>('input[name="deliveryAddress"]:not([type="hidden"]), select[aria-label="Location"]') : form?.querySelector<HTMLElement>(`[name="${issue?.field}"]`);
+      const input = issue?.field === "customerPo" ? form?.querySelector<HTMLElement>('#customer-po button') : issue?.field === "value" ? form?.querySelector<HTMLElement>('input[inputmode="decimal"]') : issue?.field === "deliveryAddress" ? form?.querySelector<HTMLElement>('input[name="deliveryAddress"]:not([type="hidden"]), select[aria-label="Location"]') : form?.querySelector<HTMLElement>(`[name="${issue?.field}"]`);
       if (input?.id) highlightSection(`#${input.id}`, form); else { input?.scrollIntoView({ block: "center" }); input?.focus(); }
     });
   }
@@ -194,6 +207,13 @@ export function ClosePanel({
   async function submitClose(formData: FormData, kind: "won" | "lost") {
     setSubmitting(kind);
     try {
+      if (kind === "won" && customerPoFiles.length) {
+        const upload = await uploadFiles(customerPoFiles, customerPoUpload, file => ({
+          start: () => createSignedUpload("opportunity", opportunityId, file.name, file.type, file.size),
+          finish: signed => finalizeUpload("opportunity", opportunityId, { storagePath: signed.storagePath, fileName: file.name, mimeType: file.type, sizeBytes: file.size, kind: "customer_po" }),
+        }), file => setCustomerPoFiles(previous => previous.filter(selected => selected !== file)));
+        if (!upload.ok) { setWonSummary(null); setValidation([{ field: "customerPo", message: upload.message }]); return; }
+      }
       const result = await (kind === "won" ? markOpportunityWon(formData) : markOpportunityLost(formData));
       if (result.ok) {
         if (finishWorkflow) { setWonSummary(null); setConfirmingLost(false); finishWorkflow(); }
@@ -219,7 +239,7 @@ export function ClosePanel({
             missing answer, not "this form didn't ask"). */}
         <input type="hidden" name="closePanel" value="1" />
 
-        <p className="text-xs text-gray-dark">Required fields are labeled below. Terms and PO number can be added later.</p>
+        <p className="text-xs text-gray-dark">Required fields are labeled below. Terms and Customer PO can be added later.</p>
 
         {editPrice ? (
           <label className="block">
@@ -298,17 +318,11 @@ export function ClosePanel({
         <input type="hidden" name="paymentTermsToken" value={conversion.token} />
         <PaymentTermsPreview conversion={conversion} total={priceReady ? numericValue : null} />
 
-        <label className="block">
-          <span className="field-label">PO number (optional, from AutoQuotes)</span>
-          <input
-            type="text"
-            name="poNumber"
-            value={poNumber}
-            onChange={(e) => setPoNumber(e.target.value)}
-            placeholder="Customer PO # as typed into AutoQuotes"
-            className="input-klyne w-full"
-          />
-        </label>
+        <section id="customer-po" aria-label="Customer PO" className="space-y-3">
+          <div className="flex items-baseline gap-2"><h3 className="field-label !mb-0">Customer PO</h3><span className="text-xs text-gray-dark">Optional</span></div>
+          {customerPoDocuments.map(doc => <div key={doc.id} className="flex min-w-0 items-center gap-3"><FileLabel text={doc.fileName ?? "Customer PO"} className="flex-1 text-sm" /><FilePreviewButton document={doc} /></div>)}
+          {uploadsEnabled ? <><FileDropzone files={customerPoFiles} onChange={setCustomerPoFiles} disabled={!!submitting} /><p className="text-xs text-gray-dark">Selected files are saved when you confirm the deal.</p></> : <p className="text-sm text-gray-dark">You can confirm the deal without a Customer PO and attach it from Files later.</p>}
+        </section>
 
         {/* The header owns the page's single filled CTA (§H), so this stays secondary. */}
         <button
@@ -363,9 +377,9 @@ export function ClosePanel({
                 <dd className="text-ink">{wonSummary.neededBy}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-gray-dark">PO number</dt>
+                <dt className="text-gray-dark">Customer PO</dt>
                 <dd className="text-ink">
-                  {wonSummary.poNumber || <span className="empty-value">not provided</span>}
+                  {wonSummary.customerPoFiles.length ? <ul className="text-right">{wonSummary.customerPoFiles.map((name, index) => <li key={index} className="max-w-64"><FileLabel text={name} /></li>)}</ul> : <span className="empty-value">not attached</span>}
                 </dd>
               </div>
               <p className="pt-2 text-xs text-gray">

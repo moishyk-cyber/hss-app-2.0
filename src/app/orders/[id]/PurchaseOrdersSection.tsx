@@ -15,6 +15,7 @@
 
 import { PickupLocationDropdown } from "@/lib/LocationDropdown";
 import { SalesOrderConfirmation } from "./SalesOrderConfirmation";
+import { CustomerInfoCard } from "@/lib/CustomerInfoCard";
 import { PoExpectedDateField } from "./PoExpectedDateField";
 import { AutoQuotesField } from "./AutoQuotesField";
 import { PartnerInput } from "@/app/deliveries/PartnerInput";
@@ -559,6 +560,7 @@ function AcknowledgePoDialog({
   // Re-acknowledging a PO that already has a delivery edits that delivery, so
   // start from whatever it already says.
   const delivery = po.deliveries[0] ?? null;
+  const [pickupAddress, setPickupAddress] = useState(delivery?.pickupAddress || po.supplier?.deliveryAddress || '');
   const [mode, setMode] = useState(delivery?.mode ?? "manufacturer_to_hss_to_customer");
   const showCarrierLeg = hasCarrierLeg(mode);
   const showTruckerLeg = hasTruckerLeg(mode);
@@ -617,6 +619,7 @@ function AcknowledgePoDialog({
           <button type="button" className="record-drawer-close" aria-label="Close acknowledgement" onClick={close} disabled={pending}>×</button>
         </div>
 
+        <CustomerInfoCard pickups={[{ label: `Pickup for ${po.poNumber ?? 'this PO'}`, address: pickupAddress || null }]} deliveryPhone={delivery?.deliveryContactPhone} />
         <form action={handleAcknowledge} className="space-y-3 border-t border-border pt-4">
           {error && <div className="banner-warn">{error}</div>}
 
@@ -715,7 +718,7 @@ function AcknowledgePoDialog({
                     defaultValue={delivery?.deliveryContactPhone ?? ""}
                   />
                 </label>
-<PickupLocationDropdown current={delivery?.pickupAddress ?? null} supplierAddress={po.supplier?.deliveryAddress} />
+<PickupLocationDropdown current={delivery?.pickupAddress ?? null} supplierAddress={po.supplier?.deliveryAddress} onChange={setPickupAddress} />
                 <label className="col-span-2 flex items-center gap-2 pt-1 text-xs text-ink">
                   <input
                     type="checkbox"

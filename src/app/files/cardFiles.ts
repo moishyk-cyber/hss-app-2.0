@@ -11,13 +11,13 @@ export async function getCardFiles(id: string, type: 'opportunity' | 'order', ki
     if (!deal && !order) return { ok: false, message: 'This record is no longer available.' };
     const opportunityId = deal?.id ?? order?.opportunityId;
     const orders = deal?.orders ?? (order ? [order] : []);
-    const documents = await prisma.document.findMany({ where: { kind, OR: [
+    const documents: PreviewDocument[] = await prisma.document.findMany({ where: { kind, OR: [
       ...(opportunityId ? [{ linkedType: 'opportunity', linkedId: opportunityId }] : []),
       { linkedType: 'order', linkedId: { in: orders.map(row => row.id) } },
       { linkedType: 'purchase_order', linkedId: { in: orders.flatMap(row => row.purchaseOrders.map(po => po.id)) } },
-    ] }, select: { id: true, fileName: true, fileUrl: true, storagePath: true, mimeType: true }, orderBy: { uploadedAt: 'desc' } });
+    ] }, select: { id: true, kind: true, note: true, fileName: true, fileUrl: true, storagePath: true, mimeType: true }, orderBy: { uploadedAt: 'desc' } });
     const quoteUrl = deal?.clientQuoteUrl ?? order?.opportunity?.clientQuoteUrl;
-    if (kind === 'quote' && quoteUrl && !documents.some(doc => doc.fileUrl === quoteUrl)) documents.push({ id: `client-quote-${id}`, fileName: 'Client quote', fileUrl: quoteUrl, storagePath: null, mimeType: null });
+    if (kind === 'quote' && quoteUrl && !documents.some(doc => doc.fileUrl === quoteUrl)) documents.push({ id: `client-quote-${id}`, fileName: 'Client quote', kind: 'quote', fileUrl: quoteUrl, storagePath: null, mimeType: null });
     return { ok: true, documents };
   } catch { return { ok: false, message: 'Could not load files. Please try again.' }; }
 }

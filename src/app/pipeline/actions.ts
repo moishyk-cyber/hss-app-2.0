@@ -579,8 +579,8 @@ export async function markOpportunityWon(formData: FormData): Promise<DealCloseR
   try { interpretation = termsNotes ? verifiedPaymentInterpretation(termsNotes, formData.get("paymentTermsToken")) : null; if (interpretation) paymentPlanAmounts(interpretation.plan, value); }
   catch (error) { return { ok: false, issues: [{ field: "termsNotes", message: (error as Error).message }] }; }
 
-  // Customer PO # as read off AutoQuotes - typed once here so the order never
-  // has to wait on someone adding it by hand afterward.
+  // Legacy form compatibility: new Confirm Deal forms attach Customer PO files
+  // to the intake rather than collecting a PO number. Preserve historical numbers.
   const poNumber = text(formData, "poNumber", TEXT_LIMITS.short);
 
   let order;

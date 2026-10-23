@@ -1,3 +1,5 @@
+import { CustomerInfoCard } from "@/lib/CustomerInfoCard";
+import { customerInfo } from "@/lib/customerInfo";
 import { getStageHolders, withJourneyHolders } from "@/lib/courtHolders";
 import { TeamNotes } from "@/lib/TeamNotes";
 import { recordPath } from "@/lib/recordPath";
@@ -88,6 +90,7 @@ export default async function RecordDetailPage({
   const opportunity = plainMoney(opportunityRow);
   if (!opportunity) notFound();
 
+  const customer = customerInfo(opportunity);
   const stage = opportunity.stage;
   const closed = stage === "won" || stage === "lost";
   const isProject = opportunity.orderType === "project";
@@ -202,7 +205,8 @@ export default async function RecordDetailPage({
         </div>
       ) : null}
 
-      <RecordWorkspace navigation={!focusedStep && <DealProgress steps={journey} lost={stage === "lost"} />} summary={!focusedStep && <div className="space-y-5">
+      {focusedStep && <CustomerInfoCard info={customer} />}
+      <RecordWorkspace navigation={!focusedStep && <DealProgress steps={journey} lost={stage === "lost"} />} summary={!focusedStep && <div className="space-y-5"><CustomerInfoCard info={customer} />
           <TeamNotes notes={opportunity.notes} />
           <Card title="Deal" id="deal-summary">
             <DetailRow label="Stage" value={<StageBadge stage={opportunity.stage} />} />
@@ -441,6 +445,8 @@ export default async function RecordDetailPage({
 
                 <ClosePanel
                   opportunityId={opportunity.id}
+                  customerPoDocuments={dealDocs.filter(doc => doc.kind === "customer_po")}
+                  uploadsEnabled={uploadsConfigured()}
                   prerequisiteIssues={[...intakeIssues(opportunity, { company: requirements["opportunity.companyId"], neededBy: requirements["opportunity.neededByDate"] }), ...pricingIssues(opportunity), ...(needsOrderRecovery ? [] : clientQuoteIssues(opportunity))]}
                   isProject={isProject}
                   requiresDeposit={requiresDeposit}

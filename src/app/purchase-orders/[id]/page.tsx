@@ -1,3 +1,5 @@
+import { CustomerInfoCard, CustomerInfoProvider } from "@/lib/CustomerInfoCard";
+import { customerInfo } from "@/lib/customerInfo";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { plainMoney } from "@/lib/money";
@@ -9,13 +11,14 @@ export const dynamic = "force-dynamic";
 export default async function PurchaseOrderPage({params}: {params: Promise<{id:string}>}) {
   const {id} = await params;
   const [poRow, documents] = await Promise.all([
-    prisma.purchaseOrder.findUnique({where:{id},include:{supplier:true,lineItems:true,deliveries:true}}),
+    prisma.purchaseOrder.findUnique({where:{id},include:{supplier:true,lineItems:true,deliveries:true,order:{include:{company:true,contact:true,location:true}}}}),
     prisma.document.findMany({where:{linkedType:"purchase_order",linkedId:id},orderBy:{uploadedAt:"desc"}}),
   ]);
   const po = plainMoney(poRow);
   if (!po) notFound();
-  return <div className="space-y-6">
+  return <CustomerInfoProvider value={customerInfo(po.order)}><div className="space-y-6">
     <DetailHeader backHref={`/orders/${po.orderId}#purchase-orders`} backLabel="Back to Order" title={po.poNumber ?? "Purchase order"} subtitle={po.supplier?.name ?? "No vendor"} badges={<span className="badge badge-gray">{labelFor(PO_STATUSES,po.status)}</span>}/>
+    <CustomerInfoCard pickups={[{ label: `Pickup for ${po.poNumber}`, address: po.deliveries[0]?.pickupAddress || po.supplier?.deliveryAddress || null }]} />
     <PurchaseOrderDetail po={po} documents={documents} uploadsEnabled={uploadsConfigured()}/>
-  </div>;
+  </div></CustomerInfoProvider>;
 }

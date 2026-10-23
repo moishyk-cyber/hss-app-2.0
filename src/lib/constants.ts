@@ -231,6 +231,7 @@ export const DOCUMENT_KINDS = [
   { value: "sales_order", label: "Sales Order" },
   { value: "drawing", label: "Drawing" },
   { value: "po", label: "Purchase Order" },
+  { value: "customer_po", label: "Customer PO" },
   { value: "tracking", label: "Tracking" },
   { value: "other", label: "Other" },
 ] as const;
